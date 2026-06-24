@@ -111,14 +111,19 @@ export default async function DashboardPage() {
                   className="flex items-center justify-between gap-3 py-2.5"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
+                    <p className="text-sm font-medium text-foreground">
                       {m.studentName}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {m.batchName} · {shortDate(m.date)} · {m.markedByName}
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                      {m.batchName} · {shortDate(m.date)}
+                      <br className="sm:hidden" />
+                      <span className="hidden sm:inline"> · </span>
+                      marked by {m.markedByName}
                     </p>
                   </div>
-                  <StatusPill status={m.status} />
+                  <span className="shrink-0">
+                    <StatusPill status={m.status} />
+                  </span>
                 </li>
               ))}
             </ul>
