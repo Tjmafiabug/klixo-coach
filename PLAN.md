@@ -70,8 +70,9 @@ rule effective-range validation, latest-mark tiebreak, midnight-rollover fallbac
 single-read dashboard, single backfill input, padded adhoc ids, quoted tab ranges.
 Each milestone was live-tested against the Sheet (with restore) before deploy.
 
-**Milestone C — owner data management** (zero-Sheet operation) — _code-complete &
-build-verified; NOT yet live-tested against the Sheet or deployed._
+**Milestone C — owner data management** (zero-Sheet operation) — _live-tested
+against the Sheet (write paths verified end-to-end via the prod UI, with full
+backup + restore) and deployed._
 - `/manage` hub + owner nav (Today/Dashboard/Timetable/Manage). Every C action
   re-checks owner role server-side (N2) and validates inputs (N4) before writing.
 - C1 Students: list, create, edit, activate/deactivate; profile page = enrollments +
@@ -91,8 +92,8 @@ build-verified; NOT yet live-tested against the Sheet or deployed._
   week start, timezone*, logo URL). *tz here is informational — live clock = CENTER_TZ env.
 - Shared: `components/SubmitButton` (pending state), `ui.Banner`/`ActiveChip`/`fieldClass`.
 
-**Milestone D — hardening** (zero-Sheet trust) — _code-complete & build-verified;
-NOT yet live-tested or deployed._
+**Milestone D — hardening** (zero-Sheet trust) — _live-tested against the Sheet
+and deployed._
 - N3 PII: teacher surfaces (today/roster/mark) are names-only; student profile + phone
   numbers live only under owner-guarded `/manage`; `/api/center` now session-gated.
 - N4: every write validates server-side (attendance status enum; C-write field checks).
@@ -108,7 +109,7 @@ NOT yet live-tested or deployed._
 
 ## NOT done / NEXT (resume here)
 
-Next: **live-test Milestones C + D against the Sheet (with restore) → deploy**, then:
+A–D are live-tested + deployed. Next: **E — Phase 1 (sellable)**.
 
 Recommended order (see BUILD.md for full specs + acceptance):
 - **E — Phase 1 (sellable):** WhatsApp absent alerts + monthly summary, fees module,

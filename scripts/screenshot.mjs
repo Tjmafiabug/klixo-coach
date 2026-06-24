@@ -34,6 +34,11 @@ async function shot(page, path, name) {
     await page.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded", timeout: 40000 });
     await page.waitForSelector("main, body", { timeout: 30000 });
     await page.waitForTimeout(700);
+    // For a full-page capture, a sticky bottom bar (the marking Submit bar) would
+    // freeze mid-list; pin it static so it flows to its natural place at the end.
+    await page
+      .addStyleTag({ content: ".sticky.bottom-0{position:static !important}" })
+      .catch(() => {});
     await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
     console.log(`✓ ${name}  (${path})`);
   } catch (e) {
