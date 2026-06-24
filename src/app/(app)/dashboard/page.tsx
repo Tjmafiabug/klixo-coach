@@ -124,6 +124,11 @@ export default async function DashboardPage() {
                       <span className="hidden sm:inline"> · </span>
                       marked by {m.markedByName}
                     </p>
+                    {m.reason ? (
+                      <p className="mt-1 inline-flex rounded bg-muted px-1.5 py-0.5 text-xs italic text-muted-foreground">
+                        {m.reason}
+                      </p>
+                    ) : null}
                   </div>
                   <span className="shrink-0">
                     <StatusPill status={m.status} />

@@ -223,6 +223,7 @@ export interface OwnerStats {
     date: string;
     status: string;
     markedByName: string;
+    reason: string;
     timestamp: string;
   }[];
 }
@@ -284,6 +285,7 @@ export async function getOwnerStats(): Promise<OwnerStats> {
       date: m.date,
       status: m.status,
       markedByName: teacherById.get(m.marked_by)?.name ?? m.marked_by,
+      reason: m.reason ?? "",
       timestamp: m.timestamp,
     }));
 
