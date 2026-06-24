@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getOwnerStats } from "@/lib/data";
+import { getOwnerStats, scheduleHealth } from "@/lib/data";
 import { PctBadge, StatusPill } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,8 @@ export default async function DashboardPage() {
   const user = (await getSession())!;
   if (user.role !== "owner") redirect("/today");
 
-  const stats = await getOwnerStats();
+  const [stats, health] = await Promise.all([getOwnerStats(), scheduleHealth()]);
+  const blocking = health.clashes.filter((c) => c.blocking).length;
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-6">
@@ -28,6 +30,23 @@ export default async function DashboardPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         Attendance across the centre · latest mark per session
       </p>
+
+      <Link
+        href="/timetable"
+        className={`mt-4 flex items-center justify-between rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+          health.clashes.length === 0
+            ? "border-success/20 bg-success-subtle text-success hover:bg-success/10"
+            : "border-danger/20 bg-danger-subtle text-danger hover:bg-danger/10"
+        }`}
+      >
+        <span>
+          {health.clashes.length === 0
+            ? "Schedule health: no clashes"
+            : `Schedule health: ${health.clashes.length} clash${health.clashes.length === 1 ? "" : "es"}` +
+              (blocking ? ` (${blocking} blocking)` : "")}
+        </span>
+        <span className="text-xs opacity-80">Timetable →</span>
+      </Link>
 
       <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Overall attendance" value={pct(stats.overall)} tone="brand" />
