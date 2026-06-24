@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KLiXO Coach
 
-## Getting Started
+Attendance & timetable for coaching centres. **One deployment = one centre.**
+Branded Next.js app on Vercel; Google Sheets is the invisible backend (written
+server-side via a Google service account). Teachers mark the batch; owners see
+attendance %, defaulters, and a manual-mark audit.
 
-First, run the development server:
+> Product spec, data model, and roadmap live in **PLAN.md** (single source of truth).
+
+## Stack
+
+- **Next.js 16** (App Router, TypeScript, Tailwind) on **Vercel**
+- **Google Sheets** as the DB (10 tabs: Config, Teachers, Students, Batches,
+  Enrollments, Rooms, Timetable, Sessions, Attendance, Holidays)
+- Auth: phone + PIN. Marking: teacher marks the batch (no student self-mark).
+
+## Local setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local      # then fill in the values
+npm install
+npm run dev                     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Var | What |
+|-----|------|
+| `SHEET_ID` | The Google Sheet that backs this centre |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full service-account JSON (single line). **Secret.** |
+| `CENTER_TZ` | Centre local timezone, e.g. `Asia/Kolkata`. "Today" is computed here, **never** server UTC. |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Pull the deployed env locally with `vercel env pull .env.local`.
 
-## Learn More
+## Health checks
 
-To learn more about Next.js, take a look at the following resources:
+- `GET /api/health` → `{ ok: true }` (static)
+- `GET /api/center` → reads the Config tab (proves the Sheets pipeline)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Critical invariants (see PLAN.md §11)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Compute "today" / day-of-week in **`CENTER_TZ`**, never the server's UTC clock.
+- Teachers/students must **never** see the raw Sheet — the app mediates all access.
+- Never commit `GOOGLE_SERVICE_ACCOUNT_JSON` or `.env.local`.
