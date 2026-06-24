@@ -13,6 +13,20 @@ export default async function AppLayout({
   const user = await getSession();
   if (!user) redirect("/login");
 
+  const userBlock = (
+    <div className="flex min-w-0 items-center gap-2">
+      <Avatar name={user.name} />
+      <div className="min-w-0 leading-tight">
+        <p className="truncate text-sm font-semibold text-foreground">
+          {user.name}
+        </p>
+        <div className="mt-0.5">
+          <RoleChip role={user.role} />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-border bg-surface/85 backdrop-blur">
@@ -28,15 +42,7 @@ export default async function AppLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2 sm:flex">
-              <Avatar name={user.name} />
-              <div className="leading-tight">
-                <p className="text-sm font-semibold text-foreground">{user.name}</p>
-                <div className="mt-0.5">
-                  <RoleChip role={user.role} />
-                </div>
-              </div>
-            </div>
+            <div className="hidden sm:block">{userBlock}</div>
             <form action={logout}>
               <button className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                 Sign out
@@ -45,13 +51,16 @@ export default async function AppLayout({
           </div>
         </div>
 
-        {/* mobile nav */}
-        <nav className="flex items-center gap-1 border-t border-border px-4 py-1.5 sm:hidden">
-          <NavLink href="/today">Today</NavLink>
-          {user.role === "owner" ? (
-            <NavLink href="/dashboard">Dashboard</NavLink>
-          ) : null}
-        </nav>
+        {/* mobile row: nav (left) + user (right) */}
+        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 sm:hidden">
+          <nav className="flex items-center gap-1">
+            <NavLink href="/today">Today</NavLink>
+            {user.role === "owner" ? (
+              <NavLink href="/dashboard">Dashboard</NavLink>
+            ) : null}
+          </nav>
+          {userBlock}
+        </div>
       </header>
 
       <div className="flex-1">{children}</div>

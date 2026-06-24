@@ -7,6 +7,15 @@ export const dynamic = "force-dynamic";
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
+function shortDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
 export default async function DashboardPage() {
   const user = (await getSession())!;
   if (user.role !== "owner") redirect("/today");
@@ -95,32 +104,24 @@ export default async function DashboardPage() {
           {stats.recentManual.length === 0 ? (
             <Empty>No manual marks recorded.</Empty>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="pb-2 font-semibold">Student</th>
-                    <th className="pb-2 font-semibold">Batch</th>
-                    <th className="pb-2 font-semibold">Status</th>
-                    <th className="pb-2 font-semibold">Date</th>
-                    <th className="pb-2 font-semibold">By</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {stats.recentManual.map((m, i) => (
-                    <tr key={i}>
-                      <td className="py-2 font-medium text-foreground">{m.studentName}</td>
-                      <td className="py-2 text-muted-foreground">{m.batch_id}</td>
-                      <td className="py-2">
-                        <StatusPill status={m.status} />
-                      </td>
-                      <td className="py-2 tabular-nums text-muted-foreground">{m.date}</td>
-                      <td className="py-2 text-muted-foreground">{m.marked_by}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="divide-y divide-border">
+              {stats.recentManual.map((m, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between gap-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {m.studentName}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {m.batchName} · {shortDate(m.date)} · {m.markedByName}
+                    </p>
+                  </div>
+                  <StatusPill status={m.status} />
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
       </div>

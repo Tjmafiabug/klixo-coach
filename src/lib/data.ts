@@ -219,22 +219,24 @@ export interface OwnerStats {
   manualCount: number;
   recentManual: {
     studentName: string;
-    batch_id: string;
+    batchName: string;
     date: string;
     status: string;
-    marked_by: string;
+    markedByName: string;
     timestamp: string;
   }[];
 }
 
 export async function getOwnerStats(): Promise<OwnerStats> {
-  const [attendance, students, batches, cfg] = await Promise.all([
+  const [attendance, students, batches, teachers, cfg] = await Promise.all([
     readTab<AttendanceRow>("Attendance"),
     readTab<Student>("Students"),
     readTab<Batch>("Batches"),
+    readTab<Teacher>("Teachers"),
     config(),
   ]);
   const threshold = parseInt(cfg.get("attendance_threshold") ?? "75", 10);
+  const teacherById = new Map(teachers.map((t) => [t.teacher_id, t]));
 
   // latest mark per (session, student)
   const latest = new Map<string, AttendanceRow>();
@@ -278,10 +280,10 @@ export async function getOwnerStats(): Promise<OwnerStats> {
     .slice(0, 10)
     .map((m) => ({
       studentName: studentById.get(m.student_id)?.name ?? m.student_id,
-      batch_id: m.batch_id,
+      batchName: batchById.get(m.batch_id)?.name ?? m.batch_id,
       date: m.date,
       status: m.status,
-      marked_by: m.marked_by,
+      markedByName: teacherById.get(m.marked_by)?.name ?? m.marked_by,
       timestamp: m.timestamp,
     }));
 
