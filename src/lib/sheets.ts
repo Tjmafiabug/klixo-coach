@@ -43,3 +43,15 @@ export async function readTab<T = Record<string, string>>(
     return o as T;
   });
 }
+
+/** Append rows to the bottom of a tab (RAW so HH:mm / dates stay literal text). */
+export async function appendRows(tab: string, rows: string[][]): Promise<void> {
+  if (rows.length === 0) return;
+  await client().spreadsheets.values.append({
+    spreadsheetId: sheetId(),
+    range: tab,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: rows },
+  });
+}

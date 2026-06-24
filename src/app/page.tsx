@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-16 text-center">
@@ -30,8 +32,15 @@ export default function Home() {
         ))}
       </ul>
 
+      <Link
+        href="/login"
+        className="rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white transition-colors hover:bg-indigo-700"
+      >
+        Open the app
+      </Link>
+
       <p className="text-xs text-black/40 dark:text-white/40">
-        Phase&nbsp;0 — MVP scaffold. Backend: Google Sheets via service account.
+        Phase&nbsp;0 — MVP. Backend: Google Sheets via service account.
       </p>
     </main>
   );
