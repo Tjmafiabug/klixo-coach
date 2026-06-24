@@ -8,10 +8,12 @@ import "server-only";
  */
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000; // 15 minutes
+const WINDOW_MS = 15 * 60 * 1000; // failures older than this don't count
 
 interface Entry {
   fails: number;
   lockUntil: number;
+  lastFail: number;
 }
 
 const store = new Map<string, Entry>();
@@ -24,12 +26,17 @@ export function lockRemainingMs(key: string): number {
   return left > 0 ? left : 0;
 }
 
-/** Record a failed attempt; locks once MAX_FAILS is reached. */
+/** Record a failed attempt; locks once MAX_FAILS happen within WINDOW_MS. The
+ *  counter is a sliding window — a stale gap since the last failure resets it,
+ *  so occasional mistypes over days don't accumulate into a lockout. */
 export function recordFailure(key: string): void {
-  const e = store.get(key) ?? { fails: 0, lockUntil: 0 };
+  const now = Date.now();
+  const e = store.get(key) ?? { fails: 0, lockUntil: 0, lastFail: 0 };
+  if (now - e.lastFail > WINDOW_MS) e.fails = 0; // window expired → fresh count
   e.fails += 1;
+  e.lastFail = now;
   if (e.fails >= MAX_FAILS) {
-    e.lockUntil = Date.now() + LOCK_MS;
+    e.lockUntil = now + LOCK_MS;
     e.fails = 0;
   }
   store.set(key, e);

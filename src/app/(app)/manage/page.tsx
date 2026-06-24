@@ -1,14 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import {
-  listStudents,
-  listBatches,
-  listTeachers,
-  listRooms,
-  listHolidays,
-  getRules,
-} from "@/lib/data";
+import { getManageCounts } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -16,22 +9,15 @@ export default async function ManagePage() {
   const user = (await getSession())!;
   if (user.role !== "owner") redirect("/today");
 
-  const [students, batches, teachers, rooms, holidays, rules] = await Promise.all([
-    listStudents(),
-    listBatches(),
-    listTeachers(),
-    listRooms(),
-    listHolidays(),
-    getRules(),
-  ]);
+  const c = await getManageCounts();
 
   const cards = [
-    { href: "/manage/students", title: "Students", sub: `${students.filter((s) => s.active).length} active · ${students.length} total` },
-    { href: "/manage/batches", title: "Batches", sub: `${batches.filter((b) => b.active).length} active · ${batches.length} total` },
-    { href: "/manage/teachers", title: "Teachers", sub: `${teachers.filter((t) => t.active).length} active staff` },
-    { href: "/timetable", title: "Timetable", sub: `${rules.length} recurring rules` },
-    { href: "/manage/rooms", title: "Rooms", sub: `${rooms.length} rooms` },
-    { href: "/manage/holidays", title: "Holidays", sub: `${holidays.length} dates` },
+    { href: "/manage/students", title: "Students", sub: `${c.studentsActive} active · ${c.studentsTotal} total` },
+    { href: "/manage/batches", title: "Batches", sub: `${c.batchesActive} active · ${c.batchesTotal} total` },
+    { href: "/manage/teachers", title: "Teachers", sub: `${c.teachersActive} active staff` },
+    { href: "/timetable", title: "Timetable", sub: `${c.rules} recurring rules` },
+    { href: "/manage/rooms", title: "Rooms", sub: `${c.rooms} rooms` },
+    { href: "/manage/holidays", title: "Holidays", sub: `${c.holidays} dates` },
     { href: "/manage/settings", title: "Settings", sub: "Name · threshold · branding" },
   ];
 

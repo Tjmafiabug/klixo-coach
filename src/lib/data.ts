@@ -58,7 +58,7 @@ export interface TodaySession extends SessionMeta {
  */
 function enrollmentOnDate(e: Enrollment, date: string): boolean {
   return (
-    e.status !== "inactive" &&
+    (e.status === "active" || e.status === "left") &&
     e.start_date <= date &&
     (e.end_date === "" || e.end_date >= date)
   );
@@ -84,10 +84,13 @@ export async function getSessionsOnDate(
   const batchById = new Map(batches.map((b) => [b.batch_id, b]));
   const roomById = new Map(rooms.map((r) => [r.room_id, r]));
 
-  const rosterByBatch = new Map<string, number>();
+  // distinct students per batch (a student with overlapping enrollment rows —
+  // e.g. an ended row + a backdated re-enroll — must count once)
+  const rosterByBatch = new Map<string, Set<string>>();
   for (const e of enrolls) {
     if (!enrollmentOnDate(e, date)) continue;
-    rosterByBatch.set(e.batch_id, (rosterByBatch.get(e.batch_id) ?? 0) + 1);
+    if (!rosterByBatch.has(e.batch_id)) rosterByBatch.set(e.batch_id, new Set());
+    rosterByBatch.get(e.batch_id)!.add(e.student_id);
   }
 
   return sessions
@@ -105,7 +108,7 @@ export async function getSessionsOnDate(
         ...s,
         batchName: batchById.get(s.batch_id)?.name ?? s.batch_id,
         roomName: roomById.get(s.room_id)?.name ?? s.room_id,
-        rosterSize: rosterByBatch.get(s.batch_id) ?? 0,
+        rosterSize: rosterByBatch.get(s.batch_id)?.size ?? 0,
         marked: latest.size > 0,
         presentCount: present,
       };
@@ -154,9 +157,13 @@ export async function getRoster(
     readTab<AttendanceRow>("Attendance"),
   ]);
   const studentById = new Map(students.map((s) => [s.student_id, s]));
-  const ids = enrolls
-    .filter((e) => e.batch_id === batchId && enrollmentOnDate(e, sessionDate))
-    .map((e) => e.student_id);
+  const ids = [
+    ...new Set(
+      enrolls
+        .filter((e) => e.batch_id === batchId && enrollmentOnDate(e, sessionDate))
+        .map((e) => e.student_id),
+    ),
+  ];
 
   const latest = latestPerStudent(attendance, sessionId);
   const roster: RosterEntry[] = ids
@@ -1001,15 +1008,22 @@ export async function updateRoom(
   ]);
 }
 
-/** Count of active batches + timetable rules that reference this room. */
+/** References that block deleting a room: active batches + timetable rules +
+ *  future, non-cancelled sessions (incl. adhoc/extra) pointing at it. */
 export async function roomUsage(id: string): Promise<number> {
-  const [batches, rules] = await Promise.all([
+  const [batches, rules, sessions, cfg] = await Promise.all([
     readTab<Batch>("Batches"),
     readTab<TimetableRule>("Timetable"),
+    readTab<Session>("Sessions"),
+    config(),
   ]);
+  const today = todayFromCfg(cfg);
   return (
     batches.filter((b) => b.active === "TRUE" && b.room_id === id).length +
-    rules.filter((r) => r.room_id === id).length
+    rules.filter((r) => r.room_id === id).length +
+    sessions.filter(
+      (s) => s.room_id === id && s.status !== "cancelled" && s.date >= today,
+    ).length
   );
 }
 
@@ -1592,23 +1606,28 @@ export async function refsExist(refs: {
   roomId?: string;
   teacherId?: string;
   studentId?: string;
+  /** require the referenced teacher to be active (default true). Set false when
+   *  editing a batch that may legitimately keep an already-deactivated teacher. */
+  teacherMustBeActive?: boolean;
 }): Promise<boolean> {
+  // empty-string ids are treated as "no ref" (skipped), not "must validate"
   const [batches, rooms, teachers, students] = await Promise.all([
-    refs.batchId !== undefined ? readTab<Batch>("Batches") : Promise.resolve<Batch[]>([]),
-    refs.roomId !== undefined ? readTab<Room>("Rooms") : Promise.resolve<Room[]>([]),
-    refs.teacherId !== undefined ? readTab<Teacher>("Teachers") : Promise.resolve<Teacher[]>([]),
-    refs.studentId !== undefined ? readTab<Student>("Students") : Promise.resolve<Student[]>([]),
+    refs.batchId ? readTab<Batch>("Batches") : Promise.resolve<Batch[]>([]),
+    refs.roomId ? readTab<Room>("Rooms") : Promise.resolve<Room[]>([]),
+    refs.teacherId ? readTab<Teacher>("Teachers") : Promise.resolve<Teacher[]>([]),
+    refs.studentId ? readTab<Student>("Students") : Promise.resolve<Student[]>([]),
   ]);
-  if (refs.batchId !== undefined) {
+  if (refs.batchId) {
     const b = batches.find((x) => x.batch_id === refs.batchId);
     if (!b || b.active !== "TRUE") return false;
   }
-  if (refs.roomId !== undefined && !rooms.some((x) => x.room_id === refs.roomId)) return false;
-  if (refs.teacherId !== undefined) {
+  if (refs.roomId && !rooms.some((x) => x.room_id === refs.roomId)) return false;
+  if (refs.teacherId) {
     const t = teachers.find((x) => x.teacher_id === refs.teacherId);
-    if (!t || t.active !== "TRUE") return false;
+    if (!t) return false;
+    if (refs.teacherMustBeActive !== false && t.active !== "TRUE") return false;
   }
-  if (refs.studentId !== undefined) {
+  if (refs.studentId) {
     const s = students.find((x) => x.student_id === refs.studentId);
     if (!s || s.status !== "active") return false;
   }
@@ -1656,6 +1675,42 @@ export function integrityIssues(tabs: {
     if (r.teacher_id && !teacherIds.has(r.teacher_id)) issues.push({ kind: "rule", detail: `${r.slot_id} → missing teacher ${r.teacher_id}` });
   }
   return issues;
+}
+
+// ---------------- Manage hub counts ----------------
+
+export interface ManageCounts {
+  studentsActive: number;
+  studentsTotal: number;
+  batchesActive: number;
+  batchesTotal: number;
+  teachersActive: number;
+  rooms: number;
+  holidays: number;
+  rules: number;
+}
+
+/** Counts for the /manage hub cards — one read per tab (no joins/sorts), instead
+ *  of calling the six enriched list* functions (which re-read shared tabs). */
+export async function getManageCounts(): Promise<ManageCounts> {
+  const [students, batches, teachers, rooms, holidays, rules] = await Promise.all([
+    readTab<Student>("Students"),
+    readTab<Batch>("Batches"),
+    readTab<Teacher>("Teachers"),
+    readTab<Room>("Rooms"),
+    readTab<Holiday>("Holidays"),
+    readTab<TimetableRule>("Timetable"),
+  ]);
+  return {
+    studentsActive: students.filter((s) => s.status === "active").length,
+    studentsTotal: students.length,
+    batchesActive: batches.filter((b) => b.active === "TRUE").length,
+    batchesTotal: batches.length,
+    teachersActive: teachers.filter((t) => t.active === "TRUE").length,
+    rooms: rooms.length,
+    holidays: holidays.length,
+    rules: rules.length,
+  };
 }
 
 // ---------------- C7 Settings (Config) ----------------

@@ -431,7 +431,8 @@ export async function toggleStudentActive(formData: FormData): Promise<void> {
   await requireOwner();
   const id = String(formData.get("studentId") ?? "").trim();
   const active = String(formData.get("active") ?? "") === "true";
-  if (id) await setStudentActive(id, active);
+  if (!id) redirect("/manage/students");
+  await setStudentActive(id, active);
   redirect(`/manage/students/${id}?saved=1`);
 }
 
@@ -450,7 +451,11 @@ export async function saveBatch(formData: FormData): Promise<void> {
 
   if (!name || !subject || !teacherId || !roomId) redirect(`${back}?error=missing`);
   if (fee && !isInt(fee)) redirect(`${back}?error=fee`);
-  if (!(await refsExist({ teacherId, roomId }))) redirect(`${back}?error=missing`); // N7
+  // N7: teacher/room must exist. A batch may keep an already-deactivated teacher
+  // (the edit form surfaces it), so don't require the teacher to be active here.
+  if (!(await refsExist({ teacherId, roomId, teacherMustBeActive: false }))) {
+    redirect(`${back}?error=missing`);
+  }
 
   const payload = { name, subject, teacher_id: teacherId, room_id: roomId, fee, level };
   if (id) await updateBatch(id, payload);
@@ -462,7 +467,8 @@ export async function toggleBatchActive(formData: FormData): Promise<void> {
   await requireOwner();
   const id = String(formData.get("batchId") ?? "").trim();
   const active = String(formData.get("active") ?? "") === "true";
-  if (id) await setBatchActive(id, active);
+  if (!id) redirect("/manage/batches");
+  await setBatchActive(id, active);
   redirect(`/manage/batches/${id}?saved=1`);
 }
 
@@ -511,7 +517,9 @@ export async function saveSettings(formData: FormData): Promise<void> {
 
   await updateCenterConfig({
     center_name: centerName,
-    timezone,
+    // skip empty timezone so clearing the field keeps the existing value rather
+    // than persisting "" (which would defeat getCenterConfig's default fallback)
+    timezone: timezone || undefined,
     attendance_threshold: threshold,
     week_start: weekStart,
     logo_url: logoUrl,

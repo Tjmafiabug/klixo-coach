@@ -76,10 +76,15 @@ export default async function EditTeacherPage({
             <option value="teacher">Teacher</option>
             <option value="owner">Owner</option>
           </select>
+          {/* a disabled <select> isn't submitted — carry the locked role so a
+              sole owner can still save their other field edits */}
           {isLastOwner ? (
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Last active owner — role is locked.
-            </span>
+            <>
+              <input type="hidden" name="role" value={teacher.role} />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Last active owner — role is locked.
+              </span>
+            </>
           ) : null}
         </label>
         <label className="mt-3 block">
