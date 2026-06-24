@@ -16,7 +16,7 @@ export function NavLink({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+      className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
         active
           ? "bg-brand-subtle text-brand"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"

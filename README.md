@@ -7,6 +7,13 @@ attendance %, defaulters, and a manual-mark audit.
 
 > Product spec, data model, and roadmap live in **PLAN.md** (single source of truth).
 
+## User manual
+
+End-user guide for owners & teachers (with screenshots of every screen):
+**[docs/KLiXO-Coach-Manual.pdf](docs/KLiXO-Coach-Manual.pdf)**. Source: `docs/manual.html`
++ `docs/screenshots/`. Regenerate the screenshots with `scripts/screenshot.mjs`
+(see its header for the Playwright steps).
+
 ## Stack
 
 - **Next.js 16** (App Router, TypeScript, Tailwind) on **Vercel**

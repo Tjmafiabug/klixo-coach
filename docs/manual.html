@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>KLiXO Coach — User Manual</title>
+<style>
+  :root{
+    --brand:#2563eb; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --bgsoft:#f6f8fb; --ok:#059669; --warn:#d97706; --danger:#dc2626;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); margin:0; font-size:11pt; line-height:1.5;
+  }
+  h1,h2,h3{line-height:1.2; color:var(--ink); margin:0 0 .35em}
+  h1{font-size:21pt; letter-spacing:-.01em}
+  h2{font-size:14.5pt; margin-top:1.1em; padding-top:.2em}
+  h3{font-size:12pt; color:#1e293b; margin-top:1em}
+  p{margin:.5em 0}
+  a{color:var(--brand); text-decoration:none}
+  code{background:#f1f5f9; padding:1px 5px; border-radius:4px; font-size:.9em;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .muted{color:var(--muted)}
+  ol,ul{margin:.4em 0 .7em; padding-left:1.3em}
+  li{margin:.2em 0}
+
+  /* sections start on a new page */
+  section{page-break-before:always; padding-top:.2em}
+  section.flow{page-break-before:auto}
+
+  /* screenshots */
+  figure{margin:.8em 0 1.1em; break-inside:avoid}
+  figure img{
+    display:block; width:100%; max-height:215mm; object-fit:contain;
+    border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 1px 3px rgba(15,23,42,.10);
+  }
+  figure.phone img{width:62mm; margin:0 auto}
+  figcaption{font-size:9.5pt; color:var(--muted); text-align:center; margin-top:.4em}
+
+  /* callouts */
+  .box{border:1px solid var(--line); border-left-width:4px; border-radius:8px;
+    padding:.6em .85em; margin:.7em 0; background:#fff; break-inside:avoid; font-size:10.5pt}
+  .note{border-left-color:var(--brand); background:#eff4ff}
+  .tip{border-left-color:var(--ok); background:#ecfdf5}
+  .warn{border-left-color:var(--warn); background:#fffbeb}
+  .box b{display:inline-block; margin-right:.3em}
+
+  .lead{font-size:11.5pt; color:#334155}
+  .crumbs{font-size:9.5pt; color:var(--muted); margin:.1em 0 .8em}
+  .crumbs b{color:#334155}
+
+  table{border-collapse:collapse; width:100%; font-size:10pt; margin:.6em 0}
+  th,td{border:1px solid var(--line); padding:.4em .55em; text-align:left; vertical-align:top}
+  th{background:var(--bgsoft); font-weight:600}
+
+  /* cover */
+  .cover{page-break-after:always; height:262mm; display:flex; flex-direction:column;
+    justify-content:center; padding:0 4mm}
+  .logo{display:flex; align-items:center; gap:10px; margin-bottom:18px}
+  .logo .tick{width:34px; height:34px; border-radius:9px; background:var(--brand);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:20px}
+  .cover h1{font-size:34pt; margin:0}
+  .cover .sub{font-size:14pt; color:var(--muted); margin-top:8px}
+  .cover .meta{margin-top:30px; font-size:10.5pt; color:#334155}
+  .cover .rule{height:4px; width:90px; background:var(--brand); border-radius:3px; margin:18px 0}
+
+  /* TOC */
+  .toc{page-break-after:always}
+  .toc h1{margin-bottom:.5em}
+  .toc ol{list-style:none; padding:0; counter-reset:s}
+  .toc > ol > li{counter-increment:s; padding:.13em 0; border-bottom:1px dotted var(--line);
+    font-weight:600; font-size:10.5pt; line-height:1.25}
+  .toc > ol > li::before{content:counter(s) ".  "; color:var(--brand)}
+  .toc small{display:block; font-weight:400; color:var(--muted); padding-left:1.4em; font-size:9pt}
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="logo"><span class="tick">✓</span><span style="font-size:20pt;font-weight:800">KLiXO <span style="font-weight:500;color:#334155">Coach</span></span></div>
+  <h1>User Manual</h1>
+  <div class="rule"></div>
+  <div class="sub">Attendance &amp; timetable portal for coaching centres</div>
+  <div class="meta">
+    <div><b>Audience:</b> Centre owners &amp; teachers</div>
+    <div><b>Portal:</b> https://klixo-coach.vercel.app</div>
+    <div><b>Sign in:</b> phone number + PIN</div>
+    <div style="margin-top:10px" class="muted">Version 1.0 · June 2026</div>
+  </div>
+</div>
+
+<!-- ============ TOC ============ -->
+<div class="toc">
+  <h1>Contents</h1>
+  <ol>
+    <li>Introduction<small>What the portal does and who uses it</small></li>
+    <li>Signing in<small>Phone + PIN, roles, lockout</small></li>
+    <li>Getting around<small>The app shell &amp; mobile layout</small></li>
+    <li>Teacher — Today<small>Seeing and opening your classes</small></li>
+    <li>Teacher — Marking attendance<small>Present / Absent / Late</small></li>
+    <li>Correcting past attendance<small>Backfill &amp; per-student reasons</small></li>
+    <li>Owner — Dashboard<small>Attendance, defaulters, schedule health</small></li>
+    <li>Owner — Today &amp; extra classes<small>All classes; ad-hoc sessions</small></li>
+    <li>Timetable<small>Recurring rules &amp; clash detection</small></li>
+    <li>Manage hub<small>Run the centre without the spreadsheet</small></li>
+    <li>Students<small>Add, edit, profile &amp; attendance history</small></li>
+    <li>Batches &amp; enrollments<small>Create batches; enroll/withdraw students</small></li>
+    <li>Teachers &amp; PINs<small>Staff, roles, PIN reset, activation</small></li>
+    <li>Rooms<small>Rooms &amp; capacity</small></li>
+    <li>Holidays<small>Suppress generated sessions</small></li>
+    <li>Settings<small>Centre name, threshold, branding</small></li>
+    <li>How attendance % works<small>Key concepts</small></li>
+    <li>Security &amp; data<small>Privacy, access, integrity</small></li>
+    <li>Troubleshooting &amp; FAQ</li>
+    <li>Glossary</li>
+  </ol>
+</div>
+
+<!-- 1 -->
+<section class="flow">
+  <h1>1 · Introduction</h1>
+  <p class="lead">KLiXO Coach is a web portal that lets a coaching centre run daily attendance and its class timetable from a phone or computer — no spreadsheets to touch.</p>
+  <p>Teachers open their classes for the day and tap each student Present, Absent or Late. Owners get a live dashboard (overall attendance, students who are falling behind, schedule problems) and full control of the centre's data: students, batches, enrollments, teachers, rooms, holidays and settings.</p>
+  <h3>Two kinds of users</h3>
+  <table>
+    <tr><th>Role</th><th>What they can do</th><th>Where they land after signing in</th></tr>
+    <tr><td><b>Teacher</b></td><td>See and mark their own classes (today and past).</td><td>Today</td></tr>
+    <tr><td><b>Owner</b></td><td>Everything a teacher can do, plus the dashboard and all centre management. May also teach.</td><td>Dashboard</td></tr>
+  </table>
+  <div class="box note"><b>Note</b> The portal works on any modern phone or laptop browser. There is nothing to install.</div>
+</section>
+
+<!-- 2 -->
+<section>
+  <h1>2 · Signing in</h1>
+  <p>Open the portal address and sign in with your <b>phone number</b> and <b>PIN</b>. Your PIN is set by the centre owner.</p>
+  <ol>
+    <li>Go to the portal address (e.g. <code>klixo-coach.vercel.app</code>).</li>
+    <li>Type your registered <b>phone number</b>.</li>
+    <li>Type your <b>PIN</b>.</li>
+    <li>Tap <b>Sign in</b>.</li>
+  </ol>
+  <figure><img src="screenshots/login.png" alt="Sign-in screen" /><figcaption>The sign-in screen</figcaption></figure>
+  <div class="box warn"><b>Locked out?</b> After several wrong PINs in a row, sign-in is paused for about 15 minutes to keep the account safe. Wait and try again, or ask the owner to reset your PIN.</div>
+  <div class="box tip"><b>Tip</b> Sessions stay signed in for 12 hours, then ask for the PIN again. Use <b>Sign out</b> (top-right) on a shared device.</div>
+</section>
+
+<!-- 3 -->
+<section>
+  <h1>3 · Getting around</h1>
+  <p>The bar at the top is the same on every screen. Teachers see <b>Today</b>. Owners also see <b>Dashboard</b>, <b>Timetable</b> and <b>Manage</b>. Your name and role sit on the right, next to <b>Sign out</b>.</p>
+  <figure class="phone"><img src="screenshots/m-manage.png" alt="Mobile layout" /><figcaption>On a phone the menu sits on its own row and scrolls sideways if needed</figcaption></figure>
+  <div class="box note"><b>Note</b> Owner-only screens are hidden from teachers, and are protected on the server too — a teacher cannot reach them by typing the address.</div>
+</section>
+
+<!-- 4 -->
+<section>
+  <h1>4 · Teacher — Today</h1>
+  <p class="lead">Your home screen. It lists the classes you teach for the selected day, with how many students are present out of the roster.</p>
+  <figure><img src="screenshots/teacher-today.png" alt="Teacher Today screen" /><figcaption>A teacher's classes for the day</figcaption></figure>
+  <ul>
+    <li>Each card shows the batch, time, room, and a <b>marked / unmarked</b> status.</li>
+    <li>Use the <b>date arrows</b> to look at earlier days. Future days can't be marked.</li>
+    <li>Tap a class to open its roster and mark attendance.</li>
+  </ul>
+  <div class="box note"><b>Note</b> You only see classes assigned to you (including any you are covering as a substitute). The owner sees every class.</div>
+</section>
+
+<!-- 5 -->
+<section>
+  <h1>5 · Marking attendance</h1>
+  <p>Open a class to see its students. Set each one to <b>Present</b>, <b>Absent</b> or <b>Late</b>, then save.</p>
+  <figure><img src="screenshots/teacher-mark.png" alt="Marking a class" /><figcaption>The class roster — tap a status for each student</figcaption></figure>
+  <ol>
+    <li>Tap the status for each student (Present / Absent / Late).</li>
+    <li>Tap <b>Save</b> at the bottom.</li>
+  </ol>
+  <div class="box tip"><b>Tip</b> The roster only lists students whose enrollment had started by that date — late joiners don't appear on earlier classes, so percentages stay fair.</div>
+  <div class="box warn"><b>Can't mark?</b> Cancelled classes and future dates can't be marked.</div>
+</section>
+
+<!-- 6 -->
+<section>
+  <h1>6 · Correcting past attendance</h1>
+  <p>Open any past class and change a student's status. The portal records <i>how</i> each mark was made so corrections are transparent.</p>
+  <figure><img src="screenshots/mark-roster.png" alt="Past class roster" /><figcaption>Re-opening a class shows each student's saved status</figcaption></figure>
+  <table>
+    <tr><th>Situation</th><th>What happens</th></tr>
+    <tr><td>Marking today, first time</td><td>Saved as a normal app mark — no reason needed.</td></tr>
+    <tr><td>Filling in a class from the past that was never marked</td><td>Saved as a manual <b>backfill</b> with one shared reason.</td></tr>
+    <tr><td>Changing a student's already-saved status</td><td>Saved as a <b>manual correction</b> — that student needs its own reason.</td></tr>
+    <tr><td>A student you didn't change</td><td>Left exactly as it was (no new record).</td></tr>
+  </table>
+  <div class="box note"><b>Note</b> Every manual mark and its reason appears in the owner's <b>Manual-mark audit</b> on the dashboard.</div>
+</section>
+
+<!-- 7 -->
+<section>
+  <h1>7 · Owner — Dashboard</h1>
+  <p class="lead">The owner's home screen: a live read of attendance across the centre, plus health checks for the schedule and data.</p>
+  <figure><img src="screenshots/owner-dashboard.png" alt="Owner dashboard" /><figcaption>Overall attendance, defaulters, by-batch bars and the manual-mark audit</figcaption></figure>
+  <ul>
+    <li><b>Top tiles</b> — overall attendance %, marks recorded, students tracked, and how many are below the threshold.</li>
+    <li><b>Schedule health</b> — a banner flagging timetable clashes (tap through to the Timetable).</li>
+    <li><b>Data integrity</b> — a banner if a direct spreadsheet edit left a broken reference (e.g. a class pointing at a deleted room).</li>
+    <li><b>Attendance by batch</b> and <b>Defaulters</b> — who is falling below the threshold.</li>
+    <li><b>Manual-mark audit</b> — every correction, who made it, when and why.</li>
+  </ul>
+</section>
+
+<!-- 8 -->
+<section>
+  <h1>8 · Owner — Today &amp; extra classes</h1>
+  <p>The owner's Today screen lists <b>all</b> classes for the day. You can also schedule a one-off <b>extra class</b> that isn't part of the weekly timetable.</p>
+  <figure><img src="screenshots/owner-today.png" alt="Owner Today" /><figcaption>Every class for the day, across all teachers</figcaption></figure>
+  <h3>Add an extra class</h3>
+  <figure><img src="screenshots/new-session.png" alt="New extra class form" /><figcaption>Scheduling a one-off class</figcaption></figure>
+  <ol>
+    <li>Choose the batch, date, time, room and teacher.</li>
+    <li>Save. If the room or teacher is already booked at that time, the portal blocks it and tells you what clashes.</li>
+  </ol>
+  <div class="box note"><b>Note</b> A student double-booking is allowed but warns you; a room or teacher double-booking is blocked.</div>
+</section>
+
+<!-- 9 -->
+<section>
+  <h1>9 · Timetable</h1>
+  <p class="lead">The weekly plan. Each <b>rule</b> (a batch on certain weekdays at a time, in a room, with a teacher) generates the actual dated classes automatically.</p>
+  <figure><img src="screenshots/timetable.png" alt="Timetable" /><figcaption>Recurring rules, with a clash banner at the top</figcaption></figure>
+  <h3>Add or edit a rule</h3>
+  <figure><img src="screenshots/timetable-new.png" alt="New timetable rule" /><figcaption>Creating a recurring rule</figcaption></figure>
+  <ol>
+    <li>Pick the batch, the weekdays, start/end time, room and teacher.</li>
+    <li>Set <b>Effective from</b> (and optionally <b>Effective to</b>).</li>
+    <li>Save — classes are generated for the next 30 days.</li>
+  </ol>
+  <div class="box note"><b>Editing is safe</b> Changing a rule regenerates only <i>future, unmarked</i> classes. Past classes and any class that already has attendance are frozen, and substitutes you set are kept.</div>
+  <figure><img src="screenshots/timetable-edit.png" alt="Edit timetable rule" /><figcaption>Editing a rule, with the option to end it from a date</figcaption></figure>
+  <div class="box tip"><b>Generation</b> Classes are also re-generated automatically every night, so the next 30 days are always populated.</div>
+</section>
+
+<!-- 10 -->
+<section>
+  <h1>10 · Manage hub</h1>
+  <p>One place for all centre data. Each card opens a manager and shows a live count.</p>
+  <figure><img src="screenshots/manage-hub.png" alt="Manage hub" /><figcaption>The Manage hub</figcaption></figure>
+  <div class="box note"><b>Note</b> Everything here is owner-only. Changes save straight to the centre's records — there is no separate spreadsheet step.</div>
+</section>
+
+<!-- 11 -->
+<section>
+  <h1>11 · Students</h1>
+  <p>Add students, edit their details, and open a profile with their batches and full attendance history.</p>
+  <figure><img src="screenshots/students-list.png" alt="Students list" /><figcaption>The student list (active first)</figcaption></figure>
+  <h3>Add a student</h3>
+  <figure><img src="screenshots/student-new.png" alt="New student form" /><figcaption>Adding a student</figcaption></figure>
+  <ol>
+    <li>Open <b>Students → + Add student</b>.</li>
+    <li>Enter the name and join date (phone numbers are optional).</li>
+    <li>Save, then open the profile to enroll them in batches.</li>
+  </ol>
+  <h3>Profile, history &amp; enrollments</h3>
+  <figure><img src="screenshots/student-profile.png" alt="Student profile" /><figcaption>Attendance %, enrollments and recent marks</figcaption></figure>
+  <ul>
+    <li><b>Attendance</b> — present-of-total and a colour-coded percentage.</li>
+    <li><b>Enrollments</b> — current and past batches; <b>End</b> stops an enrollment from a date.</li>
+    <li><b>Add to batch</b> — enroll into another batch (warns if it clashes with an existing one).</li>
+    <li><b>Deactivate</b> — removes them from future rosters while keeping all history.</li>
+  </ul>
+  <div class="box note"><b>Privacy</b> Phone numbers are visible only here, to owners. Teachers never see student phone numbers.</div>
+</section>
+
+<!-- 12 -->
+<section>
+  <h1>12 · Batches &amp; enrollments</h1>
+  <p>A <b>batch</b> is a class group (subject, level, fee) with a default teacher and room. Enroll students from either the batch or the student side.</p>
+  <figure><img src="screenshots/batches-list.png" alt="Batches list" /><figcaption>The batch list</figcaption></figure>
+  <h3>Create a batch</h3>
+  <figure><img src="screenshots/batch-new.png" alt="New batch form" /><figcaption>Creating a batch</figcaption></figure>
+  <h3>Manage a batch &amp; its students</h3>
+  <figure><img src="screenshots/batch-detail.png" alt="Batch detail" /><figcaption>Edit details, view enrolled students, add or end enrollments</figcaption></figure>
+  <ol>
+    <li>Edit the batch name, subject, teacher, room, fee and level at the top.</li>
+    <li>Under <b>Students</b>, use <b>Enroll student</b> to add one (choose a start date).</li>
+    <li>Use <b>End</b> next to a student to withdraw them from a date.</li>
+    <li><b>Deactivate</b> hides the batch from new rules and pickers; existing classes stay.</li>
+  </ol>
+  <div class="box tip"><b>Tip</b> A withdrawn student still appears on the rosters for the days they were enrolled, so past attendance stays correct.</div>
+</section>
+
+<!-- 13 -->
+<section>
+  <h1>13 · Teachers &amp; PINs</h1>
+  <p>Add staff, set roles, reset PINs and activate/deactivate accounts.</p>
+  <figure><img src="screenshots/teachers-list.png" alt="Teachers list" /><figcaption>Staff list with role and active status</figcaption></figure>
+  <h3>Add a teacher</h3>
+  <figure><img src="screenshots/teacher-new.png" alt="New teacher form" /><figcaption>Adding a teacher with a starting PIN</figcaption></figure>
+  <ol>
+    <li>Enter name, phone, role (Teacher or Owner) and a 4–6 digit PIN.</li>
+    <li>Save. They can now sign in with that phone + PIN.</li>
+  </ol>
+  <h3>Edit, reset PIN, deactivate</h3>
+  <figure><img src="screenshots/teacher-edit.png" alt="Edit teacher" /><figcaption>Edit details, reset the PIN, or deactivate</figcaption></figure>
+  <ul>
+    <li><b>Reset PIN</b> — set a new 4–6 digit PIN if a teacher is locked out or forgot it.</li>
+    <li><b>Deactivate</b> — stops sign-in while keeping records.</li>
+  </ul>
+  <div class="box warn"><b>Last owner is protected</b> You can't deactivate or demote the only remaining active owner — that would lock the centre out.</div>
+  <div class="box note"><b>Note</b> A phone number can belong to only one teacher.</div>
+</section>
+
+<!-- 14 -->
+<section>
+  <h1>14 · Rooms</h1>
+  <p>Manage the rooms classes are held in, and their capacity.</p>
+  <figure><img src="screenshots/rooms-list.png" alt="Rooms list" /><figcaption>Add a room inline; each shows capacity and how many things use it</figcaption></figure>
+  <figure><img src="screenshots/room-edit.png" alt="Edit room" /><figcaption>Edit a room, or delete it</figcaption></figure>
+  <div class="box warn"><b>Delete is guarded</b> A room can't be deleted while an active batch, a timetable rule, or a future class still uses it. Reassign those first.</div>
+</section>
+
+<!-- 15 -->
+<section>
+  <h1>15 · Holidays</h1>
+  <p>Mark dates the centre is closed. Generated classes on those dates are removed automatically.</p>
+  <figure><img src="screenshots/holidays.png" alt="Holidays" /><figcaption>Add or remove holiday dates</figcaption></figure>
+  <ol>
+    <li>Pick a date, type a name, tap <b>+ Add</b>.</li>
+    <li>The schedule re-generates: future unmarked classes on that day are removed.</li>
+    <li>Removing a holiday puts those classes back.</li>
+  </ol>
+  <div class="box note"><b>Note</b> Classes that already have attendance are never removed by a holiday change.</div>
+</section>
+
+<!-- 16 -->
+<section>
+  <h1>16 · Settings</h1>
+  <p>Centre-wide options used across the portal.</p>
+  <figure><img src="screenshots/settings.png" alt="Settings" /><figcaption>Centre name, attendance threshold and branding</figcaption></figure>
+  <table>
+    <tr><th>Setting</th><th>What it controls</th></tr>
+    <tr><td>Centre name</td><td>Shown across the portal.</td></tr>
+    <tr><td>Attendance threshold</td><td>The % below which a student is a "defaulter" on the dashboard.</td></tr>
+    <tr><td>Changeover buffer</td><td>Minutes required between two classes in the same room (used by clash checks).</td></tr>
+    <tr><td>Week starts on / Logo URL</td><td>Display preferences and branding.</td></tr>
+  </table>
+</section>
+
+<!-- 17 -->
+<section>
+  <h1>17 · How attendance % works</h1>
+  <ul>
+    <li><b>Each class generates from the timetable.</b> A rule (batch + weekdays + time + room + teacher) creates dated classes for 30 days ahead.</li>
+    <li><b>The roster is enrollment-aware.</b> A student counts for a class only if their enrollment covers that date — late joiners and withdrawn students are handled automatically.</li>
+    <li><b>Percentage = present ÷ fully-marked classes.</b> Unmarked classes don't count against anyone. The latest saved mark per class is the one that counts.</li>
+    <li><b>Clash rules.</b> Same room or same teacher overlapping = blocked. Same student in two overlapping classes = warning.</li>
+  </ul>
+</section>
+
+<!-- 18 -->
+<section>
+  <h1>18 · Security &amp; data</h1>
+  <ul>
+    <li><b>Sign-in:</b> phone + PIN; sessions last 12 hours; repeated wrong PINs pause sign-in for ~15 minutes.</li>
+    <li><b>Roles:</b> owner-only screens are enforced on the server, not just hidden.</li>
+    <li><b>Privacy:</b> student phone numbers are owner-only; teachers see names only.</li>
+    <li><b>Integrity:</b> the dashboard flags broken references if records are edited outside the portal.</li>
+    <li><b>Records are kept:</b> deactivating a student, teacher or batch never deletes their history.</li>
+  </ul>
+</section>
+
+<!-- 19 -->
+<section>
+  <h1>19 · Troubleshooting &amp; FAQ</h1>
+  <table>
+    <tr><th>Question / problem</th><th>Answer</th></tr>
+    <tr><td>"Invalid phone or PIN."</td><td>Check the phone number is the registered one and the PIN is correct. Ask the owner to reset the PIN if needed.</td></tr>
+    <tr><td>"Too many attempts."</td><td>Wait ~15 minutes, or have the owner reset the PIN.</td></tr>
+    <tr><td>A class won't let me mark it</td><td>It's cancelled, or it's a future date. Past and current classes can be marked.</td></tr>
+    <tr><td>A student isn't on the roster</td><td>Their enrollment may start after that date, may have ended, or they're deactivated.</td></tr>
+    <tr><td>"Clash" when saving a class/rule</td><td>The room or teacher is already booked at that time. Change the time, room or teacher.</td></tr>
+    <tr><td>Can't delete a room</td><td>It's still used by a batch, rule, or future class. Reassign those first.</td></tr>
+    <tr><td>Dashboard shows an integrity warning</td><td>A record points at something deleted (often from a manual spreadsheet edit). Fix the reference in the relevant manager.</td></tr>
+  </table>
+</section>
+
+<!-- 20 -->
+<section>
+  <h1>20 · Glossary</h1>
+  <table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td>Batch</td><td>A class group (subject/level) with a default teacher and room.</td></tr>
+    <tr><td>Enrollment</td><td>A student's membership in a batch, with a start (and optional end) date.</td></tr>
+    <tr><td>Timetable rule</td><td>A recurring weekly slot that generates dated classes.</td></tr>
+    <tr><td>Session / class</td><td>A single dated class, generated from a rule or added as an extra.</td></tr>
+    <tr><td>Defaulter</td><td>A student below the attendance threshold.</td></tr>
+    <tr><td>Backfill</td><td>Marking a past class that was never marked.</td></tr>
+    <tr><td>Manual mark</td><td>A correction or backfill, recorded with a reason.</td></tr>
+    <tr><td>Substitute</td><td>A different teacher covering a single class.</td></tr>
+  </table>
+  <p class="muted" style="margin-top:1.4em">© KLiXO Coach · User Manual v1.0 · June 2026</p>
+</section>
+
+</body>
+</html>

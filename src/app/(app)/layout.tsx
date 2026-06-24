@@ -47,6 +47,11 @@ export default async function AppLayout({
 
           <div className="flex items-center gap-3">
             <div className="hidden sm:block">{userBlock}</div>
+            {/* compact identity on mobile (full userBlock is in the desktop row) */}
+            <div className="flex items-center gap-1.5 sm:hidden">
+              <Avatar name={user.name} />
+              <RoleChip role={user.role} />
+            </div>
             <form action={logout}>
               <button className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                 Sign out
@@ -55,20 +60,17 @@ export default async function AppLayout({
           </div>
         </div>
 
-        {/* mobile row: nav (left) + user (right) */}
-        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 sm:hidden">
-          <nav className="flex items-center gap-1">
-            <NavLink href="/today">Today</NavLink>
-            {user.role === "owner" ? (
-              <>
-                <NavLink href="/dashboard">Dashboard</NavLink>
-                <NavLink href="/timetable">Timetable</NavLink>
-                <NavLink href="/manage">Manage</NavLink>
-              </>
-            ) : null}
-          </nav>
-          {userBlock}
-        </div>
+        {/* mobile nav: its own full-width row, scrolls horizontally if it overflows */}
+        <nav className="flex items-center gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:hidden">
+          <NavLink href="/today">Today</NavLink>
+          {user.role === "owner" ? (
+            <>
+              <NavLink href="/dashboard">Dashboard</NavLink>
+              <NavLink href="/timetable">Timetable</NavLink>
+              <NavLink href="/manage">Manage</NavLink>
+            </>
+          ) : null}
+        </nav>
       </header>
 
       <div className="flex-1">{children}</div>
