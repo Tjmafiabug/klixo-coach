@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
-import { getTodaySessions, effectiveToday } from "@/lib/data";
+import { getSessionsOnDate, effectiveToday } from "@/lib/data";
+import { TodayDateNav } from "./TodayDateNav";
 
 export const dynamic = "force-dynamic";
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 function prettyDate(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -21,15 +24,18 @@ export default async function TodayPage({
     marked?: string;
     cancelled?: string;
     added?: string;
+    nochange?: string;
+    date?: string;
   }>;
 }) {
   const user = (await getSession())!;
-  const [sessions, today, sp] = await Promise.all([
-    getTodaySessions(user.teacherId),
-    effectiveToday(),
-    searchParams,
-  ]);
+  const isOwner = user.role === "owner";
+  const [today, sp] = await Promise.all([effectiveToday(), searchParams]);
+  // selected date: valid ISO, never in the future
+  const date = sp.date && ISO.test(sp.date) && sp.date <= today ? sp.date : today;
+  const sessions = await getSessionsOnDate(date, user.teacherId, isOwner);
 
+  const isToday = date === today;
   const pending = sessions.filter((s) => !s.marked).length;
   const notice = sp.marked
     ? "Attendance saved."
@@ -37,17 +43,21 @@ export default async function TodayPage({
       ? "Session cancelled."
       : sp.added
         ? "Extra class added."
-        : null;
+        : sp.nochange
+          ? "No changes to save."
+          : null;
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Today&rsquo;s sessions</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{prettyDate(today)}</p>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {isToday ? "Today’s sessions" : "Sessions"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">{prettyDate(date)}</p>
         </div>
         <div className="flex items-center gap-2">
-          {sessions.length > 0 ? (
+          {sessions.length > 0 && isToday ? (
             <span className="rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground tabular-nums">
               {pending} to mark
             </span>
@@ -61,6 +71,10 @@ export default async function TodayPage({
         </div>
       </div>
 
+      <div className="mt-3">
+        <TodayDateNav date={date} today={today} />
+      </div>
+
       {notice ? (
         <p className="mt-4 flex items-center gap-2 rounded-xl border border-success/20 bg-success-subtle px-3 py-2.5 text-sm font-medium text-success">
           <CheckIcon /> {notice}
@@ -69,9 +83,9 @@ export default async function TodayPage({
 
       {sessions.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-border bg-surface p-10 text-center">
-          <p className="font-medium text-foreground">No sessions today</p>
+          <p className="font-medium text-foreground">No sessions</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            You have no scheduled classes for {today}.
+            {isToday ? "No scheduled classes today." : `No classes on ${date}.`}
           </p>
         </div>
       ) : (

@@ -47,9 +47,16 @@ export interface TodaySession extends SessionMeta {
   presentCount: number;
 }
 
-/** Today's sessions for a teacher (incl. sessions they substitute), enriched with roster + marked state. */
-export async function getTodaySessions(teacherId: string): Promise<TodaySession[]> {
-  const today = await effectiveToday();
+/**
+ * Sessions on a given date, enriched with roster + marked state.
+ * Owner sees all sessions that day; a teacher sees only their own (incl. ones
+ * they substitute). Cancelled sessions are excluded from the markable list.
+ */
+export async function getSessionsOnDate(
+  date: string,
+  teacherId: string,
+  isOwner: boolean,
+): Promise<TodaySession[]> {
   const [sessions, batches, rooms, enrolls, attendance] = await Promise.all([
     readTab<Session>("Sessions"),
     readTab<Batch>("Batches"),
@@ -63,14 +70,16 @@ export async function getTodaySessions(teacherId: string): Promise<TodaySession[
   const rosterByBatch = new Map<string, number>();
   for (const e of enrolls) {
     if (e.status !== "active") continue;
+    if (e.start_date > date) continue;
+    if (e.end_date !== "" && e.end_date < date) continue;
     rosterByBatch.set(e.batch_id, (rosterByBatch.get(e.batch_id) ?? 0) + 1);
   }
 
   return sessions
     .filter(
       (s) =>
-        s.date === today &&
-        s.teacher_id === teacherId &&
+        s.date === date &&
+        (isOwner || s.teacher_id === teacherId) &&
         (s.status === "scheduled" || s.status === "extra"),
     )
     .sort((a, b) => a.start.localeCompare(b.start))
@@ -110,13 +119,19 @@ export async function getSessionMeta(
 export interface RosterEntry {
   student_id: string;
   name: string;
-  status: AttendanceStatus;
+  /** Saved status for this session, or null if this student was never marked here. */
+  saved: AttendanceStatus | null;
 }
 
-/** Active roster for a batch, prefilled with the latest mark for this session (default present). */
+/**
+ * Roster for a session: students enrolled (active) in the batch whose enrollment
+ * had started by `sessionDate` (late joiners excluded from earlier sessions —
+ * N11/A4). Each entry carries its saved mark (null = never marked).
+ */
 export async function getRoster(
   batchId: string,
   sessionId: string,
+  sessionDate: string,
 ): Promise<{ roster: RosterEntry[]; alreadyMarked: boolean }> {
   const [enrolls, students, attendance] = await Promise.all([
     readTab<Enrollment>("Enrollments"),
@@ -125,20 +140,26 @@ export async function getRoster(
   ]);
   const studentById = new Map(students.map((s) => [s.student_id, s]));
   const ids = enrolls
-    .filter((e) => e.batch_id === batchId && e.status === "active")
+    .filter(
+      (e) =>
+        e.batch_id === batchId &&
+        e.status === "active" &&
+        e.start_date <= sessionDate &&
+        (e.end_date === "" || e.end_date >= sessionDate),
+    )
     .map((e) => e.student_id);
 
   const latest = latestPerStudent(attendance, sessionId);
-  const roster = ids
+  const roster: RosterEntry[] = ids
     .map((id) => studentById.get(id))
     .filter((s): s is Student => !!s && s.status === "active")
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((s) => ({
       student_id: s.student_id,
       name: s.name,
-      status: (latest.get(s.student_id)?.status ?? "present") as AttendanceStatus,
+      saved: (latest.get(s.student_id)?.status ?? null) as AttendanceStatus | null,
     }));
-  return { roster, alreadyMarked: roster.some((r) => latest.has(r.student_id)) };
+  return { roster, alreadyMarked: roster.some((r) => r.saved !== null) };
 }
 
 function latestPerStudent(
@@ -156,20 +177,25 @@ function latestPerStudent(
 }
 
 /**
- * Save attendance for a session. In-place: existing rows for this
- * (session, student) are updated; only new students are appended — no
- * duplicate rows on re-mark. `method` = "app" (normal tap) or "manual"
- * (corrected / backfilled entry, with a reason for the owner audit).
+ * Save attendance. Each mark carries its own method/reason (the action layer
+ * decides app vs manual per student). In-place: existing (session, student)
+ * rows are updated; only new students are appended — never duplicates.
+ * Pass only the students that should be written (unchanged ones are omitted
+ * and left untouched).
  */
 export async function submitAttendance(params: {
   sessionId: string;
   batchId: string;
   date: string;
   markedBy: string;
-  method: "app" | "manual";
-  reason?: string;
-  marks: { studentId: string; status: AttendanceStatus }[];
+  marks: {
+    studentId: string;
+    status: AttendanceStatus;
+    method: "app" | "manual";
+    reason: string;
+  }[];
 }): Promise<number> {
+  if (params.marks.length === 0) return 0;
   const attendance = await readTab<AttendanceRow>("Attendance");
 
   // sheet row number (1-based, +2 for header) of the latest row per student in this session
@@ -186,7 +212,6 @@ export async function submitAttendance(params: {
   });
 
   const ts = centerTimestamp();
-  const reason = params.method === "manual" ? (params.reason ?? "").trim() : "";
   const updates: { range: string; values: string[][] }[] = [];
   const appends: string[][] = [];
   let next = max;
@@ -204,9 +229,9 @@ export async function submitAttendance(params: {
       m.studentId,
       m.status,
       params.markedBy,
-      params.method,
+      m.method,
       ts,
-      reason,
+      m.method === "manual" ? m.reason.trim() : "",
     ];
     if (existingRow) {
       updates.push({ range: `Attendance!A${existingRow}:J${existingRow}`, values: [row] });

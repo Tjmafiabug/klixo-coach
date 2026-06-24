@@ -5,7 +5,9 @@ import bcrypt from "bcryptjs";
 import {
   getTeacherByPhone,
   getSessionMeta,
+  getRoster,
   submitAttendance,
+  effectiveToday,
   cancelSession as cancelSessionData,
   setSubstitute,
   createExtraClass,
@@ -53,23 +55,61 @@ export async function submitMarks(formData: FormData): Promise<void> {
   const session = await getSessionMeta(sessionId);
   if (!session) redirect("/today");
 
-  const marks = JSON.parse(String(formData.get("marks") ?? "[]")) as {
+  // can't mark cancelled or future sessions
+  const today = await effectiveToday();
+  if (session.status === "cancelled" || session.date > today) {
+    redirect("/today");
+  }
+  const isPast = session.date < today;
+
+  const submitted = JSON.parse(String(formData.get("marks") ?? "[]")) as {
     studentId: string;
     status: AttendanceStatus;
   }[];
-  if (marks.length === 0) redirect(`/mark/${sessionId}`);
+  const reasons = JSON.parse(String(formData.get("reasons") ?? "{}")) as Record<
+    string,
+    string
+  >;
+  const backfillReason = String(formData.get("backfillReason") ?? "").trim();
 
-  const method = formData.get("method") === "manual" ? "manual" : "app";
-  const reason = String(formData.get("reason") ?? "").trim();
+  // saved status per student (server-authoritative — don't trust the client)
+  const { roster } = await getRoster(session.batch_id, sessionId, session.date);
+  const savedByStudent = new Map(roster.map((r) => [r.student_id, r.saved]));
+
+  const writes: {
+    studentId: string;
+    status: AttendanceStatus;
+    method: "app" | "manual";
+    reason: string;
+  }[] = [];
+  for (const m of submitted) {
+    if (!savedByStudent.has(m.studentId)) continue; // not on roster — ignore
+    const saved = savedByStudent.get(m.studentId) ?? null;
+    if (saved === null) {
+      // never marked → backfill (past) requires a reason; today is a normal app mark
+      if (isPast) {
+        if (!backfillReason) redirect(`/mark/${sessionId}?error=backfill`);
+        writes.push({ studentId: m.studentId, status: m.status, method: "manual", reason: backfillReason });
+      } else {
+        writes.push({ studentId: m.studentId, status: m.status, method: "app", reason: "" });
+      }
+    } else if (m.status !== saved) {
+      // correction → manual + per-student reason
+      const r = (reasons[m.studentId] ?? "").trim();
+      if (!r) redirect(`/mark/${sessionId}?error=reason`);
+      writes.push({ studentId: m.studentId, status: m.status, method: "manual", reason: r });
+    }
+    // unchanged existing mark → no write
+  }
+
+  if (writes.length === 0) redirect("/today?nochange=1");
 
   await submitAttendance({
     sessionId: session.session_id,
     batchId: session.batch_id,
     date: session.date,
     markedBy: user.teacherId,
-    method,
-    reason,
-    marks,
+    marks: writes,
   });
   redirect(`/today?marked=${encodeURIComponent(session.batch_id)}`);
 }
