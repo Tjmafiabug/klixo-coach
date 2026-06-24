@@ -28,6 +28,7 @@ export default async function TodayPage({
     nochange?: string;
     generated?: string;
     removed?: string;
+    warn?: string;
     date?: string;
   }>;
 }) {
@@ -91,6 +92,12 @@ export default async function TodayPage({
       {notice ? (
         <p className="mt-4 flex items-center gap-2 rounded-xl border border-success/20 bg-success-subtle px-3 py-2.5 text-sm font-medium text-success">
           <CheckIcon /> {notice}
+        </p>
+      ) : null}
+
+      {sp.warn === "student" ? (
+        <p className="mt-3 rounded-xl border border-warning/20 bg-warning-subtle px-3 py-2.5 text-sm font-medium text-warning">
+          Heads up: a student in this batch has another class at the same time.
         </p>
       ) : null}
 

@@ -428,6 +428,143 @@ export async function generateSessions(): Promise<{
   return { added: appends.length, removed: orphanRows.length, horizonEnd: end };
 }
 
+// ---------------- Timetable engine: clash detection ----------------
+
+const toMin = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+// half-open [start,end) overlap; `buf` (minutes) extends both ends (room changeover)
+const overlaps = (
+  aS: string, aE: string, bS: string, bE: string, buf = 0,
+) => toMin(aS) < toMin(bE) + buf && toMin(bS) < toMin(aE) + buf;
+
+const shareAny = (a: Set<string>, b: Set<string>) => {
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  for (const x of small) if (big.has(x)) return true;
+  return false;
+};
+
+export type ClashType = "room" | "teacher" | "student";
+export interface Clash {
+  date: string;
+  type: ClashType;
+  blocking: boolean; // room/teacher block; student is a warning (PLAN §8)
+  a: string;
+  b: string;
+}
+
+async function activeStudentsByBatch(
+  enrolls: Enrollment[],
+  onDate?: string,
+): Promise<Map<string, Set<string>>> {
+  const m = new Map<string, Set<string>>();
+  for (const e of enrolls) {
+    if (e.status !== "active") continue;
+    if (onDate && (e.start_date > onDate || (e.end_date !== "" && e.end_date < onDate)))
+      continue;
+    if (!m.has(e.batch_id)) m.set(e.batch_id, new Set());
+    m.get(e.batch_id)!.add(e.student_id);
+  }
+  return m;
+}
+
+/** Read-time schedule-health: all clashes among active sessions in the window. */
+export async function scheduleHealth(): Promise<{ clashes: Clash[] }> {
+  const today = await effectiveToday();
+  const end = addDays(today, HORIZON_DAYS);
+  const [sessions, enrolls, batches, rooms, teachers, cfg] = await Promise.all([
+    readTab<Session>("Sessions"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<Batch>("Batches"),
+    readTab<Room>("Rooms"),
+    readTab<Teacher>("Teachers"),
+    config(),
+  ]);
+  const buffer = parseInt(cfg.get("room_changeover_buffer_min") ?? "0", 10) || 0;
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const rName = new Map(rooms.map((r) => [r.room_id, r.name]));
+  const tName = new Map(teachers.map((t) => [t.teacher_id, t.name]));
+  const studentsByBatch = await activeStudentsByBatch(enrolls);
+
+  const label = (s: Session) =>
+    `${bName.get(s.batch_id) ?? s.batch_id} ${s.start}–${s.end} (${rName.get(s.room_id) ?? s.room_id} / ${tName.get(s.teacher_id) ?? s.teacher_id})`;
+
+  const ws = sessions.filter(
+    (s) =>
+      s.date >= today &&
+      s.date <= end &&
+      (s.status === "scheduled" || s.status === "extra"),
+  );
+  const byDate = new Map<string, Session[]>();
+  for (const s of ws) {
+    if (!byDate.has(s.date)) byDate.set(s.date, []);
+    byDate.get(s.date)!.push(s);
+  }
+
+  const clashes: Clash[] = [];
+  for (const [date, list] of byDate) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j];
+        if (a.room_id === b.room_id && overlaps(a.start, a.end, b.start, b.end, buffer))
+          clashes.push({ date, type: "room", blocking: true, a: label(a), b: label(b) });
+        if (a.teacher_id === b.teacher_id && overlaps(a.start, a.end, b.start, b.end))
+          clashes.push({ date, type: "teacher", blocking: true, a: label(a), b: label(b) });
+        if (
+          a.batch_id !== b.batch_id &&
+          overlaps(a.start, a.end, b.start, b.end) &&
+          shareAny(
+            studentsByBatch.get(a.batch_id) ?? new Set(),
+            studentsByBatch.get(b.batch_id) ?? new Set(),
+          )
+        )
+          clashes.push({ date, type: "student", blocking: false, a: label(a), b: label(b) });
+      }
+    }
+  }
+  return { clashes };
+}
+
+/** Write-time clash check for a candidate session (e.g. an adhoc/extra class). */
+export async function clashesForCandidate(cand: {
+  date: string;
+  start: string;
+  end: string;
+  roomId: string;
+  teacherId: string;
+  batchId: string;
+  ignoreSessionId?: string;
+}): Promise<{ blocking: ClashType[]; warnings: ClashType[] }> {
+  const [sessions, enrolls, cfg] = await Promise.all([
+    readTab<Session>("Sessions"),
+    readTab<Enrollment>("Enrollments"),
+    config(),
+  ]);
+  const buffer = parseInt(cfg.get("room_changeover_buffer_min") ?? "0", 10) || 0;
+  const studentsByBatch = await activeStudentsByBatch(enrolls, cand.date);
+  const candStudents = studentsByBatch.get(cand.batchId) ?? new Set();
+
+  const blocking = new Set<ClashType>();
+  const warnings = new Set<ClashType>();
+  for (const s of sessions) {
+    if (s.date !== cand.date) continue;
+    if (s.session_id === cand.ignoreSessionId) continue;
+    if (s.status === "cancelled") continue;
+    if (s.room_id === cand.roomId && overlaps(cand.start, cand.end, s.start, s.end, buffer))
+      blocking.add("room");
+    if (s.teacher_id === cand.teacherId && overlaps(cand.start, cand.end, s.start, s.end))
+      blocking.add("teacher");
+    if (
+      s.batch_id !== cand.batchId &&
+      overlaps(cand.start, cand.end, s.start, s.end) &&
+      shareAny(candStudents, studentsByBatch.get(s.batch_id) ?? new Set())
+    )
+      warnings.add("student");
+  }
+  return { blocking: [...blocking], warnings: [...warnings] };
+}
+
 // ---------------- Owner dashboard stats ----------------
 
 interface Agg {

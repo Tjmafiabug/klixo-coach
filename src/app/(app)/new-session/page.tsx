@@ -4,8 +4,25 @@ import { NewSessionForm } from "./NewSessionForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewSessionPage() {
-  const [options, today] = await Promise.all([getFormOptions(), effectiveToday()]);
+export default async function NewSessionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; with?: string }>;
+}) {
+  const [options, today, sp] = await Promise.all([
+    getFormOptions(),
+    effectiveToday(),
+    searchParams,
+  ]);
+
+  const errorMsg =
+    sp.error === "clash"
+      ? `Clash: this ${sp.with ?? "resource"} is already booked at that time. Pick another time/room/teacher.`
+      : sp.error === "time"
+        ? "End time must be after start time."
+        : sp.error === "missing"
+          ? "Fill in every field."
+          : null;
 
   return (
     <main className="mx-auto w-full max-w-md px-4 py-6">
@@ -29,6 +46,12 @@ export default async function NewSessionPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         Unplanned / make-up session. It becomes markable straight away.
       </p>
+
+      {errorMsg ? (
+        <p className="mt-3 rounded-lg bg-danger-subtle px-3 py-2 text-sm font-medium text-danger">
+          {errorMsg}
+        </p>
+      ) : null}
 
       <NewSessionForm options={options} today={today} />
     </main>

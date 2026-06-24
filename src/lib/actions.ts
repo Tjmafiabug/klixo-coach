@@ -12,6 +12,7 @@ import {
   setSubstitute,
   createExtraClass,
   generateSessions,
+  clashesForCandidate,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import type { AttendanceStatus } from "@/lib/types";
@@ -152,8 +153,14 @@ export async function addExtraClass(formData: FormData): Promise<void> {
   const roomId = String(formData.get("roomId") ?? "").trim();
   const teacherId = String(formData.get("teacherId") ?? "").trim();
   if (!date || !batchId || !start || !end || !roomId || !teacherId) {
-    redirect("/new-session?error=1");
+    redirect("/new-session?error=missing");
+  }
+  if (start >= end) redirect("/new-session?error=time");
+  // room/teacher clash blocks; student clash is a warning (allowed)
+  const clash = await clashesForCandidate({ date, batchId, start, end, roomId, teacherId });
+  if (clash.blocking.length) {
+    redirect(`/new-session?error=clash&with=${clash.blocking.join(",")}`);
   }
   await createExtraClass({ date, batchId, start, end, roomId, teacherId });
-  redirect("/today?added=1");
+  redirect(`/today?added=1${clash.warnings.length ? "&warn=student" : ""}`);
 }
