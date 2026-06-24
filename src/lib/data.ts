@@ -4,6 +4,7 @@ import {
   appendRows,
   updateValues,
   batchUpdateValues,
+  deleteRows,
 } from "@/lib/sheets";
 import { centerToday, centerTimestamp } from "@/lib/time";
 import type {
@@ -353,31 +354,32 @@ export async function getRules(): Promise<TimetableRule[]> {
 
 /**
  * Generate recurring Sessions from Timetable rules over [today, today+horizon].
- * ADD-only + idempotent: creates the (slot_id, date) sessions that don't exist
- * yet, skipping holidays / out-of-effective-range / wrong-weekday. Never
- * duplicates and never touches existing sessions (so substitutes, cancellations
- * and marked attendance are preserved). Orphan removal is B2; rule-edit regen is B4.
+ * - ADD missing (slot_id, date) sessions (skip holidays / out-of-range / wrong day).
+ * - REMOVE orphans: recurring sessions in the window whose (slot_id, date) the rules
+ *   no longer want (holiday added, rule's days changed, rule expired) — unless frozen.
+ * Idempotent. Frozen = has attendance, or status=cancelled, or date < today; frozen
+ * sessions (and all adhoc sessions) are never added/removed, so substitutes,
+ * cancellations and marked attendance are preserved.
  */
-export async function generateSessions(): Promise<{ added: number; horizonEnd: string }> {
+export async function generateSessions(): Promise<{
+  added: number;
+  removed: number;
+  horizonEnd: string;
+}> {
   const today = await effectiveToday();
   const end = addDays(today, HORIZON_DAYS);
 
-  const [rules, sessions, holidaysTab] = await Promise.all([
+  const [rules, sessions, holidaysTab, attendance] = await Promise.all([
     readTab<TimetableRule>("Timetable"),
     readTab<Session>("Sessions"),
     readTab<{ date: string; name: string }>("Holidays"),
+    readTab<AttendanceRow>("Attendance"),
   ]);
   const holidays = new Set(holidaysTab.map((h) => h.date));
+  const hasAttendance = new Set(attendance.map((a) => a.session_id));
 
-  const existing = new Set<string>();
-  let max = 0;
-  for (const s of sessions) {
-    if (s.source === "recurring" && s.slot_id) existing.add(`${s.slot_id}|${s.date}`);
-    const n = parseInt(s.session_id.replace(/\D/g, ""), 10);
-    if (!Number.isNaN(n) && n < 9000 && n > max) max = n; // keep clear of adhoc 9000+ range
-  }
-
-  const appends: string[][] = [];
+  // what the rules want in the window
+  const desired = new Set<string>();
   for (const r of rules) {
     const days = r.day_of_week.split(",").map((x) => x.trim());
     for (let d = today; d <= end; d = addDays(d, 1)) {
@@ -385,19 +387,45 @@ export async function generateSessions(): Promise<{ added: number; horizonEnd: s
       if (!days.includes(dowOf(d))) continue;
       if (!(r.effective_from <= d && (r.effective_to === "" || r.effective_to >= d)))
         continue;
-      const key = `${r.slot_id}|${d}`;
-      if (existing.has(key)) continue;
-      existing.add(key);
-      const id = `SES${String(++max).padStart(4, "0")}`;
-      appends.push([
-        id, d, r.batch_id, r.start, r.end, r.room_id, r.teacher_id,
-        "scheduled", "recurring", r.slot_id,
-      ]);
+      desired.add(`${r.slot_id}|${d}`);
     }
   }
 
+  const existing = new Set<string>();
+  let max = 0;
+  const orphanRows: number[] = [];
+  sessions.forEach((s, i) => {
+    const n = parseInt(s.session_id.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n < 9000 && n > max) max = n; // keep clear of adhoc 9000+
+    if (s.source !== "recurring" || !s.slot_id) return; // adhoc untouched
+    const key = `${s.slot_id}|${s.date}`;
+    existing.add(key);
+    // orphan? in window, not desired, not frozen
+    const frozen =
+      s.date < today || s.status === "cancelled" || hasAttendance.has(s.session_id);
+    if (s.date >= today && s.date <= end && !desired.has(key) && !frozen) {
+      orphanRows.push(i + 2); // 1-based sheet row
+    }
+  });
+
+  // rules expand into row data for missing keys
+  const appends: string[][] = [];
+  const rowFor = new Map<string, TimetableRule>();
+  for (const r of rules) rowFor.set(r.slot_id, r);
+  for (const key of desired) {
+    if (existing.has(key)) continue;
+    const [slot, d] = key.split("|");
+    const r = rowFor.get(slot)!;
+    const id = `SES${String(++max).padStart(4, "0")}`;
+    appends.push([
+      id, d, r.batch_id, r.start, r.end, r.room_id, r.teacher_id,
+      "scheduled", "recurring", r.slot_id,
+    ]);
+  }
+
   await appendRows("Sessions", appends);
-  return { added: appends.length, horizonEnd: end };
+  await deleteRows("Sessions", orphanRows);
+  return { added: appends.length, removed: orphanRows.length, horizonEnd: end };
 }
 
 // ---------------- Owner dashboard stats ----------------

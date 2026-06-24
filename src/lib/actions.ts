@@ -137,8 +137,8 @@ export async function runGeneration(): Promise<void> {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
-  const { added } = await generateSessions();
-  redirect(`/today?generated=${added}`);
+  const { added, removed } = await generateSessions();
+  redirect(`/today?generated=${added}&removed=${removed}`);
 }
 
 export async function addExtraClass(formData: FormData): Promise<void> {

@@ -79,3 +79,27 @@ export async function batchUpdateValues(
     requestBody: { valueInputOption: "RAW", data },
   });
 }
+
+/** Delete rows (1-based sheet row numbers) from a tab. Deletes descending so
+ *  earlier deletions don't shift later row indices. */
+export async function deleteRows(
+  tab: string,
+  rowNumbers: number[],
+): Promise<void> {
+  if (rowNumbers.length === 0) return;
+  const meta = await client().spreadsheets.get({ spreadsheetId: sheetId() });
+  const sheet = meta.data.sheets?.find((s) => s.properties?.title === tab);
+  const gid = sheet?.properties?.sheetId;
+  if (gid == null) throw new Error(`tab not found: ${tab}`);
+  const requests = [...rowNumbers]
+    .sort((a, b) => b - a)
+    .map((rn) => ({
+      deleteDimension: {
+        range: { sheetId: gid, dimension: "ROWS", startIndex: rn - 1, endIndex: rn },
+      },
+    }));
+  await client().spreadsheets.batchUpdate({
+    spreadsheetId: sheetId(),
+    requestBody: { requests },
+  });
+}

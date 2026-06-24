@@ -27,6 +27,7 @@ export default async function TodayPage({
     added?: string;
     nochange?: string;
     generated?: string;
+    removed?: string;
     date?: string;
   }>;
 }) {
@@ -48,7 +49,8 @@ export default async function TodayPage({
         : sp.nochange
           ? "No changes to save."
           : sp.generated !== undefined
-            ? `Generated ${sp.generated} session${sp.generated === "1" ? "" : "s"}.`
+            ? `Generated ${sp.generated} session${sp.generated === "1" ? "" : "s"}` +
+              (sp.removed && sp.removed !== "0" ? `, removed ${sp.removed}.` : ".")
             : null;
 
   return (
