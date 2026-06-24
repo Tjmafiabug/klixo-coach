@@ -15,6 +15,7 @@ import type {
   Session,
   AttendanceRow,
   AttendanceStatus,
+  TimetableRule,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -328,6 +329,75 @@ export async function getFormOptions(): Promise<FormOptions> {
       .filter((t) => t.active === "TRUE")
       .map((t) => ({ id: t.teacher_id, name: t.name })),
   };
+}
+
+// ---------------- Timetable engine: generation ----------------
+
+const HORIZON_DAYS = 30;
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; // Date.getUTCDay()
+
+/** Weekday (Mon..Sun) of a YYYY-MM-DD date. Calendar weekday is tz-independent. */
+function dowOf(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+}
+
+function addDays(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+export async function getRules(): Promise<TimetableRule[]> {
+  return readTab<TimetableRule>("Timetable");
+}
+
+/**
+ * Generate recurring Sessions from Timetable rules over [today, today+horizon].
+ * ADD-only + idempotent: creates the (slot_id, date) sessions that don't exist
+ * yet, skipping holidays / out-of-effective-range / wrong-weekday. Never
+ * duplicates and never touches existing sessions (so substitutes, cancellations
+ * and marked attendance are preserved). Orphan removal is B2; rule-edit regen is B4.
+ */
+export async function generateSessions(): Promise<{ added: number; horizonEnd: string }> {
+  const today = await effectiveToday();
+  const end = addDays(today, HORIZON_DAYS);
+
+  const [rules, sessions, holidaysTab] = await Promise.all([
+    readTab<TimetableRule>("Timetable"),
+    readTab<Session>("Sessions"),
+    readTab<{ date: string; name: string }>("Holidays"),
+  ]);
+  const holidays = new Set(holidaysTab.map((h) => h.date));
+
+  const existing = new Set<string>();
+  let max = 0;
+  for (const s of sessions) {
+    if (s.source === "recurring" && s.slot_id) existing.add(`${s.slot_id}|${s.date}`);
+    const n = parseInt(s.session_id.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n < 9000 && n > max) max = n; // keep clear of adhoc 9000+ range
+  }
+
+  const appends: string[][] = [];
+  for (const r of rules) {
+    const days = r.day_of_week.split(",").map((x) => x.trim());
+    for (let d = today; d <= end; d = addDays(d, 1)) {
+      if (holidays.has(d)) continue;
+      if (!days.includes(dowOf(d))) continue;
+      if (!(r.effective_from <= d && (r.effective_to === "" || r.effective_to >= d)))
+        continue;
+      const key = `${r.slot_id}|${d}`;
+      if (existing.has(key)) continue;
+      existing.add(key);
+      const id = `SES${String(++max).padStart(4, "0")}`;
+      appends.push([
+        id, d, r.batch_id, r.start, r.end, r.room_id, r.teacher_id,
+        "scheduled", "recurring", r.slot_id,
+      ]);
+    }
+  }
+
+  await appendRows("Sessions", appends);
+  return { added: appends.length, horizonEnd: end };
 }
 
 // ---------------- Owner dashboard stats ----------------

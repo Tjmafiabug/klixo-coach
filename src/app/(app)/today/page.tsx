@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { getSessionsOnDate, effectiveToday } from "@/lib/data";
+import { runGeneration } from "@/lib/actions";
 import { TodayDateNav } from "./TodayDateNav";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export default async function TodayPage({
     cancelled?: string;
     added?: string;
     nochange?: string;
+    generated?: string;
     date?: string;
   }>;
 }) {
@@ -45,7 +47,9 @@ export default async function TodayPage({
         ? "Extra class added."
         : sp.nochange
           ? "No changes to save."
-          : null;
+          : sp.generated !== undefined
+            ? `Generated ${sp.generated} session${sp.generated === "1" ? "" : "s"}.`
+            : null;
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
@@ -61,6 +65,13 @@ export default async function TodayPage({
             <span className="rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground tabular-nums">
               {pending} to mark
             </span>
+          ) : null}
+          {isOwner ? (
+            <form action={runGeneration}>
+              <button className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted">
+                Generate
+              </button>
+            </form>
           ) : null}
           <Link
             href="/new-session"

@@ -49,6 +49,18 @@ export interface Room {
   capacity: string;
 }
 
+export interface TimetableRule {
+  slot_id: string;
+  batch_id: string;
+  day_of_week: string; // one or more of Mon..Sun, comma-joined
+  start: string;
+  end: string;
+  room_id: string;
+  teacher_id: string;
+  effective_from: string;
+  effective_to: string; // empty = open-ended
+}
+
 export interface Session {
   session_id: string;
   date: string;

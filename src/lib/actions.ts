@@ -11,6 +11,7 @@ import {
   cancelSession as cancelSessionData,
   setSubstitute,
   createExtraClass,
+  generateSessions,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import type { AttendanceStatus } from "@/lib/types";
@@ -130,6 +131,14 @@ export async function substituteTeacher(formData: FormData): Promise<void> {
   const teacherId = String(formData.get("teacherId") ?? "");
   if (sessionId && teacherId) await setSubstitute(sessionId, teacherId);
   redirect(`/mark/${sessionId}`);
+}
+
+export async function runGeneration(): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "owner") redirect("/today");
+  const { added } = await generateSessions();
+  redirect(`/today?generated=${added}`);
 }
 
 export async function addExtraClass(formData: FormData): Promise<void> {
