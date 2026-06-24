@@ -565,6 +565,171 @@ export async function clashesForCandidate(cand: {
   return { blocking: [...blocking], warnings: [...warnings] };
 }
 
+// ---------------- Timetable engine: rule CRUD + edit-in-place ----------------
+
+const OPEN = "9999-12-31";
+const rangesIntersect = (aF: string, aT: string, bF: string, bT: string) =>
+  aF <= (bT || OPEN) && bF <= (aT || OPEN);
+
+export interface RuleInput {
+  slot_id?: string;
+  batch_id: string;
+  day_of_week: string; // comma-joined Mon..Sun
+  start: string;
+  end: string;
+  room_id: string;
+  teacher_id: string;
+  effective_from: string;
+  effective_to: string;
+}
+
+/** Rule-level clash check (date-range + day aware). room/teacher block, student warns. */
+export async function ruleClashes(
+  cand: RuleInput,
+): Promise<{ blocking: ClashType[]; warnings: ClashType[] }> {
+  const [rules, enrolls] = await Promise.all([
+    readTab<TimetableRule>("Timetable"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const studentsByBatch = await activeStudentsByBatch(enrolls);
+  const candDays = new Set(cand.day_of_week.split(",").map((x) => x.trim()));
+  const candStu = studentsByBatch.get(cand.batch_id) ?? new Set();
+  const block = new Set<ClashType>();
+  const warn = new Set<ClashType>();
+  for (const r of rules) {
+    if (cand.slot_id && r.slot_id === cand.slot_id) continue;
+    const sharedDay = r.day_of_week
+      .split(",")
+      .map((x) => x.trim())
+      .some((d) => candDays.has(d));
+    if (!sharedDay) continue;
+    if (!rangesIntersect(cand.effective_from, cand.effective_to, r.effective_from, r.effective_to))
+      continue;
+    if (!overlaps(cand.start, cand.end, r.start, r.end)) continue;
+    if (r.room_id === cand.room_id) block.add("room");
+    if (r.teacher_id === cand.teacher_id) block.add("teacher");
+    if (
+      r.batch_id !== cand.batch_id &&
+      shareAny(candStu, studentsByBatch.get(r.batch_id) ?? new Set())
+    )
+      warn.add("student");
+  }
+  return { blocking: [...block], warnings: [...warn] };
+}
+
+function ruleRow(slotId: string, r: RuleInput): string[] {
+  return [
+    slotId, r.batch_id, r.day_of_week, r.start, r.end,
+    r.room_id, r.teacher_id, r.effective_from, r.effective_to,
+  ];
+}
+
+export async function createRule(r: RuleInput): Promise<string> {
+  const rules = await readTab<TimetableRule>("Timetable");
+  let max = 0;
+  for (const x of rules) {
+    const n = parseInt(x.slot_id.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  const slotId = `TT${String(max + 1).padStart(3, "0")}`;
+  await appendRows("Timetable", [ruleRow(slotId, r)]);
+  await generateSessions(); // create its future sessions
+  return slotId;
+}
+
+/** Edit a rule in place, then regenerate ONLY its future, attendance-free sessions
+ *  (past + attendance-bearing are frozen — PLAN §3 #7). */
+export async function updateRule(slotId: string, r: RuleInput): Promise<void> {
+  const rules = await readTab<TimetableRule>("Timetable");
+  const idx = rules.findIndex((x) => x.slot_id === slotId);
+  if (idx < 0) return;
+  await updateValues(`Timetable!A${idx + 2}:I${idx + 2}`, [ruleRow(slotId, r)]);
+  await regenSlotFuture(slotId);
+}
+
+export async function expireRule(slotId: string, effectiveTo: string): Promise<void> {
+  const rules = await readTab<TimetableRule>("Timetable");
+  const idx = rules.findIndex((x) => x.slot_id === slotId);
+  if (idx < 0) return;
+  await updateValues(`Timetable!I${idx + 2}`, [[effectiveTo]]);
+  await regenSlotFuture(slotId);
+}
+
+/** Delete a slot's future, non-frozen sessions, then regenerate from current rules. */
+async function regenSlotFuture(slotId: string): Promise<void> {
+  const today = await effectiveToday();
+  const [sessions, attendance] = await Promise.all([
+    readTab<Session>("Sessions"),
+    readTab<AttendanceRow>("Attendance"),
+  ]);
+  const att = new Set(attendance.map((a) => a.session_id));
+  const rows: number[] = [];
+  sessions.forEach((s, i) => {
+    if (
+      s.slot_id === slotId &&
+      s.date >= today &&
+      s.status !== "cancelled" &&
+      !att.has(s.session_id)
+    )
+      rows.push(i + 2);
+  });
+  await deleteRows("Sessions", rows);
+  await generateSessions();
+}
+
+export interface TimetableRuleView {
+  slot_id: string;
+  batch_id: string;
+  batchName: string;
+  days: string[];
+  start: string;
+  end: string;
+  room_id: string;
+  roomName: string;
+  teacher_id: string;
+  teacherName: string;
+  effective_from: string;
+  effective_to: string;
+}
+
+export async function getTimetableView(): Promise<{
+  rules: TimetableRuleView[];
+  clashes: Clash[];
+}> {
+  const [rules, batches, rooms, teachers, health] = await Promise.all([
+    readTab<TimetableRule>("Timetable"),
+    readTab<Batch>("Batches"),
+    readTab<Room>("Rooms"),
+    readTab<Teacher>("Teachers"),
+    scheduleHealth(),
+  ]);
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const rName = new Map(rooms.map((r) => [r.room_id, r.name]));
+  const tName = new Map(teachers.map((t) => [t.teacher_id, t.name]));
+  const view = rules
+    .map((r) => ({
+      slot_id: r.slot_id,
+      batch_id: r.batch_id,
+      batchName: bName.get(r.batch_id) ?? r.batch_id,
+      days: r.day_of_week.split(",").map((x) => x.trim()),
+      start: r.start,
+      end: r.end,
+      room_id: r.room_id,
+      roomName: rName.get(r.room_id) ?? r.room_id,
+      teacher_id: r.teacher_id,
+      teacherName: tName.get(r.teacher_id) ?? r.teacher_id,
+      effective_from: r.effective_from,
+      effective_to: r.effective_to,
+    }))
+    .sort((a, b) => a.start.localeCompare(b.start) || a.batchName.localeCompare(b.batchName));
+  return { rules: view, clashes: health.clashes };
+}
+
+export async function getRule(slotId: string): Promise<TimetableRule | null> {
+  const rules = await readTab<TimetableRule>("Timetable");
+  return rules.find((r) => r.slot_id === slotId) ?? null;
+}
+
 // ---------------- Owner dashboard stats ----------------
 
 interface Agg {

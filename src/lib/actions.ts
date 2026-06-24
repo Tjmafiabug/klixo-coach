@@ -13,6 +13,10 @@ import {
   createExtraClass,
   generateSessions,
   clashesForCandidate,
+  createRule,
+  updateRule,
+  expireRule,
+  ruleClashes,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import type { AttendanceStatus } from "@/lib/types";
@@ -140,6 +144,52 @@ export async function runGeneration(): Promise<void> {
   if (user.role !== "owner") redirect("/today");
   const { added, removed } = await generateSessions();
   redirect(`/today?generated=${added}&removed=${removed}`);
+}
+
+export async function saveRule(formData: FormData): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "owner") redirect("/today");
+
+  const slotId = String(formData.get("slotId") ?? "").trim();
+  const days = formData.getAll("days").map((d) => String(d));
+  const rule = {
+    slot_id: slotId || undefined,
+    batch_id: String(formData.get("batchId") ?? "").trim(),
+    day_of_week: days.join(","),
+    start: String(formData.get("start") ?? "").trim(),
+    end: String(formData.get("end") ?? "").trim(),
+    room_id: String(formData.get("roomId") ?? "").trim(),
+    teacher_id: String(formData.get("teacherId") ?? "").trim(),
+    effective_from: String(formData.get("effectiveFrom") ?? "").trim(),
+    effective_to: String(formData.get("effectiveTo") ?? "").trim(),
+  };
+  const back = slotId ? `/timetable/${slotId}` : "/timetable/new";
+  if (
+    !rule.batch_id || days.length === 0 || !rule.start || !rule.end ||
+    !rule.room_id || !rule.teacher_id || !rule.effective_from
+  ) {
+    redirect(`${back}?error=missing`);
+  }
+  if (rule.start >= rule.end) redirect(`${back}?error=time`);
+
+  const clash = await ruleClashes(rule);
+  if (clash.blocking.length) {
+    redirect(`${back}?error=clash&with=${clash.blocking.join(",")}`);
+  }
+  if (slotId) await updateRule(slotId, rule);
+  else await createRule(rule);
+  redirect(`/timetable?saved=1${clash.warnings.length ? "&warn=student" : ""}`);
+}
+
+export async function expireRuleAction(formData: FormData): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "owner") redirect("/today");
+  const slotId = String(formData.get("slotId") ?? "").trim();
+  const effectiveTo = String(formData.get("effectiveTo") ?? "").trim();
+  if (slotId && effectiveTo) await expireRule(slotId, effectiveTo);
+  redirect("/timetable?expired=1");
 }
 
 export async function addExtraClass(formData: FormData): Promise<void> {
