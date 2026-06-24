@@ -8,32 +8,53 @@ import type { RosterEntry } from "@/lib/data";
 
 type Entry = { student_id: string; name: string; status: AttendanceStatus };
 
-const OPTIONS: { value: AttendanceStatus; label: string; cls: string }[] = [
-  { value: "present", label: "Present", cls: "bg-green-600 text-white border-green-600" },
-  { value: "absent", label: "Absent", cls: "bg-red-600 text-white border-red-600" },
-  { value: "late", label: "Late", cls: "bg-amber-500 text-white border-amber-500" },
+const OPTIONS: {
+  value: AttendanceStatus;
+  label: string;
+  active: string;
+}[] = [
+  { value: "present", label: "P", active: "bg-success text-white border-success" },
+  { value: "absent", label: "A", active: "bg-danger text-white border-danger" },
+  { value: "late", label: "L", active: "bg-warning text-white border-warning" },
 ];
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
 
 function SubmitBar({ counts }: { counts: Record<AttendanceStatus, number> }) {
   const { pending } = useFormStatus();
   return (
-    <div className="sticky bottom-0 mt-4 flex items-center justify-between gap-3 border-t border-black/10 bg-white/90 px-1 py-3 backdrop-blur dark:border-white/15 dark:bg-black/70">
-      <p className="text-sm text-black/60 dark:text-white/60">
-        <span className="text-green-700 dark:text-green-400">{counts.present} present</span>
-        {" · "}
-        <span className="text-red-600">{counts.absent} absent</span>
-        {" · "}
-        <span className="text-amber-600">{counts.late} late</span>
-      </p>
+    <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex items-center justify-between gap-3 border-t border-border bg-surface/90 px-4 py-3 backdrop-blur">
+      <div className="flex items-center gap-3 text-sm font-medium tabular-nums">
+        <span className="flex items-center gap-1 text-success">
+          <Dot className="bg-success" /> {counts.present}
+        </span>
+        <span className="flex items-center gap-1 text-danger">
+          <Dot className="bg-danger" /> {counts.absent}
+        </span>
+        <span className="flex items-center gap-1 text-warning">
+          <Dot className="bg-warning" /> {counts.late}
+        </span>
+      </div>
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-indigo-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-60"
+        className="inline-flex h-11 cursor-pointer items-center justify-center rounded-lg bg-brand px-6 font-semibold text-brand-foreground transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {pending ? "Saving…" : "Submit"}
+        {pending ? "Saving…" : "Submit attendance"}
       </button>
     </div>
   );
+}
+
+function Dot({ className }: { className: string }) {
+  return <span className={`h-2 w-2 rounded-full ${className}`} />;
 }
 
 export default function MarkRoster({
@@ -59,21 +80,49 @@ export default function MarkRoster({
     );
   }
 
+  function allPresent() {
+    setEntries((prev) => prev.map((e) => ({ ...e, status: "present" })));
+  }
+
   const payload = entries.map((e) => ({ studentId: e.student_id, status: e.status }));
 
   return (
-    <form action={submitMarks}>
+    <form action={submitMarks} className="mt-5">
       <input type="hidden" name="sessionId" value={sessionId} />
       <input type="hidden" name="marks" value={JSON.stringify(payload)} />
 
-      <ul className="flex flex-col divide-y divide-black/5 dark:divide-white/10">
+      <div className="mb-2 flex items-center justify-between px-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Roster
+        </p>
+        <button
+          type="button"
+          onClick={allPresent}
+          className="cursor-pointer rounded-md px-2 py-1 text-xs font-semibold text-brand transition-colors hover:bg-brand-subtle"
+        >
+          Mark all present
+        </button>
+      </div>
+
+      <ul className="overflow-hidden rounded-2xl border border-border bg-surface shadow-[var(--shadow-card)]">
         {entries.map((e) => (
           <li
             key={e.student_id}
-            className="flex items-center justify-between gap-3 py-3"
+            className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0"
           >
-            <span className="font-medium">{e.name}</span>
-            <div className="flex gap-1">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                {initials(e.name)}
+              </span>
+              <span className="truncate text-sm font-medium text-foreground">
+                {e.name}
+              </span>
+            </div>
+            <div
+              role="group"
+              aria-label={`Attendance for ${e.name}`}
+              className="flex shrink-0 overflow-hidden rounded-lg border border-border"
+            >
               {OPTIONS.map((o) => {
                 const active = e.status === o.value;
                 return (
@@ -82,10 +131,11 @@ export default function MarkRoster({
                     type="button"
                     onClick={() => setStatus(e.student_id, o.value)}
                     aria-pressed={active}
-                    className={`rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    title={o.value}
+                    className={`flex h-10 w-10 cursor-pointer items-center justify-center border-l border-border text-sm font-bold transition-colors first:border-l-0 ${
                       active
-                        ? o.cls
-                        : "border-black/15 text-black/55 hover:bg-black/5 dark:border-white/20 dark:text-white/55 dark:hover:bg-white/10"
+                        ? o.active
+                        : "bg-surface text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     {o.label}

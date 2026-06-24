@@ -31,21 +31,36 @@ export async function getTeacherByPhone(phone: string): Promise<Teacher | null> 
   return teachers.find((t) => t.phone === p && t.active === "TRUE") ?? null;
 }
 
-export interface TodaySession extends Session {
+export interface SessionMeta extends Session {
   batchName: string;
   roomName: string;
 }
 
-/** Today's sessions for a teacher (incl. sessions they substitute). */
+export interface TodaySession extends SessionMeta {
+  rosterSize: number;
+  marked: boolean;
+  presentCount: number;
+}
+
+/** Today's sessions for a teacher (incl. sessions they substitute), enriched with roster + marked state. */
 export async function getTodaySessions(teacherId: string): Promise<TodaySession[]> {
   const today = await effectiveToday();
-  const [sessions, batches, rooms] = await Promise.all([
+  const [sessions, batches, rooms, enrolls, attendance] = await Promise.all([
     readTab<Session>("Sessions"),
     readTab<Batch>("Batches"),
     readTab<Room>("Rooms"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<AttendanceRow>("Attendance"),
   ]);
   const batchById = new Map(batches.map((b) => [b.batch_id, b]));
   const roomById = new Map(rooms.map((r) => [r.room_id, r]));
+
+  const rosterByBatch = new Map<string, number>();
+  for (const e of enrolls) {
+    if (e.status !== "active") continue;
+    rosterByBatch.set(e.batch_id, (rosterByBatch.get(e.batch_id) ?? 0) + 1);
+  }
+
   return sessions
     .filter(
       (s) =>
@@ -54,16 +69,23 @@ export async function getTodaySessions(teacherId: string): Promise<TodaySession[
         (s.status === "scheduled" || s.status === "extra"),
     )
     .sort((a, b) => a.start.localeCompare(b.start))
-    .map((s) => ({
-      ...s,
-      batchName: batchById.get(s.batch_id)?.name ?? s.batch_id,
-      roomName: roomById.get(s.room_id)?.name ?? s.room_id,
-    }));
+    .map((s) => {
+      const latest = latestPerStudent(attendance, s.session_id);
+      const present = [...latest.values()].filter((a) => a.status === "present").length;
+      return {
+        ...s,
+        batchName: batchById.get(s.batch_id)?.name ?? s.batch_id,
+        roomName: roomById.get(s.room_id)?.name ?? s.room_id,
+        rosterSize: rosterByBatch.get(s.batch_id) ?? 0,
+        marked: latest.size > 0,
+        presentCount: present,
+      };
+    });
 }
 
 export async function getSessionMeta(
   sessionId: string,
-): Promise<TodaySession | null> {
+): Promise<SessionMeta | null> {
   const [sessions, batches, rooms] = await Promise.all([
     readTab<Session>("Sessions"),
     readTab<Batch>("Batches"),

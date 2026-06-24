@@ -4,58 +4,118 @@ import { getTodaySessions, effectiveToday } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
+function prettyDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
+}
+
 export default async function TodayPage({
   searchParams,
 }: {
   searchParams: Promise<{ marked?: string }>;
 }) {
-  const user = (await getSession())!; // layout already guards
+  const user = (await getSession())!;
   const [sessions, today, sp] = await Promise.all([
     getTodaySessions(user.teacherId),
     effectiveToday(),
     searchParams,
   ]);
 
+  const pending = sessions.filter((s) => !s.marked).length;
+
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-bold">Today&rsquo;s sessions</h1>
-        <span className="text-sm text-black/50 dark:text-white/50">{today}</span>
+      <div className="flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Today&rsquo;s sessions</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{prettyDate(today)}</p>
+        </div>
+        {sessions.length > 0 ? (
+          <span className="rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground tabular-nums">
+            {pending} to mark
+          </span>
+        ) : null}
       </div>
 
       {sp.marked ? (
-        <p className="mt-3 rounded-lg border border-green-600/30 bg-green-600/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
-          Attendance saved for {sp.marked}.
+        <p className="mt-4 flex items-center gap-2 rounded-xl border border-success/20 bg-success-subtle px-3 py-2.5 text-sm font-medium text-success">
+          <CheckIcon /> Attendance saved.
         </p>
       ) : null}
 
       {sessions.length === 0 ? (
-        <p className="mt-8 rounded-xl border border-dashed border-black/15 p-8 text-center text-black/50 dark:border-white/20 dark:text-white/50">
-          No sessions scheduled for you today.
-        </p>
+        <div className="mt-8 rounded-2xl border border-dashed border-border bg-surface p-10 text-center">
+          <p className="font-medium text-foreground">No sessions today</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            You have no scheduled classes for {today}.
+          </p>
+        </div>
       ) : (
-        <ul className="mt-4 flex flex-col gap-3">
+        <ul className="mt-5 flex flex-col gap-3">
           {sessions.map((s) => (
             <li key={s.session_id}>
               <Link
                 href={`/mark/${s.session_id}`}
-                className="flex items-center justify-between rounded-xl border border-black/10 p-4 transition-colors hover:border-indigo-400 hover:bg-indigo-50/40 dark:border-white/15 dark:hover:bg-indigo-500/10"
+                className="group flex items-center gap-4 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/40 hover:shadow-[var(--shadow-pop)]"
               >
-                <div>
-                  <p className="font-semibold">{s.batchName}</p>
-                  <p className="mt-0.5 text-sm text-black/55 dark:text-white/55">
-                    {s.start}–{s.end} · {s.roomName}
-                    {s.source === "adhoc" ? " · extra" : ""}
+                <div className="flex w-16 shrink-0 flex-col items-center rounded-xl bg-muted py-2 text-center">
+                  <span className="text-sm font-bold tabular-nums text-foreground">
+                    {s.start}
+                  </span>
+                  <span className="text-[0.7rem] text-muted-foreground tabular-nums">
+                    {s.end}
+                  </span>
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate font-semibold text-foreground">
+                      {s.batchName}
+                    </p>
+                    {s.source === "adhoc" ? (
+                      <span className="rounded bg-warning-subtle px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-warning">
+                        Extra
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {s.roomName} · {s.rosterSize} students
                   </p>
                 </div>
-                <span className="rounded-full bg-indigo-600 px-3 py-1 text-sm font-medium text-white">
-                  Mark
-                </span>
+
+                {s.marked ? (
+                  <span className="flex items-center gap-1.5 rounded-full bg-success-subtle px-2.5 py-1 text-xs font-semibold text-success">
+                    <CheckIcon /> {s.presentCount}/{s.rosterSize}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-brand px-3 py-1.5 text-sm font-semibold text-brand-foreground transition-colors group-hover:bg-brand-hover">
+                    Mark
+                  </span>
+                )}
               </Link>
             </li>
           ))}
         </ul>
       )}
     </main>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 8.5 6.5 11.5 12.5 5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

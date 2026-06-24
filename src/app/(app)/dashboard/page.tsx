@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getOwnerStats } from "@/lib/data";
+import { PctBadge, StatusPill } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -13,87 +14,116 @@ export default async function DashboardPage() {
   const stats = await getOwnerStats();
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6">
-      <h1 className="text-xl font-bold">Owner dashboard</h1>
+    <main className="mx-auto w-full max-w-4xl px-4 py-6">
+      <h1 className="text-2xl font-bold tracking-tight">Owner dashboard</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Attendance across the centre · latest mark per session
+      </p>
 
-      <section className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Overall attendance" value={pct(stats.overall)} />
-        <Stat label="Marks recorded" value={String(stats.totalMarks)} />
+      <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Overall attendance" value={pct(stats.overall)} tone="brand" />
+        <Stat label="Marks recorded" value={stats.totalMarks.toLocaleString()} />
         <Stat label="Students tracked" value={String(stats.studentCount)} />
         <Stat
           label={`Defaulters <${stats.threshold}%`}
           value={String(stats.defaulters.length)}
-          accent={stats.defaulters.length > 0}
+          tone={stats.defaulters.length > 0 ? "danger" : "success"}
         />
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
-          Defaulters (&lt; {stats.threshold}%)
-        </h2>
-        {stats.defaulters.length === 0 ? (
-          <p className="mt-2 text-sm text-black/50 dark:text-white/50">None.</p>
-        ) : (
-          <ul className="mt-2 divide-y divide-black/5 dark:divide-white/10">
-            {stats.defaulters.map((d) => (
-              <li key={d.id} className="flex items-center justify-between py-2">
-                <span className="font-medium">{d.name}</span>
-                <span className="text-sm">
-                  <span className="font-semibold text-red-600">{pct(d.pct)}</span>
-                  <span className="text-black/45 dark:text-white/45"> · {d.total} sessions</span>
-                </span>
-              </li>
-            ))}
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card title="Attendance by batch">
+          <ul className="flex flex-col gap-3">
+            {stats.batchStats.map((b) => {
+              const v = Math.round(b.pct * 100);
+              const bar =
+                v < stats.threshold
+                  ? "bg-danger"
+                  : v < stats.threshold + 10
+                    ? "bg-warning"
+                    : "bg-success";
+              return (
+                <li key={b.id}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">{b.name}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {v}%{" "}
+                      <span className="text-xs">({b.total})</span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full ${bar}`}
+                      style={{ width: `${v}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
-        )}
-      </section>
+        </Card>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
-          Attendance by batch
-        </h2>
-        <ul className="mt-2 flex flex-col gap-2">
-          {stats.batchStats.map((b) => (
-            <li key={b.id} className="flex items-center gap-3">
-              <span className="w-44 shrink-0 text-sm">{b.name}</span>
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/15">
-                <div
-                  className="h-full rounded-full bg-indigo-600"
-                  style={{ width: pct(b.pct) }}
-                />
-              </div>
-              <span className="w-10 text-right text-sm font-medium">{pct(b.pct)}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+        <Card
+          title="Defaulters"
+          subtitle={`Below ${stats.threshold}% attendance`}
+        >
+          {stats.defaulters.length === 0 ? (
+            <Empty>No defaulters — everyone is above {stats.threshold}%.</Empty>
+          ) : (
+            <ul className="divide-y divide-border">
+              {stats.defaulters.map((d) => (
+                <li key={d.id} className="flex items-center justify-between py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{d.name}</p>
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {d.total} sessions
+                    </p>
+                  </div>
+                  <PctBadge pct={d.pct} threshold={stats.threshold} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
-          Manual-mark audit ({stats.manualCount} total)
-        </h2>
-        {stats.recentManual.length === 0 ? (
-          <p className="mt-2 text-sm text-black/50 dark:text-white/50">
-            No manual marks recorded.
-          </p>
-        ) : (
-          <ul className="mt-2 divide-y divide-black/5 text-sm dark:divide-white/10">
-            {stats.recentManual.map((m, i) => (
-              <li key={i} className="flex items-center justify-between py-2">
-                <span>
-                  {m.studentName}{" "}
-                  <span className="text-black/45 dark:text-white/45">
-                    · {m.batch_id} · {m.status}
-                  </span>
-                </span>
-                <span className="text-black/45 dark:text-white/45">
-                  {m.date} · by {m.marked_by}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="mt-6">
+        <Card
+          title="Manual-mark audit"
+          subtitle={`${stats.manualCount} manual marks total`}
+        >
+          {stats.recentManual.length === 0 ? (
+            <Empty>No manual marks recorded.</Empty>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="pb-2 font-semibold">Student</th>
+                    <th className="pb-2 font-semibold">Batch</th>
+                    <th className="pb-2 font-semibold">Status</th>
+                    <th className="pb-2 font-semibold">Date</th>
+                    <th className="pb-2 font-semibold">By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {stats.recentManual.map((m, i) => (
+                    <tr key={i}>
+                      <td className="py-2 font-medium text-foreground">{m.studentName}</td>
+                      <td className="py-2 text-muted-foreground">{m.batch_id}</td>
+                      <td className="py-2">
+                        <StatusPill status={m.status} />
+                      </td>
+                      <td className="py-2 tabular-nums text-muted-foreground">{m.date}</td>
+                      <td className="py-2 text-muted-foreground">{m.marked_by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
     </main>
   );
 }
@@ -101,22 +131,52 @@ export default async function DashboardPage() {
 function Stat({
   label,
   value,
-  accent,
+  tone,
 }: {
   label: string;
   value: string;
-  accent?: boolean;
+  tone?: "brand" | "danger" | "success";
+}) {
+  const color =
+    tone === "danger"
+      ? "text-danger"
+      : tone === "success"
+        ? "text-success"
+        : tone === "brand"
+          ? "text-brand"
+          : "text-foreground";
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className={`mt-1.5 text-2xl font-bold tabular-nums ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function Card({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-black/10 p-4 dark:border-white/15">
-      <p className="text-xs text-black/50 dark:text-white/50">{label}</p>
-      <p
-        className={`mt-1 text-2xl font-bold ${
-          accent ? "text-red-600" : ""
-        }`}
-      >
-        {value}
-      </p>
-    </div>
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-3">
+        <h2 className="font-semibold text-foreground">{title}</h2>
+        {subtitle ? (
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="py-4 text-center text-sm text-muted-foreground">{children}</p>
   );
 }

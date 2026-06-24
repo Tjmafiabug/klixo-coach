@@ -1,47 +1,67 @@
 import Link from "next/link";
+import { Wordmark } from "@/components/Logo";
+
+const FEATURES: [string, string][] = [
+  ["Today's batches", "Each teacher sees only their sessions for today, in the centre's timezone."],
+  ["One-tap marking", "Default everyone present, tap absent or late, submit. Under a minute per batch."],
+  ["Owner dashboard", "Attendance %, defaulters below threshold, and a full manual-mark audit."],
+];
 
 export default function Home() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-16 text-center">
-      <div className="flex flex-col items-center gap-3">
-        <span className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium uppercase tracking-widest text-black/50 dark:border-white/15 dark:text-white/50">
+    <div className="flex min-h-dvh flex-col">
+      <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-5">
+        <Wordmark size={28} />
+        <Link
+          href="/login"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand-hover"
+        >
+          Sign in
+        </Link>
+      </header>
+
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+        <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Coaching ERP
         </span>
-        <h1 className="text-5xl font-bold tracking-tight sm:text-6xl">
-          KLiXO <span className="text-indigo-600">Coach</span>
+        <h1 className="mt-5 max-w-2xl text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+          Attendance &amp; timetable, without the spreadsheet chaos.
         </h1>
-        <p className="max-w-md text-balance text-black/60 dark:text-white/60">
-          Attendance &amp; timetable for coaching centres. Teachers mark the
-          batch, owners see the numbers. One app per centre.
+        <p className="mt-4 max-w-xl text-balance text-lg text-muted-foreground">
+          Teachers mark the batch in seconds. Owners get the numbers that matter.
+          One clean app per coaching centre.
         </p>
-      </div>
 
-      <ul className="grid w-full max-w-2xl gap-3 sm:grid-cols-3">
-        {[
-          ["Today's batches", "Local-timezone session list, ready to mark"],
-          ["One-tap marking", "Default present, tap absent / late, submit"],
-          ["Owner dashboard", "Attendance %, defaulters, manual-mark audit"],
-        ].map(([title, body]) => (
-          <li
-            key={title}
-            className="rounded-xl border border-black/10 p-4 text-left dark:border-white/15"
+        <div className="mt-7 flex items-center gap-3">
+          <Link
+            href="/login"
+            className="rounded-lg bg-brand px-6 py-3 font-semibold text-brand-foreground transition-colors hover:bg-brand-hover"
           >
-            <p className="font-semibold">{title}</p>
-            <p className="mt-1 text-sm text-black/55 dark:text-white/55">{body}</p>
-          </li>
-        ))}
-      </ul>
+            Open the app
+          </Link>
+          <span className="text-sm text-muted-foreground">
+            Demo PIN <span className="font-semibold text-foreground">1234</span>
+          </span>
+        </div>
 
-      <Link
-        href="/login"
-        className="rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white transition-colors hover:bg-indigo-700"
-      >
-        Open the app
-      </Link>
+        <ul className="mt-14 grid w-full max-w-3xl gap-4 text-left sm:grid-cols-3">
+          {FEATURES.map(([title, body]) => (
+            <li
+              key={title}
+              className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]"
+            >
+              <p className="font-semibold text-foreground">{title}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                {body}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </main>
 
-      <p className="text-xs text-black/40 dark:text-white/40">
+      <footer className="mx-auto w-full max-w-5xl px-6 py-6 text-center text-xs text-muted-foreground">
         Phase&nbsp;0 — MVP. Backend: Google Sheets via service account.
-      </p>
-    </main>
+      </footer>
+    </div>
   );
 }
