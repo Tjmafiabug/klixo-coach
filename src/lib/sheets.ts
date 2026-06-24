@@ -55,3 +55,27 @@ export async function appendRows(tab: string, rows: string[][]): Promise<void> {
     requestBody: { values: rows },
   });
 }
+
+/** Overwrite a single A1 range with values (RAW). */
+export async function updateValues(
+  range: string,
+  values: string[][],
+): Promise<void> {
+  await client().spreadsheets.values.update({
+    spreadsheetId: sheetId(),
+    range,
+    valueInputOption: "RAW",
+    requestBody: { values },
+  });
+}
+
+/** Overwrite several A1 ranges in one request (RAW). */
+export async function batchUpdateValues(
+  data: { range: string; values: string[][] }[],
+): Promise<void> {
+  if (data.length === 0) return;
+  await client().spreadsheets.values.batchUpdate({
+    spreadsheetId: sheetId(),
+    requestBody: { valueInputOption: "RAW", data },
+  });
+}

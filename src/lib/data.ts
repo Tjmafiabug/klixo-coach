@@ -1,5 +1,10 @@
 import "server-only";
-import { readTab, appendRows } from "@/lib/sheets";
+import {
+  readTab,
+  appendRows,
+  updateValues,
+  batchUpdateValues,
+} from "@/lib/sheets";
 import { centerToday, centerTimestamp } from "@/lib/time";
 import type {
   Teacher,
@@ -151,38 +156,152 @@ function latestPerStudent(
 }
 
 /**
- * Append attendance marks for a session. NOTE (MVP): re-marking appends new
- * rows; reads take the latest per (session, student). Today's seeded sessions
- * are unmarked, so first submit is clean. Harden to in-place update later.
+ * Save attendance for a session. In-place: existing rows for this
+ * (session, student) are updated; only new students are appended — no
+ * duplicate rows on re-mark. `method` = "app" (normal tap) or "manual"
+ * (corrected / backfilled entry, with a reason for the owner audit).
  */
 export async function submitAttendance(params: {
   sessionId: string;
   batchId: string;
   date: string;
   markedBy: string;
-  marks: { studentId: string; status: AttendanceStatus; reason?: string }[];
+  method: "app" | "manual";
+  reason?: string;
+  marks: { studentId: string; status: AttendanceStatus }[];
 }): Promise<number> {
   const attendance = await readTab<AttendanceRow>("Attendance");
+
+  // sheet row number (1-based, +2 for header) of the latest row per student in this session
+  const rowByStudent = new Map<string, number>();
+  const logByStudent = new Map<string, string>();
   let max = 0;
-  for (const a of attendance) {
+  attendance.forEach((a, i) => {
     const n = parseInt(a.log_id.replace(/\D/g, ""), 10);
     if (!Number.isNaN(n) && n > max) max = n;
-  }
+    if (a.session_id === params.sessionId) {
+      rowByStudent.set(a.student_id, i + 2);
+      logByStudent.set(a.student_id, a.log_id);
+    }
+  });
+
   const ts = centerTimestamp();
-  const rows = params.marks.map((m, i) => [
-    `A${String(max + 1 + i).padStart(4, "0")}`,
-    params.sessionId,
-    params.date,
-    params.batchId,
-    m.studentId,
-    m.status,
-    params.markedBy,
-    "app",
-    ts,
-    m.reason ?? "",
+  const reason = params.method === "manual" ? (params.reason ?? "").trim() : "";
+  const updates: { range: string; values: string[][] }[] = [];
+  const appends: string[][] = [];
+  let next = max;
+
+  for (const m of params.marks) {
+    const existingRow = rowByStudent.get(m.studentId);
+    const logId = existingRow
+      ? logByStudent.get(m.studentId)!
+      : `A${String(++next).padStart(4, "0")}`;
+    const row = [
+      logId,
+      params.sessionId,
+      params.date,
+      params.batchId,
+      m.studentId,
+      m.status,
+      params.markedBy,
+      params.method,
+      ts,
+      reason,
+    ];
+    if (existingRow) {
+      updates.push({ range: `Attendance!A${existingRow}:J${existingRow}`, values: [row] });
+    } else {
+      appends.push(row);
+    }
+  }
+
+  await Promise.all([
+    batchUpdateValues(updates),
+    appendRows("Attendance", appends),
   ]);
-  await appendRows("Attendance", rows);
-  return rows.length;
+  return params.marks.length;
+}
+
+// ---------------- Session operations (cancel / substitute / extra class) ----------------
+
+// Sessions columns: A session_id, B date, C batch_id, D start, E end,
+// F room_id, G teacher_id, H status, I source
+async function findSessionRow(sessionId: string): Promise<number | null> {
+  const sessions = await readTab<Session>("Sessions");
+  const i = sessions.findIndex((s) => s.session_id === sessionId);
+  return i === -1 ? null : i + 2;
+}
+
+export async function cancelSession(sessionId: string): Promise<void> {
+  const row = await findSessionRow(sessionId);
+  if (row) await updateValues(`Sessions!H${row}`, [["cancelled"]]);
+}
+
+export async function setSubstitute(
+  sessionId: string,
+  teacherId: string,
+): Promise<void> {
+  const row = await findSessionRow(sessionId);
+  if (row) await updateValues(`Sessions!G${row}`, [[teacherId]]);
+}
+
+export async function createExtraClass(params: {
+  date: string;
+  batchId: string;
+  start: string;
+  end: string;
+  roomId: string;
+  teacherId: string;
+}): Promise<string> {
+  const sessions = await readTab<Session>("Sessions");
+  let max = 9000; // ad-hoc ids live above the generated range
+  for (const s of sessions) {
+    const n = parseInt(s.session_id.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  const id = `SES${max + 1}`;
+  await appendRows("Sessions", [
+    [
+      id,
+      params.date,
+      params.batchId,
+      params.start,
+      params.end,
+      params.roomId,
+      params.teacherId,
+      "extra",
+      "adhoc",
+    ],
+  ]);
+  return id;
+}
+
+export interface FormOptions {
+  batches: { id: string; name: string; teacherId: string; roomId: string }[];
+  rooms: { id: string; name: string }[];
+  teachers: { id: string; name: string }[];
+}
+
+export async function getFormOptions(): Promise<FormOptions> {
+  const [batches, rooms, teachers] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Room>("Rooms"),
+    readTab<Teacher>("Teachers"),
+  ]);
+  return {
+    batches: batches
+      .filter((b) => b.active === "TRUE")
+      .map((b) => ({
+        id: b.batch_id,
+        name: b.name,
+        teacherId: b.teacher_id,
+        roomId: b.room_id,
+      })),
+    rooms: rooms.map((r) => ({ id: r.room_id, name: r.name })),
+    teachers: teachers
+      .filter((t) => t.active === "TRUE")
+      .map((t) => ({ id: t.teacher_id, name: t.name })),
+  };
 }
 
 // ---------------- Owner dashboard stats ----------------

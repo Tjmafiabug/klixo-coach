@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSessionMeta, getRoster } from "@/lib/data";
+import { getSessionMeta, getRoster, getFormOptions } from "@/lib/data";
+import { getSession } from "@/lib/auth";
 import MarkRoster from "./MarkRoster";
+import { SessionAdmin } from "./SessionAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +16,12 @@ export default async function MarkPage({
   const session = await getSessionMeta(sessionId);
   if (!session) notFound();
 
-  const { roster, alreadyMarked } = await getRoster(session.batch_id, sessionId);
+  const user = (await getSession())!;
+  const isOwner = user.role === "owner";
+  const [{ roster, alreadyMarked }, opts] = await Promise.all([
+    getRoster(session.batch_id, sessionId),
+    isOwner ? getFormOptions() : Promise.resolve(null),
+  ]);
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
@@ -67,6 +74,13 @@ export default async function MarkPage({
       ) : (
         <MarkRoster sessionId={sessionId} roster={roster} />
       )}
+
+      <SessionAdmin
+        sessionId={sessionId}
+        isOwner={isOwner}
+        currentTeacherId={session.teacher_id}
+        teachers={opts?.teachers ?? []}
+      />
     </main>
   );
 }

@@ -67,6 +67,8 @@ export default function MarkRoster({
   const [entries, setEntries] = useState<Entry[]>(
     roster.map((r) => ({ student_id: r.student_id, name: r.name, status: r.status })),
   );
+  const [manual, setManual] = useState(false);
+  const [reason, setReason] = useState("");
 
   const counts = useMemo(() => {
     const c: Record<AttendanceStatus, number> = { present: 0, absent: 0, late: 0 };
@@ -90,6 +92,7 @@ export default function MarkRoster({
     <form action={submitMarks} className="mt-5">
       <input type="hidden" name="sessionId" value={sessionId} />
       <input type="hidden" name="marks" value={JSON.stringify(payload)} />
+      <input type="hidden" name="method" value={manual ? "manual" : "app"} />
 
       <div className="mb-2 flex items-center justify-between px-1">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -146,6 +149,44 @@ export default function MarkRoster({
           </li>
         ))}
       </ul>
+
+      <div className="mt-3 rounded-xl border border-border bg-surface p-3">
+        <label className="flex cursor-pointer items-start justify-between gap-3">
+          <span>
+            <span className="text-sm font-medium text-foreground">
+              Manual / corrected entry
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Marking late, fixing a mistake, or the app was down. Logged for the owner.
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={manual}
+            onClick={() => setManual((v) => !v)}
+            className={`relative mt-0.5 h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors ${
+              manual ? "bg-brand" : "bg-muted"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                manual ? "left-[1.125rem]" : "left-0.5"
+              }`}
+            />
+          </button>
+        </label>
+        {manual ? (
+          <input
+            name="reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+            placeholder="Reason — e.g. Entered after class"
+            className="mt-3 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+          />
+        ) : null}
+      </div>
 
       <SubmitBar counts={counts} />
     </form>

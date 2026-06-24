@@ -17,7 +17,11 @@ function prettyDate(iso: string) {
 export default async function TodayPage({
   searchParams,
 }: {
-  searchParams: Promise<{ marked?: string }>;
+  searchParams: Promise<{
+    marked?: string;
+    cancelled?: string;
+    added?: string;
+  }>;
 }) {
   const user = (await getSession())!;
   const [sessions, today, sp] = await Promise.all([
@@ -27,24 +31,39 @@ export default async function TodayPage({
   ]);
 
   const pending = sessions.filter((s) => !s.marked).length;
+  const notice = sp.marked
+    ? "Attendance saved."
+    : sp.cancelled
+      ? "Session cancelled."
+      : sp.added
+        ? "Extra class added."
+        : null;
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Today&rsquo;s sessions</h1>
           <p className="mt-1 text-sm text-muted-foreground">{prettyDate(today)}</p>
         </div>
-        {sessions.length > 0 ? (
-          <span className="rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground tabular-nums">
-            {pending} to mark
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {sessions.length > 0 ? (
+            <span className="rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground tabular-nums">
+              {pending} to mark
+            </span>
+          ) : null}
+          <Link
+            href="/new-session"
+            className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
+          >
+            + Extra class
+          </Link>
+        </div>
       </div>
 
-      {sp.marked ? (
+      {notice ? (
         <p className="mt-4 flex items-center gap-2 rounded-xl border border-success/20 bg-success-subtle px-3 py-2.5 text-sm font-medium text-success">
-          <CheckIcon /> Attendance saved.
+          <CheckIcon /> {notice}
         </p>
       ) : null}
 

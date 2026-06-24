@@ -2,7 +2,14 @@
 
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
-import { getTeacherByPhone, getSessionMeta, submitAttendance } from "@/lib/data";
+import {
+  getTeacherByPhone,
+  getSessionMeta,
+  submitAttendance,
+  cancelSession as cancelSessionData,
+  setSubstitute,
+  createExtraClass,
+} from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import type { AttendanceStatus } from "@/lib/types";
 
@@ -52,12 +59,52 @@ export async function submitMarks(formData: FormData): Promise<void> {
   }[];
   if (marks.length === 0) redirect(`/mark/${sessionId}`);
 
+  const method = formData.get("method") === "manual" ? "manual" : "app";
+  const reason = String(formData.get("reason") ?? "").trim();
+
   await submitAttendance({
     sessionId: session.session_id,
     batchId: session.batch_id,
     date: session.date,
     markedBy: user.teacherId,
+    method,
+    reason,
     marks,
   });
   redirect(`/today?marked=${encodeURIComponent(session.batch_id)}`);
+}
+
+export async function cancelSession(formData: FormData): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  const sessionId = String(formData.get("sessionId") ?? "");
+  if (sessionId) await cancelSessionData(sessionId);
+  redirect("/today?cancelled=1");
+}
+
+export async function substituteTeacher(formData: FormData): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "owner") redirect("/today");
+  const sessionId = String(formData.get("sessionId") ?? "");
+  const teacherId = String(formData.get("teacherId") ?? "");
+  if (sessionId && teacherId) await setSubstitute(sessionId, teacherId);
+  redirect(`/mark/${sessionId}`);
+}
+
+export async function addExtraClass(formData: FormData): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+
+  const date = String(formData.get("date") ?? "").trim();
+  const batchId = String(formData.get("batchId") ?? "").trim();
+  const start = String(formData.get("start") ?? "").trim();
+  const end = String(formData.get("end") ?? "").trim();
+  const roomId = String(formData.get("roomId") ?? "").trim();
+  const teacherId = String(formData.get("teacherId") ?? "").trim();
+  if (!date || !batchId || !start || !end || !roomId || !teacherId) {
+    redirect("/new-session?error=1");
+  }
+  await createExtraClass({ date, batchId, start, end, roomId, teacherId });
+  redirect("/today?added=1");
 }
