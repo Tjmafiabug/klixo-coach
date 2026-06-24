@@ -37,16 +37,16 @@ Phase 0 as "attendance **+ timetable** (with Sessions)".
 
 | Entity | Read | Create | Update | Deactivate | Status | Surface |
 |---|---|---|---|---|---|---|
-| Config | ✅ | — | ⛔ edit settings | — | 🟡 | Settings (owner) |
-| Teachers | ✅ login | ⛔ | ⛔ | ⛔ | ⛔ | Teacher mgmt + PIN |
-| Students | ✅ roster | ⛔ | ⛔ | ⛔ | ⛔ | Student mgmt + profile |
-| Batches | ✅ | ⛔ | ⛔ | ⛔ | ⛔ | Batch mgmt |
-| Enrollments | ✅ | ⛔ | ⛔ end | ⛔ | ⛔ | Enroll UI (batch & student) |
-| Rooms | ✅ | ⛔ | ⛔ | ⛔ | ⛔ | Room mgmt |
-| Timetable (rules) | ⛔ | ⛔ | ⛔ edit-in-place | ⛔ expire | ⛔ | Timetable editor + clash |
-| Sessions | 🟡 today only | ✅ extra | ✅ cancel/sub · ⛔ edit time/room · ⛔ generate | — | 🟡 | Session views + generation |
-| Attendance | 🟡 today | ✅ today | 🟡 today only · ⛔ **past correction** | — | 🟡 | Past-session edit + history |
-| Holidays | 🟡 seed | ⛔ | — | ⛔ | ⛔ | Holiday mgmt + suppression |
+| Config | ✅ | — | ✅ Settings | — | ✅ | Settings (owner) |
+| Teachers | ✅ | ✅ | ✅ | ✅ | ✅ | Teacher mgmt + PIN reset |
+| Students | ✅ | ✅ | ✅ | ✅ | ✅ | Student mgmt + profile |
+| Batches | ✅ | ✅ | ✅ | ✅ | ✅ | Batch mgmt |
+| Enrollments | ✅ | ✅ | ✅ end | ✅ | ✅ | Enroll UI (batch & student) |
+| Rooms | ✅ | ✅ | ✅ | ✅ delete-guarded | ✅ | Room mgmt |
+| Timetable (rules) | ✅ | ✅ | ✅ edit-in-place | ✅ expire | ✅ | Timetable editor + clash |
+| Sessions | ✅ | ✅ extra | ✅ cancel/sub · 🟡 edit time/room/uncancel · ✅ generate | — | ✅ | Session views + generation |
+| Attendance | ✅ | ✅ | ✅ past correction | — | ✅ | Past-session edit + history |
+| Holidays | ✅ | ✅ | — | ✅ | ✅ | Holiday mgmt + suppression |
 
 ## 3. Non-functional checklist (non-functional axis)
 
@@ -54,8 +54,8 @@ Phase 0 as "attendance **+ timetable** (with Sessions)".
 |---|---|---|---|
 | N1 | "today"/dow/date in CENTER_TZ everywhere (PLAN §11) | 🟡 | done in marking; must hold in generation + past views |
 | N2 | Access control on every **server action** (not just UI) | 🟡 | login guard exists; per-action role checks partial |
-| N3 | Teachers must NOT see student phone numbers (owner-only) | ⛔ | roster shows names only ✅, but no student profile yet; enforce when built |
-| N4 | Server-side validation on every write | ⛔ | actions trust inputs today |
+| N3 | Teachers must NOT see student phone numbers (owner-only) | 🟡 | roster names-only ✅; student profile + phones live only under owner-guarded /manage. Audit teacher-facing surfaces in D |
+| N4 | Server-side validation on every write | 🟡 | all Milestone-C writes validate + re-check owner role; A/B writes still trust inputs → D |
 | N5 | Empty / loading / error states on every screen | 🟡 | empty states partial; no loading skeletons; error.tsx missing |
 | N6 | Audit fields (marked_by, method, timestamp, reason) on every attendance write | ✅ | |
 | N7 | Referential integrity on writes (enrollment→student/batch, session→batch) | ⛔ | + read-time "schedule health" report (PLAN §7) |
@@ -86,8 +86,9 @@ Phase 0 as "attendance **+ timetable** (with Sessions)".
 - **B — Timetable engine** *(the locked decision currently unmet)*
   - B1 rule data + read; B2 generation job (rules→Sessions, holiday suppression, effective ranges, idempotent, never overwrite attendance-bearing sessions); B3 clash detection (write-time + read-time health); B4 rule editor (edit-in-place → regen future only); B5 edit single session (time/room), uncancel.
   - Deps: Holidays mgmt (C), Rooms.
-- **C — Data management (owner self-service)**
+- **C — Data management (owner self-service)** — ✅ built (code-complete, build-verified; live-test + deploy pending)
   - C1 Students (+ profile/history), C2 Batches, C3 Enrollments (+ student clash warn), C4 Teachers (+ PIN reset, last-owner guard), C5 Rooms, C6 Holidays, C7 Settings (Config).
+  - Surface: `/manage` hub (owner nav). Every action re-checks owner role + validates inputs server-side. Enroll-end sets end_date + status `left`; roster inclusion is window-based (`enrollmentOnDate`) so past correction still sees an ended student.
   - Deps: none; B depends on C6+C5.
 - **D — Hardening** N3,N4,N5,N7,N9,N12 + error.tsx/not-found + read-time health report.
 - **E — Phase 1 (sellable):** WhatsApp absent alerts, fees, per-centre branding, reports/exports.

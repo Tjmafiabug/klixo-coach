@@ -70,14 +70,33 @@ rule effective-range validation, latest-mark tiebreak, midnight-rollover fallbac
 single-read dashboard, single backfill input, padded adhoc ids, quoted tab ranges.
 Each milestone was live-tested against the Sheet (with restore) before deploy.
 
+**Milestone C — owner data management** (zero-Sheet operation) — _code-complete &
+build-verified; NOT yet live-tested against the Sheet or deployed._
+- `/manage` hub + owner nav (Today/Dashboard/Timetable/Manage). Every C action
+  re-checks owner role server-side (N2) and validates inputs (N4) before writing.
+- C1 Students: list, create, edit, activate/deactivate; profile page = enrollments +
+  attendance history + % (owner-only; PII stays owner-only, N3).
+- C2 Batches: list, create, edit, activate/deactivate (assigned teacher stays
+  selectable even if deactivated, so an edit can't silently reassign).
+- C3 Enrollments: enroll from both the batch and the student side; duplicate-active
+  guard; student timetable-clash **warn**; end = stamp end_date + status `left`.
+  Roster inclusion is window-based (`enrollmentOnDate`: in-window incl. ended; only
+  `inactive` voided) so past correction still sees an ended student (N11).
+- C4 Teachers: list, create (with PIN), edit, PIN reset, activate/deactivate, with
+  **last-active-owner guard** (role + deactivate) and phone uniqueness.
+- C5 Rooms: list, create, edit, delete (blocked while any active batch/rule uses it).
+- C6 Holidays: list, add/remove → calls generateSessions (suppress / restore future,
+  attendance-bearing frozen).
+- C7 Settings: edit Config (centre name, attendance threshold, changeover buffer,
+  week start, timezone*, logo URL). *tz here is informational — live clock = CENTER_TZ env.
+- Shared: `components/SubmitButton` (pending state), `ui.Banner`/`ActiveChip`/`fieldClass`.
+
 ## NOT done / NEXT (resume here)
+
+Next: **live-test Milestone C against the Sheet (with restore) → deploy**, then:
 
 Recommended order (see BUILD.md for full specs + acceptance):
 
-- **C — Owner data management** (everything is still edited only in the Sheet):
-  C1 Students (+ profile/attendance history), C2 Batches, C3 Enrollments (+ student
-  clash warn), C4 Teachers (+ PIN set/reset, last-owner guard), C5 Rooms, C6 Holidays,
-  C7 Settings (Config: name, tz, threshold, branding).
 - **D — Hardening:** server-side validation on all writes; teachers must not see
   student phone numbers (owner-only); login lockout; error.tsx/not-found; referential
   integrity + read-time health surfacing; attendance archival / dashboard read pagination.

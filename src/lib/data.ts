@@ -50,6 +50,21 @@ export interface TodaySession extends SessionMeta {
 }
 
 /**
+ * Is this enrollment in effect on `date`? An ended enrollment (status "left" with
+ * a past end_date) still covers every session up to its end_date — so reopening an
+ * old class for correction keeps showing the student (N11). Only "inactive"
+ * (voided) enrollments never count. "Currently enrolled" is the stricter
+ * `status === "active" && end_date === ""`.
+ */
+function enrollmentOnDate(e: Enrollment, date: string): boolean {
+  return (
+    e.status !== "inactive" &&
+    e.start_date <= date &&
+    (e.end_date === "" || e.end_date >= date)
+  );
+}
+
+/**
  * Sessions on a given date, enriched with roster + marked state.
  * Owner sees all sessions that day; a teacher sees only their own (incl. ones
  * they substitute). Cancelled sessions are excluded from the markable list.
@@ -71,9 +86,7 @@ export async function getSessionsOnDate(
 
   const rosterByBatch = new Map<string, number>();
   for (const e of enrolls) {
-    if (e.status !== "active") continue;
-    if (e.start_date > date) continue;
-    if (e.end_date !== "" && e.end_date < date) continue;
+    if (!enrollmentOnDate(e, date)) continue;
     rosterByBatch.set(e.batch_id, (rosterByBatch.get(e.batch_id) ?? 0) + 1);
   }
 
@@ -142,13 +155,7 @@ export async function getRoster(
   ]);
   const studentById = new Map(students.map((s) => [s.student_id, s]));
   const ids = enrolls
-    .filter(
-      (e) =>
-        e.batch_id === batchId &&
-        e.status === "active" &&
-        e.start_date <= sessionDate &&
-        (e.end_date === "" || e.end_date >= sessionDate),
-    )
+    .filter((e) => e.batch_id === batchId && enrollmentOnDate(e, sessionDate))
     .map((e) => e.student_id);
 
   const latest = latestPerStudent(attendance, sessionId);
@@ -464,8 +471,9 @@ async function activeStudentsByBatch(
 ): Promise<Map<string, Set<string>>> {
   const m = new Map<string, Set<string>>();
   for (const e of enrolls) {
-    if (e.status !== "active") continue;
-    if (onDate && (e.start_date > onDate || (e.end_date !== "" && e.end_date < onDate)))
+    // with a date: in effect that day (ended-but-in-window students count);
+    // without (future-facing clash among rules): only open enrollments.
+    if (onDate ? !enrollmentOnDate(e, onDate) : !(e.status === "active" && e.end_date === ""))
       continue;
     if (!m.has(e.batch_id)) m.set(e.batch_id, new Set());
     m.get(e.batch_id)!.add(e.student_id);
@@ -922,4 +930,700 @@ export async function getOwnerDashboard(): Promise<{
     scheduleHealth({ sessions, enrolls, batches, rooms, teachers, cfg }),
   ]);
   return { stats, health };
+}
+
+// ============================================================================
+// Milestone C — owner data management (self-service CRUD)
+// All writes are positional: every tab's column order equals its type's field
+// order (verified against the Sheet). IDs keep the existing format: a letter
+// prefix + zero-padded counter (T001 / S001 / B001 / E001 / R001).
+// ============================================================================
+
+/** Next id for a tab: max numeric suffix among `ids`, +1, `prefix` + `pad`-wide. */
+function nextId(ids: string[], prefix: string, pad: number): string {
+  let max = 0;
+  for (const id of ids) {
+    const n = parseInt(id.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  return `${prefix}${String(max + 1).padStart(pad, "0")}`;
+}
+
+// ---------------- C5 Rooms ----------------
+
+export interface RoomView extends Room {
+  /** active batches + timetable rules that reference this room (block delete). */
+  inUse: number;
+}
+
+export async function listRooms(): Promise<RoomView[]> {
+  const [rooms, batches, rules] = await Promise.all([
+    readTab<Room>("Rooms"),
+    readTab<Batch>("Batches"),
+    readTab<TimetableRule>("Timetable"),
+  ]);
+  const refs = new Map<string, number>();
+  for (const b of batches)
+    if (b.active === "TRUE") refs.set(b.room_id, (refs.get(b.room_id) ?? 0) + 1);
+  for (const r of rules) refs.set(r.room_id, (refs.get(r.room_id) ?? 0) + 1);
+  return rooms
+    .map((r) => ({ ...r, inUse: refs.get(r.room_id) ?? 0 }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getRoom(id: string): Promise<Room | null> {
+  const rooms = await readTab<Room>("Rooms");
+  return rooms.find((r) => r.room_id === id) ?? null;
+}
+
+export async function createRoom(input: {
+  name: string;
+  capacity: string;
+}): Promise<string> {
+  const rooms = await readTab<Room>("Rooms");
+  const id = nextId(rooms.map((r) => r.room_id), "R", 3);
+  await appendRows("Rooms", [[id, input.name, input.capacity]]);
+  return id;
+}
+
+export async function updateRoom(
+  id: string,
+  input: { name: string; capacity: string },
+): Promise<void> {
+  const rooms = await readTab<Room>("Rooms");
+  const idx = rooms.findIndex((r) => r.room_id === id);
+  if (idx < 0) return;
+  await updateValues(`Rooms!A${idx + 2}:C${idx + 2}`, [
+    [id, input.name, input.capacity],
+  ]);
+}
+
+/** Count of active batches + timetable rules that reference this room. */
+export async function roomUsage(id: string): Promise<number> {
+  const [batches, rules] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<TimetableRule>("Timetable"),
+  ]);
+  return (
+    batches.filter((b) => b.active === "TRUE" && b.room_id === id).length +
+    rules.filter((r) => r.room_id === id).length
+  );
+}
+
+export async function deleteRoom(id: string): Promise<void> {
+  const rooms = await readTab<Room>("Rooms");
+  const idx = rooms.findIndex((r) => r.room_id === id);
+  if (idx >= 0) await deleteRows("Rooms", [idx + 2]);
+}
+
+// ---------------- C6 Holidays ----------------
+
+export interface Holiday {
+  date: string;
+  name: string;
+}
+
+export async function listHolidays(): Promise<Holiday[]> {
+  const rows = await readTab<Holiday>("Holidays");
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Add a holiday (idempotent on date), then suppress its now-orphaned future
+ *  recurring sessions via the generator (attendance-bearing ones stay frozen). */
+export async function createHoliday(input: {
+  date: string;
+  name: string;
+}): Promise<void> {
+  const rows = await readTab<Holiday>("Holidays");
+  if (rows.some((h) => h.date === input.date)) return;
+  await appendRows("Holidays", [[input.date, input.name]]);
+  await generateSessions();
+}
+
+/** Remove a holiday, then regenerate so the freed dates get their sessions back. */
+export async function deleteHoliday(date: string): Promise<void> {
+  const rows = await readTab<Holiday>("Holidays");
+  const idx = rows.findIndex((h) => h.date === date);
+  if (idx < 0) return;
+  await deleteRows("Holidays", [idx + 2]);
+  await generateSessions();
+}
+
+// ---------------- C4 Teachers ----------------
+
+export interface TeacherView {
+  teacher_id: string;
+  name: string;
+  phone: string;
+  role: "teacher" | "owner";
+  subjects: string;
+  active: boolean;
+  hasPin: boolean;
+  /** active batches this teacher is assigned to (block deactivation). */
+  batchCount: number;
+}
+
+export async function listTeachers(): Promise<TeacherView[]> {
+  const [teachers, batches] = await Promise.all([
+    readTab<Teacher>("Teachers"),
+    readTab<Batch>("Batches"),
+  ]);
+  const bCount = new Map<string, number>();
+  for (const b of batches)
+    if (b.active === "TRUE")
+      bCount.set(b.teacher_id, (bCount.get(b.teacher_id) ?? 0) + 1);
+  return teachers
+    .map((t) => ({
+      teacher_id: t.teacher_id,
+      name: t.name,
+      phone: t.phone,
+      role: t.role === "owner" ? ("owner" as const) : ("teacher" as const),
+      subjects: t.subjects,
+      active: t.active === "TRUE",
+      hasPin: !!t.pin_hash && !t.pin_hash.startsWith("<"),
+      batchCount: bCount.get(t.teacher_id) ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.active) - Number(a.active) || a.name.localeCompare(b.name),
+    );
+}
+
+export async function getTeacher(id: string): Promise<Teacher | null> {
+  const teachers = await readTab<Teacher>("Teachers");
+  return teachers.find((t) => t.teacher_id === id) ?? null;
+}
+
+/** Is `phone` already used by another teacher? (login keys on phone — keep unique.) */
+export async function teacherPhoneTaken(
+  phone: string,
+  exceptId?: string,
+): Promise<boolean> {
+  const teachers = await readTab<Teacher>("Teachers");
+  return teachers.some((t) => t.phone === phone && t.teacher_id !== exceptId);
+}
+
+export async function createTeacher(input: {
+  name: string;
+  phone: string;
+  role: "teacher" | "owner";
+  subjects: string;
+  pinHash: string;
+}): Promise<string> {
+  const teachers = await readTab<Teacher>("Teachers");
+  const id = nextId(teachers.map((t) => t.teacher_id), "T", 3);
+  await appendRows("Teachers", [
+    [id, input.name, input.phone, input.pinHash, input.role, input.subjects, "TRUE"],
+  ]);
+  return id;
+}
+
+/** Update editable fields; pin_hash + active are preserved from the saved row. */
+export async function updateTeacher(
+  id: string,
+  input: { name: string; phone: string; role: "teacher" | "owner"; subjects: string },
+): Promise<void> {
+  const teachers = await readTab<Teacher>("Teachers");
+  const idx = teachers.findIndex((t) => t.teacher_id === id);
+  if (idx < 0) return;
+  const cur = teachers[idx];
+  await updateValues(`Teachers!A${idx + 2}:G${idx + 2}`, [
+    [id, input.name, input.phone, cur.pin_hash, input.role, input.subjects, cur.active],
+  ]);
+}
+
+export async function setTeacherPin(id: string, pinHash: string): Promise<void> {
+  const teachers = await readTab<Teacher>("Teachers");
+  const idx = teachers.findIndex((t) => t.teacher_id === id);
+  if (idx >= 0) await updateValues(`Teachers!D${idx + 2}`, [[pinHash]]);
+}
+
+export async function setTeacherActive(id: string, active: boolean): Promise<void> {
+  const teachers = await readTab<Teacher>("Teachers");
+  const idx = teachers.findIndex((t) => t.teacher_id === id);
+  if (idx >= 0)
+    await updateValues(`Teachers!G${idx + 2}`, [[active ? "TRUE" : "FALSE"]]);
+}
+
+/** Number of active owners other than `exceptId` — guards the last-owner rule. */
+export async function otherActiveOwners(exceptId: string): Promise<number> {
+  const teachers = await readTab<Teacher>("Teachers");
+  return teachers.filter(
+    (t) => t.role === "owner" && t.active === "TRUE" && t.teacher_id !== exceptId,
+  ).length;
+}
+
+// ---------------- C1 Students ----------------
+
+export interface StudentView {
+  student_id: string;
+  name: string;
+  phone: string;
+  parent_phone: string;
+  join_date: string;
+  active: boolean;
+  batchCount: number;
+}
+
+export async function listStudents(): Promise<StudentView[]> {
+  const [students, enrolls] = await Promise.all([
+    readTab<Student>("Students"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const bCount = new Map<string, number>();
+  for (const e of enrolls)
+    if (e.status === "active" && e.end_date === "")
+      bCount.set(e.student_id, (bCount.get(e.student_id) ?? 0) + 1);
+  return students
+    .map((s) => ({
+      student_id: s.student_id,
+      name: s.name,
+      phone: s.phone,
+      parent_phone: s.parent_phone,
+      join_date: s.join_date,
+      active: s.status === "active",
+      batchCount: bCount.get(s.student_id) ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.active) - Number(a.active) || a.name.localeCompare(b.name),
+    );
+}
+
+export async function getStudent(id: string): Promise<Student | null> {
+  const students = await readTab<Student>("Students");
+  return students.find((s) => s.student_id === id) ?? null;
+}
+
+export async function createStudent(input: {
+  name: string;
+  phone: string;
+  parent_phone: string;
+  join_date: string;
+  notes: string;
+}): Promise<string> {
+  const students = await readTab<Student>("Students");
+  const id = nextId(students.map((s) => s.student_id), "S", 3);
+  await appendRows("Students", [
+    [id, input.name, input.phone, input.parent_phone, input.join_date, "active", input.notes],
+  ]);
+  return id;
+}
+
+export async function updateStudent(
+  id: string,
+  input: {
+    name: string;
+    phone: string;
+    parent_phone: string;
+    join_date: string;
+    notes: string;
+  },
+): Promise<void> {
+  const students = await readTab<Student>("Students");
+  const idx = students.findIndex((s) => s.student_id === id);
+  if (idx < 0) return;
+  const cur = students[idx];
+  await updateValues(`Students!A${idx + 2}:G${idx + 2}`, [
+    [id, input.name, input.phone, input.parent_phone, input.join_date, cur.status, input.notes],
+  ]);
+}
+
+export async function setStudentActive(id: string, active: boolean): Promise<void> {
+  const students = await readTab<Student>("Students");
+  const idx = students.findIndex((s) => s.student_id === id);
+  if (idx >= 0)
+    await updateValues(`Students!F${idx + 2}`, [[active ? "active" : "inactive"]]);
+}
+
+export interface StudentProfile {
+  student: Student;
+  enrollments: {
+    enroll_id: string;
+    batch_id: string;
+    batchName: string;
+    start_date: string;
+    end_date: string;
+    status: string;
+  }[];
+  history: { date: string; batchName: string; status: string; method: string }[];
+  present: number;
+  total: number;
+  pct: number;
+}
+
+/** Profile: the student, their enrollments (batch-named) and attendance history
+ *  (latest mark per session, newest first). % is over fully-marked sessions. */
+export async function getStudentProfile(id: string): Promise<StudentProfile | null> {
+  const [students, enrolls, batches, attendance] = await Promise.all([
+    readTab<Student>("Students"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<Batch>("Batches"),
+    readTab<AttendanceRow>("Attendance"),
+  ]);
+  const student = students.find((s) => s.student_id === id);
+  if (!student) return null;
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+
+  const enrollments = enrolls
+    .filter((e) => e.student_id === id)
+    .sort((a, b) => b.start_date.localeCompare(a.start_date))
+    .map((e) => ({
+      enroll_id: e.enroll_id,
+      batch_id: e.batch_id,
+      batchName: bName.get(e.batch_id) ?? e.batch_id,
+      start_date: e.start_date,
+      end_date: e.end_date,
+      status: e.status,
+    }));
+
+  // latest mark per session for this student
+  const latest = new Map<string, AttendanceRow>();
+  for (const a of attendance) {
+    if (a.student_id !== id) continue;
+    const prev = latest.get(a.session_id);
+    if (
+      !prev ||
+      a.timestamp > prev.timestamp ||
+      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
+    )
+      latest.set(a.session_id, a);
+  }
+  const marks = [...latest.values()];
+  const present = marks.filter((m) => m.status === "present").length;
+  const history = marks
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp))
+    .slice(0, 100)
+    .map((m) => ({
+      date: m.date,
+      batchName: bName.get(m.batch_id) ?? m.batch_id,
+      status: m.status,
+      method: m.method,
+    }));
+  return {
+    student,
+    enrollments,
+    history,
+    present,
+    total: marks.length,
+    pct: marks.length ? present / marks.length : 0,
+  };
+}
+
+// ---------------- C2 Batches ----------------
+
+export interface BatchView {
+  batch_id: string;
+  name: string;
+  subject: string;
+  teacher_id: string;
+  teacherName: string;
+  room_id: string;
+  roomName: string;
+  fee: string;
+  level: string;
+  active: boolean;
+  enrolled: number;
+}
+
+export async function listBatches(): Promise<BatchView[]> {
+  const [batches, teachers, rooms, enrolls] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Teacher>("Teachers"),
+    readTab<Room>("Rooms"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const tName = new Map(teachers.map((t) => [t.teacher_id, t.name]));
+  const rName = new Map(rooms.map((r) => [r.room_id, r.name]));
+  const enrolled = new Map<string, number>();
+  for (const e of enrolls)
+    if (e.status === "active" && e.end_date === "")
+      enrolled.set(e.batch_id, (enrolled.get(e.batch_id) ?? 0) + 1);
+  return batches
+    .map((b) => ({
+      batch_id: b.batch_id,
+      name: b.name,
+      subject: b.subject,
+      teacher_id: b.teacher_id,
+      teacherName: tName.get(b.teacher_id) ?? b.teacher_id,
+      room_id: b.room_id,
+      roomName: rName.get(b.room_id) ?? b.room_id,
+      fee: b.fee,
+      level: b.level,
+      active: b.active === "TRUE",
+      enrolled: enrolled.get(b.batch_id) ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.active) - Number(a.active) || a.name.localeCompare(b.name),
+    );
+}
+
+export async function getBatch(id: string): Promise<Batch | null> {
+  const batches = await readTab<Batch>("Batches");
+  return batches.find((b) => b.batch_id === id) ?? null;
+}
+
+export async function createBatch(input: {
+  name: string;
+  subject: string;
+  teacher_id: string;
+  room_id: string;
+  fee: string;
+  level: string;
+}): Promise<string> {
+  const batches = await readTab<Batch>("Batches");
+  const id = nextId(batches.map((b) => b.batch_id), "B", 3);
+  await appendRows("Batches", [
+    [id, input.name, input.subject, input.teacher_id, input.room_id, input.fee, input.level, "TRUE"],
+  ]);
+  return id;
+}
+
+export async function updateBatch(
+  id: string,
+  input: {
+    name: string;
+    subject: string;
+    teacher_id: string;
+    room_id: string;
+    fee: string;
+    level: string;
+  },
+): Promise<void> {
+  const batches = await readTab<Batch>("Batches");
+  const idx = batches.findIndex((b) => b.batch_id === id);
+  if (idx < 0) return;
+  const cur = batches[idx];
+  await updateValues(`Batches!A${idx + 2}:H${idx + 2}`, [
+    [id, input.name, input.subject, input.teacher_id, input.room_id, input.fee, input.level, cur.active],
+  ]);
+}
+
+export async function setBatchActive(id: string, active: boolean): Promise<void> {
+  const batches = await readTab<Batch>("Batches");
+  const idx = batches.findIndex((b) => b.batch_id === id);
+  if (idx >= 0)
+    await updateValues(`Batches!H${idx + 2}`, [[active ? "TRUE" : "FALSE"]]);
+}
+
+export interface BatchDetail {
+  batch: Batch;
+  teacherName: string;
+  roomName: string;
+  enrollments: {
+    enroll_id: string;
+    student_id: string;
+    studentName: string;
+    start_date: string;
+    end_date: string;
+    status: string;
+  }[];
+  /** active students NOT currently enrolled here (candidates to add). */
+  candidates: { id: string; name: string }[];
+}
+
+export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
+  const [batches, teachers, rooms, students, enrolls] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Teacher>("Teachers"),
+    readTab<Room>("Rooms"),
+    readTab<Student>("Students"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const batch = batches.find((b) => b.batch_id === id);
+  if (!batch) return null;
+  const sName = new Map(students.map((s) => [s.student_id, s.name]));
+  const here = enrolls.filter((e) => e.batch_id === id);
+  const activeHere = new Set(
+    here.filter((e) => e.status === "active" && e.end_date === "").map((e) => e.student_id),
+  );
+  const enrollments = here
+    .sort(
+      (a, b) =>
+        Number(b.status === "active") - Number(a.status === "active") ||
+        (sName.get(a.student_id) ?? "").localeCompare(sName.get(b.student_id) ?? ""),
+    )
+    .map((e) => ({
+      enroll_id: e.enroll_id,
+      student_id: e.student_id,
+      studentName: sName.get(e.student_id) ?? e.student_id,
+      start_date: e.start_date,
+      end_date: e.end_date,
+      status: e.status,
+    }));
+  const candidates = students
+    .filter((s) => s.status === "active" && !activeHere.has(s.student_id))
+    .map((s) => ({ id: s.student_id, name: s.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    batch,
+    teacherName: teachers.find((t) => t.teacher_id === batch.teacher_id)?.name ?? batch.teacher_id,
+    roomName: rooms.find((r) => r.room_id === batch.room_id)?.name ?? batch.room_id,
+    enrollments,
+    candidates,
+  };
+}
+
+/** Active batches a student could be added to (not already actively enrolled). */
+export async function batchesForStudent(
+  studentId: string,
+): Promise<{ id: string; name: string }[]> {
+  const [batches, enrolls] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const inBatch = new Set(
+    enrolls
+      .filter((e) => e.student_id === studentId && e.status === "active" && e.end_date === "")
+      .map((e) => e.batch_id),
+  );
+  return batches
+    .filter((b) => b.active === "TRUE" && !inBatch.has(b.batch_id))
+    .map((b) => ({ id: b.batch_id, name: b.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ---------------- C3 Enrollments ----------------
+
+/** True if the student already has an open active enrollment in this batch. */
+export async function enrollmentExists(
+  studentId: string,
+  batchId: string,
+): Promise<boolean> {
+  const enrolls = await readTab<Enrollment>("Enrollments");
+  return enrolls.some(
+    (e) =>
+      e.student_id === studentId &&
+      e.batch_id === batchId &&
+      e.status === "active" &&
+      e.end_date === "",
+  );
+}
+
+/** Warn-level clash: does this batch's timetable overlap another batch the
+ *  student is actively enrolled in (shared day + time)? (PLAN §8 student=warn) */
+export async function enrollmentClash(
+  studentId: string,
+  batchId: string,
+): Promise<boolean> {
+  const [enrolls, rules] = await Promise.all([
+    readTab<Enrollment>("Enrollments"),
+    readTab<TimetableRule>("Timetable"),
+  ]);
+  const otherBatches = new Set(
+    enrolls
+      .filter(
+        (e) =>
+          e.student_id === studentId &&
+          e.batch_id !== batchId &&
+          e.status === "active" &&
+          e.end_date === "",
+      )
+      .map((e) => e.batch_id),
+  );
+  if (otherBatches.size === 0) return false;
+  const newRules = rules.filter((r) => r.batch_id === batchId);
+  const otherRules = rules.filter((r) => otherBatches.has(r.batch_id));
+  for (const n of newRules) {
+    const nDays = n.day_of_week.split(",").map((x) => x.trim());
+    for (const o of otherRules) {
+      const sharedDay = o.day_of_week
+        .split(",")
+        .map((x) => x.trim())
+        .some((d) => nDays.includes(d));
+      if (
+        sharedDay &&
+        rangesIntersect(n.effective_from, n.effective_to, o.effective_from, o.effective_to) &&
+        overlaps(n.start, n.end, o.start, o.end)
+      )
+        return true;
+    }
+  }
+  return false;
+}
+
+export async function createEnrollment(input: {
+  student_id: string;
+  batch_id: string;
+  start_date: string;
+}): Promise<string> {
+  const enrolls = await readTab<Enrollment>("Enrollments");
+  const id = nextId(enrolls.map((e) => e.enroll_id), "E", 3);
+  await appendRows("Enrollments", [
+    [id, input.student_id, input.batch_id, input.start_date, "", "active"],
+  ]);
+  return id;
+}
+
+/**
+ * End an enrollment: stamp end_date and mark status "left" (honest in the Sheet).
+ * Roster inclusion is window-based (see {@link enrollmentOnDate}), so the student
+ * still appears on sessions up to end_date — past correction keeps working — while
+ * "currently enrolled" counters (`status active && end_date empty`) drop them.
+ */
+export async function endEnrollment(
+  enrollId: string,
+  endDate: string,
+): Promise<void> {
+  const enrolls = await readTab<Enrollment>("Enrollments");
+  const idx = enrolls.findIndex((e) => e.enroll_id === enrollId);
+  if (idx < 0) return;
+  await updateValues(`Enrollments!E${idx + 2}:F${idx + 2}`, [[endDate, "left"]]);
+}
+
+export async function getEnrollment(enrollId: string): Promise<Enrollment | null> {
+  const enrolls = await readTab<Enrollment>("Enrollments");
+  return enrolls.find((e) => e.enroll_id === enrollId) ?? null;
+}
+
+// ---------------- C7 Settings (Config) ----------------
+
+export interface CenterConfig {
+  center_name: string;
+  timezone: string;
+  attendance_threshold: string;
+  week_start: string;
+  logo_url: string;
+  room_changeover_buffer_min: string;
+}
+
+const CONFIG_KEYS: (keyof CenterConfig)[] = [
+  "center_name",
+  "timezone",
+  "attendance_threshold",
+  "week_start",
+  "logo_url",
+  "room_changeover_buffer_min",
+];
+
+export async function getCenterConfig(): Promise<CenterConfig> {
+  const m = await config();
+  return {
+    center_name: m.get("center_name") ?? "",
+    timezone: m.get("timezone") ?? (process.env.CENTER_TZ ?? "Asia/Kolkata"),
+    attendance_threshold: m.get("attendance_threshold") ?? "75",
+    week_start: m.get("week_start") ?? "Mon",
+    logo_url: m.get("logo_url") ?? "",
+    room_changeover_buffer_min: m.get("room_changeover_buffer_min") ?? "0",
+  };
+}
+
+/** Upsert the editable Config keys: existing rows are updated in place, missing
+ *  keys are appended. Other keys (e.g. demo_today) are left untouched. */
+export async function updateCenterConfig(
+  values: Partial<Record<keyof CenterConfig, string>>,
+): Promise<void> {
+  const rows = await readTab<ConfigRow>("Config");
+  const rowByKey = new Map(rows.map((r, i) => [r.key, i + 2]));
+  const updates: { range: string; values: string[][] }[] = [];
+  const appends: string[][] = [];
+  for (const key of CONFIG_KEYS) {
+    const v = values[key];
+    if (v === undefined) continue;
+    const row = rowByKey.get(key);
+    if (row) updates.push({ range: `Config!B${row}`, values: [[v]] });
+    else appends.push([key, v]);
+  }
+  await Promise.all([batchUpdateValues(updates), appendRows("Config", appends)]);
 }

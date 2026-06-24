@@ -17,6 +17,32 @@ import {
   updateRule,
   expireRule,
   ruleClashes,
+  // Milestone C — owner data management
+  createRoom,
+  updateRoom,
+  deleteRoom,
+  roomUsage,
+  createHoliday,
+  deleteHoliday,
+  getTeacher,
+  createTeacher,
+  updateTeacher,
+  setTeacherPin,
+  setTeacherActive,
+  teacherPhoneTaken,
+  otherActiveOwners,
+  createStudent,
+  updateStudent,
+  setStudentActive,
+  createBatch,
+  updateBatch,
+  setBatchActive,
+  createEnrollment,
+  endEnrollment,
+  enrollmentExists,
+  enrollmentClash,
+  getEnrollment,
+  updateCenterConfig,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import type { AttendanceStatus } from "@/lib/types";
@@ -237,4 +263,236 @@ export async function addExtraClass(formData: FormData): Promise<void> {
   }
   await createExtraClass({ date, batchId, start, end, roomId, teacherId });
   redirect(`/today?added=1${clash.warnings.length ? "&warn=student" : ""}`);
+}
+
+// ============================================================================
+// Milestone C — owner data management actions
+// Every action re-checks the owner role server-side (N2: never trust the UI).
+// ============================================================================
+
+async function requireOwner() {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "owner") redirect("/today");
+  return user;
+}
+
+const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+const isPhone = (s: string) => /^\d{6,15}$/.test(s);
+const isPin = (s: string) => /^\d{4,6}$/.test(s);
+const isInt = (s: string) => /^\d+$/.test(s);
+
+/** Only allow redirecting back to an internal /manage path (no open redirect). */
+function safeBack(v: FormDataEntryValue | null, fallback: string): string {
+  const s = String(v ?? "");
+  return s.startsWith("/manage/") ? s : fallback;
+}
+
+// ---------------- C5 Rooms ----------------
+
+export async function saveRoom(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("roomId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const capacity = String(formData.get("capacity") ?? "").trim();
+  const back = id ? `/manage/rooms/${id}` : "/manage/rooms";
+  if (!name || !isInt(capacity)) redirect(`${back}?error=missing`);
+  if (id) await updateRoom(id, { name, capacity });
+  else await createRoom({ name, capacity });
+  redirect("/manage/rooms?saved=1");
+}
+
+export async function deleteRoomAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("roomId") ?? "").trim();
+  if (!id) redirect("/manage/rooms");
+  if ((await roomUsage(id)) > 0) redirect(`/manage/rooms/${id}?error=inuse`);
+  await deleteRoom(id);
+  redirect("/manage/rooms?deleted=1");
+}
+
+// ---------------- C6 Holidays ----------------
+
+export async function saveHoliday(formData: FormData): Promise<void> {
+  await requireOwner();
+  const date = String(formData.get("date") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!isDate(date) || !name) redirect("/manage/holidays?error=missing");
+  await createHoliday({ date, name }); // idempotent on date; regenerates sessions
+  redirect("/manage/holidays?saved=1");
+}
+
+export async function deleteHolidayAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const date = String(formData.get("date") ?? "").trim();
+  if (date) await deleteHoliday(date);
+  redirect("/manage/holidays?deleted=1");
+}
+
+// ---------------- C4 Teachers ----------------
+
+export async function saveTeacher(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("teacherId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const role = String(formData.get("role") ?? "teacher") === "owner" ? "owner" : "teacher";
+  const subjects = String(formData.get("subjects") ?? "").trim();
+  const pin = String(formData.get("pin") ?? "").trim();
+  const back = id ? `/manage/teachers/${id}` : "/manage/teachers/new";
+
+  if (!name || !isPhone(phone)) redirect(`${back}?error=missing`);
+  if (await teacherPhoneTaken(phone, id || undefined)) redirect(`${back}?error=phone`);
+
+  if (id) {
+    // demoting the last active owner would lock the centre out
+    const cur = await getTeacher(id);
+    if (cur?.role === "owner" && role !== "owner" && (await otherActiveOwners(id)) === 0) {
+      redirect(`${back}?error=lastowner`);
+    }
+    await updateTeacher(id, { name, phone, role, subjects });
+  } else {
+    if (!isPin(pin)) redirect(`${back}?error=pin`);
+    const pinHash = bcrypt.hashSync(pin, 10);
+    await createTeacher({ name, phone, role, subjects, pinHash });
+  }
+  redirect("/manage/teachers?saved=1");
+}
+
+export async function resetTeacherPin(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("teacherId") ?? "").trim();
+  const pin = String(formData.get("pin") ?? "").trim();
+  if (!id) redirect("/manage/teachers");
+  if (!isPin(pin)) redirect(`/manage/teachers/${id}?error=pin`);
+  await setTeacherPin(id, bcrypt.hashSync(pin, 10));
+  redirect(`/manage/teachers/${id}?pinset=1`);
+}
+
+export async function toggleTeacherActive(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("teacherId") ?? "").trim();
+  const active = String(formData.get("active") ?? "") === "true";
+  if (!id) redirect("/manage/teachers");
+  if (!active) {
+    const cur = await getTeacher(id);
+    if (cur?.role === "owner" && (await otherActiveOwners(id)) === 0) {
+      redirect(`/manage/teachers/${id}?error=lastowner`);
+    }
+  }
+  await setTeacherActive(id, active);
+  redirect("/manage/teachers?saved=1");
+}
+
+// ---------------- C1 Students ----------------
+
+export async function saveStudent(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("studentId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const parentPhone = String(formData.get("parentPhone") ?? "").trim();
+  const joinDate = String(formData.get("joinDate") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+  const back = id ? `/manage/students/${id}` : "/manage/students/new";
+
+  if (!name || !isDate(joinDate)) redirect(`${back}?error=missing`);
+  if (phone && !isPhone(phone)) redirect(`${back}?error=phone`);
+  if (parentPhone && !isPhone(parentPhone)) redirect(`${back}?error=phone`);
+
+  const payload = { name, phone, parent_phone: parentPhone, join_date: joinDate, notes };
+  if (id) await updateStudent(id, payload);
+  else await createStudent(payload);
+  redirect("/manage/students?saved=1");
+}
+
+export async function toggleStudentActive(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("studentId") ?? "").trim();
+  const active = String(formData.get("active") ?? "") === "true";
+  if (id) await setStudentActive(id, active);
+  redirect(`/manage/students/${id}?saved=1`);
+}
+
+// ---------------- C2 Batches ----------------
+
+export async function saveBatch(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("batchId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const subject = String(formData.get("subject") ?? "").trim();
+  const teacherId = String(formData.get("teacherId") ?? "").trim();
+  const roomId = String(formData.get("roomId") ?? "").trim();
+  const fee = String(formData.get("fee") ?? "").trim();
+  const level = String(formData.get("level") ?? "").trim();
+  const back = id ? `/manage/batches/${id}` : "/manage/batches/new";
+
+  if (!name || !subject || !teacherId || !roomId) redirect(`${back}?error=missing`);
+  if (fee && !isInt(fee)) redirect(`${back}?error=fee`);
+
+  const payload = { name, subject, teacher_id: teacherId, room_id: roomId, fee, level };
+  if (id) await updateBatch(id, payload);
+  else await createBatch(payload);
+  redirect("/manage/batches?saved=1");
+}
+
+export async function toggleBatchActive(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("batchId") ?? "").trim();
+  const active = String(formData.get("active") ?? "") === "true";
+  if (id) await setBatchActive(id, active);
+  redirect(`/manage/batches/${id}?saved=1`);
+}
+
+// ---------------- C3 Enrollments ----------------
+
+export async function addEnrollment(formData: FormData): Promise<void> {
+  await requireOwner();
+  const studentId = String(formData.get("studentId") ?? "").trim();
+  const batchId = String(formData.get("batchId") ?? "").trim();
+  const startDate = String(formData.get("startDate") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/batches");
+  if (!studentId || !batchId || !isDate(startDate)) redirect(`${back}?error=missing`);
+  if (await enrollmentExists(studentId, batchId)) redirect(`${back}?error=dup`);
+  const warn = await enrollmentClash(studentId, batchId);
+  await createEnrollment({ student_id: studentId, batch_id: batchId, start_date: startDate });
+  redirect(`${back}?enrolled=1${warn ? "&warn=student" : ""}`);
+}
+
+export async function endEnrollmentAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const enrollId = String(formData.get("enrollId") ?? "").trim();
+  const endDate = String(formData.get("endDate") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/batches");
+  if (!enrollId || !isDate(endDate)) redirect(`${back}?error=missing`);
+  const e = await getEnrollment(enrollId);
+  if (e && e.start_date > endDate) redirect(`${back}?error=range`);
+  await endEnrollment(enrollId, endDate);
+  redirect(`${back}?ended=1`);
+}
+
+// ---------------- C7 Settings ----------------
+
+export async function saveSettings(formData: FormData): Promise<void> {
+  await requireOwner();
+  const centerName = String(formData.get("centerName") ?? "").trim();
+  const timezone = String(formData.get("timezone") ?? "").trim();
+  const threshold = String(formData.get("threshold") ?? "").trim();
+  const weekStart = String(formData.get("weekStart") ?? "").trim();
+  const logoUrl = String(formData.get("logoUrl") ?? "").trim();
+  const buffer = String(formData.get("buffer") ?? "").trim();
+
+  if (!centerName) redirect("/manage/settings?error=missing");
+  if (!isInt(threshold) || Number(threshold) > 100) redirect("/manage/settings?error=threshold");
+  if (!isInt(buffer)) redirect("/manage/settings?error=buffer");
+
+  await updateCenterConfig({
+    center_name: centerName,
+    timezone,
+    attendance_threshold: threshold,
+    week_start: weekStart,
+    logo_url: logoUrl,
+    room_changeover_buffer_min: buffer,
+  });
+  redirect("/manage/settings?saved=1");
 }

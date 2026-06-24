@@ -36,7 +36,11 @@ export default async function AppLayout({
             <nav className="hidden items-center gap-1 sm:flex">
               <NavLink href="/today">Today</NavLink>
               {user.role === "owner" ? (
-                <NavLink href="/dashboard">Dashboard</NavLink>
+                <>
+                  <NavLink href="/dashboard">Dashboard</NavLink>
+                  <NavLink href="/timetable">Timetable</NavLink>
+                  <NavLink href="/manage">Manage</NavLink>
+                </>
               ) : null}
             </nav>
           </div>
@@ -59,6 +63,7 @@ export default async function AppLayout({
               <>
                 <NavLink href="/dashboard">Dashboard</NavLink>
                 <NavLink href="/timetable">Timetable</NavLink>
+                <NavLink href="/manage">Manage</NavLink>
               </>
             ) : null}
           </nav>

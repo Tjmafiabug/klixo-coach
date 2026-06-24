@@ -56,3 +56,41 @@ export function RoleChip({ role }: { role: string }) {
     </span>
   );
 }
+
+/** Active / inactive status chip for management lists. */
+export function ActiveChip({ active }: { active: boolean }) {
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide ${
+        active ? "bg-success-subtle text-success" : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {active ? "Active" : "Inactive"}
+    </span>
+  );
+}
+
+/** Tone-coloured notice banner used across the management screens. */
+export function Banner({
+  tone,
+  children,
+}: {
+  tone: "success" | "warning" | "danger" | "info";
+  children: React.ReactNode;
+}) {
+  const cls = {
+    success: "border-success/20 bg-success-subtle text-success",
+    warning: "border-warning/20 bg-warning-subtle text-warning",
+    danger: "border-danger/20 bg-danger-subtle text-danger",
+    info: "border-border bg-muted text-muted-foreground",
+  }[tone];
+  return (
+    <p className={`rounded-xl border px-3 py-2.5 text-sm font-medium ${cls}`}>
+      {children}
+    </p>
+  );
+}
+
+/** Shared input/select styling (matches the timetable rule form). */
+export const fieldClass =
+  "mt-1 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
