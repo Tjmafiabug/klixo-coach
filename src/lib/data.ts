@@ -277,7 +277,7 @@ export async function getOwnerStats(): Promise<OwnerStats> {
   const manual = marks.filter((m) => m.method === "manual");
   const recentManual = manual
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-    .slice(0, 10)
+    .slice(0, 200) // defensive cap; owner sees all at demo scale
     .map((m) => ({
       studentName: studentById.get(m.student_id)?.name ?? m.student_id,
       batchName: batchById.get(m.batch_id)?.name ?? m.batch_id,

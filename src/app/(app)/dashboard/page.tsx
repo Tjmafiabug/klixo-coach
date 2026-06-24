@@ -99,12 +99,16 @@ export default async function DashboardPage() {
       <div className="mt-6">
         <Card
           title="Manual-mark audit"
-          subtitle={`${stats.manualCount} manual marks total`}
+          subtitle={
+            stats.recentManual.length < stats.manualCount
+              ? `Showing ${stats.recentManual.length} of ${stats.manualCount} · most recent first`
+              : `${stats.manualCount} manual marks · most recent first`
+          }
         >
           {stats.recentManual.length === 0 ? (
             <Empty>No manual marks recorded.</Empty>
           ) : (
-            <ul className="divide-y divide-border">
+            <ul className="-mx-1 max-h-96 divide-y divide-border overflow-y-auto px-1">
               {stats.recentManual.map((m, i) => (
                 <li
                   key={i}
