@@ -43,9 +43,13 @@ import {
   enrollmentClash,
   getEnrollment,
   updateCenterConfig,
+  refsExist,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
+import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
 import type { AttendanceStatus } from "@/lib/types";
+
+const ATTENDANCE_STATUSES: readonly AttendanceStatus[] = ["present", "absent", "late"];
 
 export interface LoginState {
   error?: string;
@@ -67,13 +71,24 @@ export async function login(
   const pin = String(formData.get("pin") ?? "").trim();
   if (!phone || !pin) return { error: "Enter phone and PIN." };
 
+  // N9 lockout: stop online PIN guessing after repeated failures on this phone.
+  const lockMs = lockRemainingMs(phone);
+  if (lockMs > 0) {
+    return { error: `Too many attempts. Try again in ${Math.ceil(lockMs / 60000)} min.` };
+  }
+
   const teacher = await getTeacherByPhone(phone);
   if (!teacher || !teacher.pin_hash || teacher.pin_hash.startsWith("<")) {
+    recordFailure(phone);
     return { error: "Invalid phone or PIN." };
   }
   const ok = await bcrypt.compare(pin, teacher.pin_hash);
-  if (!ok) return { error: "Invalid phone or PIN." };
+  if (!ok) {
+    recordFailure(phone);
+    return { error: "Invalid phone or PIN." };
+  }
 
+  recordSuccess(phone);
   await createSession({
     teacherId: teacher.teacher_id,
     role: teacher.role,
@@ -122,6 +137,7 @@ export async function submitMarks(formData: FormData): Promise<void> {
   }[] = [];
   for (const m of submitted) {
     if (!savedByStudent.has(m.studentId)) continue; // not on roster — ignore
+    if (!ATTENDANCE_STATUSES.includes(m.status)) continue; // invalid status — ignore (N4)
     const saved = savedByStudent.get(m.studentId) ?? null;
     if (saved === null) {
       // never marked → backfill (past) is a manual mark with a reason (the client
@@ -222,6 +238,10 @@ export async function saveRule(formData: FormData): Promise<void> {
   if (rule.effective_to && rule.effective_to < rule.effective_from) {
     redirect(`${back}?error=range`);
   }
+  // N7: referenced batch/room/teacher must exist (and be active)
+  if (!(await refsExist({ batchId: rule.batch_id, roomId: rule.room_id, teacherId: rule.teacher_id }))) {
+    redirect(`${back}?error=missing`);
+  }
 
   const clash = await ruleClashes(rule);
   if (clash.blocking.length) {
@@ -256,6 +276,7 @@ export async function addExtraClass(formData: FormData): Promise<void> {
     redirect("/new-session?error=missing");
   }
   if (start >= end) redirect("/new-session?error=time");
+  if (!(await refsExist({ batchId, roomId, teacherId }))) redirect("/new-session?error=missing"); // N7
   // room/teacher clash blocks; student clash is a warning (allowed)
   const clash = await clashesForCandidate({ date, batchId, start, end, roomId, teacherId });
   if (clash.blocking.length) {
@@ -429,6 +450,7 @@ export async function saveBatch(formData: FormData): Promise<void> {
 
   if (!name || !subject || !teacherId || !roomId) redirect(`${back}?error=missing`);
   if (fee && !isInt(fee)) redirect(`${back}?error=fee`);
+  if (!(await refsExist({ teacherId, roomId }))) redirect(`${back}?error=missing`); // N7
 
   const payload = { name, subject, teacher_id: teacherId, room_id: roomId, fee, level };
   if (id) await updateBatch(id, payload);
@@ -453,6 +475,7 @@ export async function addEnrollment(formData: FormData): Promise<void> {
   const startDate = String(formData.get("startDate") ?? "").trim();
   const back = safeBack(formData.get("back"), "/manage/batches");
   if (!studentId || !batchId || !isDate(startDate)) redirect(`${back}?error=missing`);
+  if (!(await refsExist({ studentId, batchId }))) redirect(`${back}?error=missing`); // N7
   if (await enrollmentExists(studentId, batchId)) redirect(`${back}?error=dup`);
   const warn = await enrollmentClash(studentId, batchId);
   await createEnrollment({ student_id: studentId, batch_id: batchId, start_date: startDate });

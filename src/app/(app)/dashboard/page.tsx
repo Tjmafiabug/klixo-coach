@@ -21,7 +21,7 @@ export default async function DashboardPage() {
   const user = (await getSession())!;
   if (user.role !== "owner") redirect("/today");
 
-  const { stats, health } = await getOwnerDashboard();
+  const { stats, health, integrity } = await getOwnerDashboard();
   const blocking = health.clashes.filter((c) => c.blocking).length;
 
   return (
@@ -47,6 +47,22 @@ export default async function DashboardPage() {
         </span>
         <span className="text-xs opacity-80">Timetable →</span>
       </Link>
+
+      {integrity.length > 0 ? (
+        <div className="mt-3 rounded-xl border border-warning/20 bg-warning-subtle p-3">
+          <p className="text-sm font-semibold text-warning">
+            {integrity.length} data integrity issue{integrity.length === 1 ? "" : "s"} — likely a direct-Sheet edit
+          </p>
+          <ul className="mt-1.5 space-y-1 text-xs text-warning/90">
+            {integrity.slice(0, 6).map((it, i) => (
+              <li key={i}>
+                <span className="font-semibold uppercase">{it.kind}</span> · {it.detail}
+              </li>
+            ))}
+            {integrity.length > 6 ? <li>…and {integrity.length - 6} more</li> : null}
+          </ul>
+        </div>
+      ) : null}
 
       <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Overall attendance" value={pct(stats.overall)} tone="brand" />

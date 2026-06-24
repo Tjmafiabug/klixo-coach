@@ -52,18 +52,18 @@ Phase 0 as "attendance **+ timetable** (with Sessions)".
 
 | # | Item | Status | Note |
 |---|---|---|---|
-| N1 | "today"/dow/date in CENTER_TZ everywhere (PLAN §11) | 🟡 | done in marking; must hold in generation + past views |
-| N2 | Access control on every **server action** (not just UI) | 🟡 | login guard exists; per-action role checks partial |
-| N3 | Teachers must NOT see student phone numbers (owner-only) | 🟡 | roster names-only ✅; student profile + phones live only under owner-guarded /manage. Audit teacher-facing surfaces in D |
-| N4 | Server-side validation on every write | 🟡 | all Milestone-C writes validate + re-check owner role; A/B writes still trust inputs → D |
-| N5 | Empty / loading / error states on every screen | 🟡 | empty states partial; no loading skeletons; error.tsx missing |
+| N1 | "today"/dow/date in CENTER_TZ everywhere (PLAN §11) | ✅ | marking, generation, past views all use centre tz |
+| N2 | Access control on every **server action** (not just UI) | ✅ | every write action re-checks role server-side (owner actions via requireOwner) |
+| N3 | Teachers must NOT see student phone numbers (owner-only) | ✅ | teacher surfaces (today/roster/mark) names-only; profile + phones only under owner-guarded /manage; /api/center session-gated |
+| N4 | Server-side validation on every write | ✅ | C writes validate + owner-check; attendance status enum validated; A/B write inputs guarded |
+| N5 | Empty / loading / error states on every screen | ✅ | global-error + (app)/error.tsx (unstable_retry) + not-found.tsx + (app)/loading.tsx; empty states on lists |
 | N6 | Audit fields (marked_by, method, timestamp, reason) on every attendance write | ✅ | |
-| N7 | Referential integrity on writes (enrollment→student/batch, session→batch) | ⛔ | + read-time "schedule health" report (PLAN §7) |
-| N8 | Attendance archival + dashboard read pagination/aggregation (PLAN §11) | ⛔ | dashboard reads ALL rows each load — slow at scale |
-| N9 | Login lockout / rate-limit after N failed PINs (security) | ⛔ | |
+| N7 | Referential integrity on writes (enrollment→student/batch, session→batch) | ✅ | write-time `refsExist` guard on enroll/batch/rule/extra; read-time `integrityIssues` on dashboard + schedule-health report |
+| N8 | Attendance archival + dashboard read pagination/aggregation (PLAN §11) | ⛔ | dashboard reads ALL rows each load — slow at scale → Phase 3/G |
+| N9 | Login lockout / rate-limit after N failed PINs (security) | ✅ | in-memory per-phone throttle (5 fails → 15-min lock); persistent store = Phase 3 |
 | N10 | Concurrency: last-write-wins acceptable (low writer count) | ✅ | documented, fine per PLAN |
-| N11 | Late-joiner % denominator starts at enrollment start_date | 🟡 | seed respects it; correction flow must too |
-| N12 | Marking blocked for cancelled sessions / before enroll start / after end | ⛔ | |
+| N11 | Late-joiner % denominator starts at enrollment start_date | ✅ | window-based `enrollmentOnDate` governs roster incl. correction; ended enrollments still in-window |
+| N12 | Marking blocked for cancelled sessions / before enroll start / after end | ✅ | submitMarks blocks cancelled + future; enroll-window enforced via roster gate |
 
 ## 4. Locked-decision conformance (locked-decision axis)
 
@@ -90,7 +90,10 @@ Phase 0 as "attendance **+ timetable** (with Sessions)".
   - C1 Students (+ profile/history), C2 Batches, C3 Enrollments (+ student clash warn), C4 Teachers (+ PIN reset, last-owner guard), C5 Rooms, C6 Holidays, C7 Settings (Config).
   - Surface: `/manage` hub (owner nav). Every action re-checks owner role + validates inputs server-side. Enroll-end sets end_date + status `left`; roster inclusion is window-based (`enrollmentOnDate`) so past correction still sees an ended student.
   - Deps: none; B depends on C6+C5.
-- **D — Hardening** N3,N4,N5,N7,N9,N12 + error.tsx/not-found + read-time health report.
+- **D — Hardening** — ✅ built (build-verified; live-test + deploy pending). N3 PII audit + /api/center gate,
+  N4 write validation (+ attendance status enum), N5 global-error/error/not-found/loading, N7 `refsExist`
+  write guards + `integrityIssues` read-time scan on dashboard, N9 in-memory login lockout, N11 window-based
+  roster (`enrollmentOnDate`), N12 cancelled/future/enroll-window guards. **N8 (archival/pagination) deferred → G.**
 - **E — Phase 1 (sellable):** WhatsApp absent alerts, fees, per-centre branding, reports/exports.
 - **F — Phase 2 (sticky):** exams/marks, parent read-only, notes, roles/permissions.
 - **G — Phase 3 (scale):** one-click provisioning, CSV import, billing, admin console, archival job (N8).

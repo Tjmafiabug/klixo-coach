@@ -91,15 +91,26 @@ build-verified; NOT yet live-tested against the Sheet or deployed._
   week start, timezone*, logo URL). *tz here is informational — live clock = CENTER_TZ env.
 - Shared: `components/SubmitButton` (pending state), `ui.Banner`/`ActiveChip`/`fieldClass`.
 
+**Milestone D — hardening** (zero-Sheet trust) — _code-complete & build-verified;
+NOT yet live-tested or deployed._
+- N3 PII: teacher surfaces (today/roster/mark) are names-only; student profile + phone
+  numbers live only under owner-guarded `/manage`; `/api/center` now session-gated.
+- N4: every write validates server-side (attendance status enum; C-write field checks).
+- N5: `app/global-error.tsx` + `(app)/error.tsx` (Next 16 prop is **`unstable_retry`**,
+  not `reset`) + `app/not-found.tsx` + `(app)/loading.tsx` skeleton.
+- N7 referential integrity: write-time `refsExist` guard on enroll/batch/rule/extra-class;
+  read-time `integrityIssues` scan (dangling refs) surfaced on the dashboard.
+- N9: in-memory per-phone login lockout (`lib/rate-limit.ts`, 5 fails → 15-min lock;
+  per-process — persistent store is a Phase-3 upgrade).
+- N11: roster inclusion is window-based (`enrollmentOnDate`) end-to-end.
+- N12: marking blocked for cancelled + future sessions; enroll-window via the roster gate.
+- **N8 (attendance archival / dashboard pagination) deferred → Phase 3/G** (only open item).
+
 ## NOT done / NEXT (resume here)
 
-Next: **live-test Milestone C against the Sheet (with restore) → deploy**, then:
+Next: **live-test Milestones C + D against the Sheet (with restore) → deploy**, then:
 
 Recommended order (see BUILD.md for full specs + acceptance):
-
-- **D — Hardening:** server-side validation on all writes; teachers must not see
-  student phone numbers (owner-only); login lockout; error.tsx/not-found; referential
-  integrity + read-time health surfacing; attendance archival / dashboard read pagination.
 - **E — Phase 1 (sellable):** WhatsApp absent alerts + monthly summary, fees module,
   per-centre branding, reports/exports (CSV/PDF).
 - **F/G:** exams/report-cards, parent view, roles/permissions; then one-click

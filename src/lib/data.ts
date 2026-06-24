@@ -913,8 +913,9 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
 export async function getOwnerDashboard(): Promise<{
   stats: OwnerStats;
   health: { clashes: Clash[] };
+  integrity: IntegrityIssue[];
 }> {
-  const [attendance, students, batches, teachers, rooms, sessions, enrolls, cfg] =
+  const [attendance, students, batches, teachers, rooms, sessions, enrolls, rules, cfg] =
     await Promise.all([
       readTab<AttendanceRow>("Attendance"),
       readTab<Student>("Students"),
@@ -923,13 +924,15 @@ export async function getOwnerDashboard(): Promise<{
       readTab<Room>("Rooms"),
       readTab<Session>("Sessions"),
       readTab<Enrollment>("Enrollments"),
+      readTab<TimetableRule>("Timetable"),
       config(),
     ]);
   const [stats, health] = await Promise.all([
     getOwnerStats({ attendance, students, batches, teachers, cfg }),
     scheduleHealth({ sessions, enrolls, batches, rooms, teachers, cfg }),
   ]);
-  return { stats, health };
+  const integrity = integrityIssues({ sessions, enrolls, batches, rooms, teachers, students, rules });
+  return { stats, health, integrity };
 }
 
 // ============================================================================
@@ -1575,6 +1578,84 @@ export async function endEnrollment(
 export async function getEnrollment(enrollId: string): Promise<Enrollment | null> {
   const enrolls = await readTab<Enrollment>("Enrollments");
   return enrolls.find((e) => e.enroll_id === enrollId) ?? null;
+}
+
+// ---------------- N7 referential integrity ----------------
+
+/**
+ * Write-time guard: do the referenced rows exist (and, where applicable, are they
+ * active)? Reads only the tabs implied by the supplied refs. Used by the write
+ * actions so a crafted/stale request can't create dangling rows.
+ */
+export async function refsExist(refs: {
+  batchId?: string;
+  roomId?: string;
+  teacherId?: string;
+  studentId?: string;
+}): Promise<boolean> {
+  const [batches, rooms, teachers, students] = await Promise.all([
+    refs.batchId !== undefined ? readTab<Batch>("Batches") : Promise.resolve<Batch[]>([]),
+    refs.roomId !== undefined ? readTab<Room>("Rooms") : Promise.resolve<Room[]>([]),
+    refs.teacherId !== undefined ? readTab<Teacher>("Teachers") : Promise.resolve<Teacher[]>([]),
+    refs.studentId !== undefined ? readTab<Student>("Students") : Promise.resolve<Student[]>([]),
+  ]);
+  if (refs.batchId !== undefined) {
+    const b = batches.find((x) => x.batch_id === refs.batchId);
+    if (!b || b.active !== "TRUE") return false;
+  }
+  if (refs.roomId !== undefined && !rooms.some((x) => x.room_id === refs.roomId)) return false;
+  if (refs.teacherId !== undefined) {
+    const t = teachers.find((x) => x.teacher_id === refs.teacherId);
+    if (!t || t.active !== "TRUE") return false;
+  }
+  if (refs.studentId !== undefined) {
+    const s = students.find((x) => x.student_id === refs.studentId);
+    if (!s || s.status !== "active") return false;
+  }
+  return true;
+}
+
+export interface IntegrityIssue {
+  kind: string;
+  detail: string;
+}
+
+/**
+ * Read-time integrity scan (N7): dangling references introduced by direct-Sheet
+ * edits — sessions/rules/enrollments pointing at rows that no longer exist. Pure
+ * over already-loaded tabs so the dashboard can run it without extra reads.
+ */
+export function integrityIssues(tabs: {
+  sessions: Session[];
+  enrolls: Enrollment[];
+  batches: Batch[];
+  rooms: Room[];
+  teachers: Teacher[];
+  students: Student[];
+  rules?: TimetableRule[];
+}): IntegrityIssue[] {
+  const batchIds = new Set(tabs.batches.map((b) => b.batch_id));
+  const roomIds = new Set(tabs.rooms.map((r) => r.room_id));
+  const teacherIds = new Set(tabs.teachers.map((t) => t.teacher_id));
+  const studentIds = new Set(tabs.students.map((s) => s.student_id));
+  const issues: IntegrityIssue[] = [];
+
+  for (const s of tabs.sessions) {
+    if (s.status === "cancelled") continue;
+    if (!batchIds.has(s.batch_id)) issues.push({ kind: "session", detail: `${s.session_id} → missing batch ${s.batch_id}` });
+    if (s.room_id && !roomIds.has(s.room_id)) issues.push({ kind: "session", detail: `${s.session_id} → missing room ${s.room_id}` });
+    if (s.teacher_id && !teacherIds.has(s.teacher_id)) issues.push({ kind: "session", detail: `${s.session_id} → missing teacher ${s.teacher_id}` });
+  }
+  for (const e of tabs.enrolls) {
+    if (!studentIds.has(e.student_id)) issues.push({ kind: "enrollment", detail: `${e.enroll_id} → missing student ${e.student_id}` });
+    if (!batchIds.has(e.batch_id)) issues.push({ kind: "enrollment", detail: `${e.enroll_id} → missing batch ${e.batch_id}` });
+  }
+  for (const r of tabs.rules ?? []) {
+    if (!batchIds.has(r.batch_id)) issues.push({ kind: "rule", detail: `${r.slot_id} → missing batch ${r.batch_id}` });
+    if (r.room_id && !roomIds.has(r.room_id)) issues.push({ kind: "rule", detail: `${r.slot_id} → missing room ${r.room_id}` });
+    if (r.teacher_id && !teacherIds.has(r.teacher_id)) issues.push({ kind: "rule", detail: `${r.slot_id} → missing teacher ${r.teacher_id}` });
+  }
+  return issues;
 }
 
 // ---------------- C7 Settings (Config) ----------------
