@@ -126,12 +126,15 @@ export default async function MarkPage({
         />
       )}
 
-      <SessionAdmin
-        sessionId={sessionId}
-        isOwner={isOwner}
-        currentTeacherId={session.teacher_id}
-        teachers={opts?.teachers ?? []}
-      />
+      {/* cancel / substitute only make sense for today + upcoming, not past or cancelled */}
+      {!isPast && !isCancelled ? (
+        <SessionAdmin
+          sessionId={sessionId}
+          isOwner={isOwner}
+          currentTeacherId={session.teacher_id}
+          teachers={opts?.teachers ?? []}
+        />
+      ) : null}
     </main>
   );
 }
