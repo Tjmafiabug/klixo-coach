@@ -59,6 +59,7 @@ export interface Session {
   teacher_id: string;
   status: string; // scheduled | cancelled | extra
   source: string; // recurring | adhoc
+  slot_id: string; // originating Timetable rule (empty for adhoc)
 }
 
 export interface AttendanceRow {

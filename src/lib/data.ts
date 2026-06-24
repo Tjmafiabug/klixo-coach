@@ -296,6 +296,7 @@ export async function createExtraClass(params: {
       params.teacherId,
       "extra",
       "adhoc",
+      "", // slot_id (adhoc has no rule)
     ],
   ]);
   return id;
