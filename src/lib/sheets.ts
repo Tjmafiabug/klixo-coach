@@ -32,7 +32,7 @@ export async function readTab<T = Record<string, string>>(
 ): Promise<T[]> {
   const res = await client().spreadsheets.values.get({
     spreadsheetId: sheetId(),
-    range: tab,
+    range: `'${tab}'`, // quote so tab names with spaces/special chars resolve
   });
   const rows = res.data.values ?? [];
   if (rows.length === 0) return [];
@@ -49,7 +49,7 @@ export async function appendRows(tab: string, rows: string[][]): Promise<void> {
   if (rows.length === 0) return;
   await client().spreadsheets.values.append({
     spreadsheetId: sheetId(),
-    range: tab,
+    range: `'${tab}'`,
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: rows },

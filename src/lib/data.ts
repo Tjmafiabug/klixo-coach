@@ -172,7 +172,11 @@ function latestPerStudent(
   for (const a of attendance) {
     if (a.session_id !== sessionId) continue;
     const prev = m.get(a.student_id);
-    if (!prev || a.timestamp > prev.timestamp || a.log_id > prev.log_id)
+    if (
+      !prev ||
+      a.timestamp > prev.timestamp ||
+      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
+    )
       m.set(a.student_id, a);
   }
   return m;
@@ -286,7 +290,7 @@ export async function createExtraClass(params: {
     const n = parseInt(s.session_id.replace(/\D/g, ""), 10);
     if (!Number.isNaN(n) && n > max) max = n;
   }
-  const id = `SES${max + 1}`;
+  const id = `SES${String(max + 1).padStart(4, "0")}`;
   await appendRows("Sessions", [
     [
       id,
@@ -469,10 +473,20 @@ async function activeStudentsByBatch(
   return m;
 }
 
-/** Read-time schedule-health: all clashes among active sessions in the window. */
-export async function scheduleHealth(): Promise<{ clashes: Clash[] }> {
-  const today = await effectiveToday();
-  const end = addDays(today, HORIZON_DAYS);
+function todayFromCfg(cfg: Map<string, string>): string {
+  return cfg.get("demo_today")?.trim() || centerToday();
+}
+
+export interface HealthTabs {
+  sessions: Session[];
+  enrolls: Enrollment[];
+  batches: Batch[];
+  rooms: Room[];
+  teachers: Teacher[];
+  cfg: Map<string, string>;
+}
+
+async function readHealthTabs(): Promise<HealthTabs> {
   const [sessions, enrolls, batches, rooms, teachers, cfg] = await Promise.all([
     readTab<Session>("Sessions"),
     readTab<Enrollment>("Enrollments"),
@@ -481,6 +495,16 @@ export async function scheduleHealth(): Promise<{ clashes: Clash[] }> {
     readTab<Teacher>("Teachers"),
     config(),
   ]);
+  return { sessions, enrolls, batches, rooms, teachers, cfg };
+}
+
+/** Read-time schedule-health: all clashes among active sessions in the window.
+ *  Pass `pre` to reuse already-loaded tabs (avoids re-reading on the dashboard). */
+export async function scheduleHealth(pre?: HealthTabs): Promise<{ clashes: Clash[] }> {
+  const { sessions, enrolls, batches, rooms, teachers, cfg } =
+    pre ?? (await readHealthTabs());
+  const today = todayFromCfg(cfg);
+  const end = addDays(today, HORIZON_DAYS);
   const buffer = parseInt(cfg.get("room_changeover_buffer_min") ?? "0", 10) || 0;
   const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
   const rName = new Map(rooms.map((r) => [r.room_id, r.name]));
@@ -638,25 +662,34 @@ export async function createRule(r: RuleInput): Promise<string> {
 }
 
 /** Edit a rule in place, then regenerate ONLY its future, attendance-free sessions
- *  (past + attendance-bearing are frozen — PLAN §3 #7). */
+ *  (past + attendance-bearing are frozen — PLAN §3 #7). Substituted future sessions
+ *  (teacher overridden from the rule's previous teacher) are preserved, not reset. */
 export async function updateRule(slotId: string, r: RuleInput): Promise<void> {
   const rules = await readTab<TimetableRule>("Timetable");
   const idx = rules.findIndex((x) => x.slot_id === slotId);
   if (idx < 0) return;
+  const prevTeacher = rules[idx].teacher_id;
   await updateValues(`Timetable!A${idx + 2}:I${idx + 2}`, [ruleRow(slotId, r)]);
-  await regenSlotFuture(slotId);
+  await regenSlotFuture(slotId, prevTeacher);
 }
 
 export async function expireRule(slotId: string, effectiveTo: string): Promise<void> {
   const rules = await readTab<TimetableRule>("Timetable");
   const idx = rules.findIndex((x) => x.slot_id === slotId);
   if (idx < 0) return;
+  const prevTeacher = rules[idx].teacher_id;
   await updateValues(`Timetable!I${idx + 2}`, [[effectiveTo]]);
-  await regenSlotFuture(slotId);
+  await regenSlotFuture(slotId, prevTeacher);
 }
 
-/** Delete a slot's future, non-frozen sessions, then regenerate from current rules. */
-async function regenSlotFuture(slotId: string): Promise<void> {
+/**
+ * Delete a slot's future, non-frozen sessions, then regenerate from current rules.
+ * `keepTeacher` = the rule's PREVIOUS teacher: only sessions still assigned to that
+ * teacher are "following the rule" and safe to recreate. A future session whose
+ * teacher_id differs (a substitute) is left untouched, so substitutes survive a
+ * rule edit/expiry (no silent revert to the default teacher).
+ */
+async function regenSlotFuture(slotId: string, keepTeacher: string): Promise<void> {
   const today = await effectiveToday();
   const [sessions, attendance] = await Promise.all([
     readTab<Session>("Sessions"),
@@ -669,6 +702,7 @@ async function regenSlotFuture(slotId: string): Promise<void> {
       s.slot_id === slotId &&
       s.date >= today &&
       s.status !== "cancelled" &&
+      s.teacher_id === keepTeacher && // leave substitutes alone
       !att.has(s.session_id)
     )
       rows.push(i + 2);
@@ -773,7 +807,15 @@ export interface OwnerStats {
   }[];
 }
 
-export async function getOwnerStats(): Promise<OwnerStats> {
+export interface StatsTabs {
+  attendance: AttendanceRow[];
+  students: Student[];
+  batches: Batch[];
+  teachers: Teacher[];
+  cfg: Map<string, string>;
+}
+
+async function readStatsTabs(): Promise<StatsTabs> {
   const [attendance, students, batches, teachers, cfg] = await Promise.all([
     readTab<AttendanceRow>("Attendance"),
     readTab<Student>("Students"),
@@ -781,6 +823,12 @@ export async function getOwnerStats(): Promise<OwnerStats> {
     readTab<Teacher>("Teachers"),
     config(),
   ]);
+  return { attendance, students, batches, teachers, cfg };
+}
+
+export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
+  const { attendance, students, batches, teachers, cfg } =
+    pre ?? (await readStatsTabs());
   const threshold = parseInt(cfg.get("attendance_threshold") ?? "75", 10);
   const teacherById = new Map(teachers.map((t) => [t.teacher_id, t]));
 
@@ -789,7 +837,11 @@ export async function getOwnerStats(): Promise<OwnerStats> {
   for (const a of attendance) {
     const k = `${a.session_id}|${a.student_id}`;
     const prev = latest.get(k);
-    if (!prev || a.timestamp > prev.timestamp || a.log_id > prev.log_id)
+    if (
+      !prev ||
+      a.timestamp > prev.timestamp ||
+      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
+    )
       latest.set(k, a);
   }
   const marks = [...latest.values()];
@@ -844,4 +896,30 @@ export async function getOwnerStats(): Promise<OwnerStats> {
     manualCount: manual.length,
     recentManual,
   };
+}
+
+/**
+ * Owner dashboard data in a single pass: reads each tab once and computes both
+ * attendance stats and schedule health (avoids re-reading Batches/Teachers/Config).
+ */
+export async function getOwnerDashboard(): Promise<{
+  stats: OwnerStats;
+  health: { clashes: Clash[] };
+}> {
+  const [attendance, students, batches, teachers, rooms, sessions, enrolls, cfg] =
+    await Promise.all([
+      readTab<AttendanceRow>("Attendance"),
+      readTab<Student>("Students"),
+      readTab<Batch>("Batches"),
+      readTab<Teacher>("Teachers"),
+      readTab<Room>("Rooms"),
+      readTab<Session>("Sessions"),
+      readTab<Enrollment>("Enrollments"),
+      config(),
+    ]);
+  const [stats, health] = await Promise.all([
+    getOwnerStats({ attendance, students, batches, teachers, cfg }),
+    scheduleHealth({ sessions, enrolls, batches, rooms, teachers, cfg }),
+  ]);
+  return { stats, health };
 }

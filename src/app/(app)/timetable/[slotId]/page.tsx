@@ -11,6 +11,7 @@ function errorText(error?: string, withWhat?: string) {
   if (error === "clash")
     return `Clash: ${withWhat ?? "a resource"} is already booked at that time. Change the day/time/room/teacher.`;
   if (error === "time") return "End time must be after start time.";
+  if (error === "range") return "Effective-to date can't be before effective-from.";
   if (error === "missing") return "Pick a batch, at least one day, times, room, teacher and a start date.";
   return null;
 }

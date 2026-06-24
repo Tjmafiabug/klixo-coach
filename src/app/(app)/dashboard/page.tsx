@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getOwnerStats, scheduleHealth } from "@/lib/data";
+import { getOwnerDashboard } from "@/lib/data";
 import { PctBadge, StatusPill } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function DashboardPage() {
   const user = (await getSession())!;
   if (user.role !== "owner") redirect("/today");
 
-  const [stats, health] = await Promise.all([getOwnerStats(), scheduleHealth()]);
+  const { stats, health } = await getOwnerDashboard();
   const blocking = health.clashes.filter((c) => c.blocking).length;
 
   return (

@@ -112,7 +112,6 @@ export default function MarkRoster({
       <input type="hidden" name="sessionId" value={sessionId} />
       <input type="hidden" name="marks" value={JSON.stringify(marks)} />
       <input type="hidden" name="reasons" value={JSON.stringify(reasons)} />
-      <input type="hidden" name="backfillReason" value={backfillReason} />
 
       <div className="mb-2 flex items-center justify-between px-1">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -193,7 +192,7 @@ export default function MarkRoster({
           </p>
           <input
             required
-            name="_backfill_visible"
+            name="backfillReason"
             value={backfillReason}
             onChange={(e) => setBackfillReason(e.target.value)}
             placeholder="Reason"

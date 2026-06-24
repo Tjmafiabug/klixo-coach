@@ -25,6 +25,14 @@ export interface LoginState {
   error?: string;
 }
 
+function safeParse<T>(v: FormDataEntryValue | null, fallback: T): T {
+  try {
+    return JSON.parse(String(v ?? "")) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function login(
   _prev: LoginState,
   formData: FormData,
@@ -68,14 +76,12 @@ export async function submitMarks(formData: FormData): Promise<void> {
   }
   const isPast = session.date < today;
 
-  const submitted = JSON.parse(String(formData.get("marks") ?? "[]")) as {
-    studentId: string;
-    status: AttendanceStatus;
-  }[];
-  const reasons = JSON.parse(String(formData.get("reasons") ?? "{}")) as Record<
-    string,
-    string
-  >;
+  const submitted = safeParse<{ studentId: string; status: AttendanceStatus }[]>(
+    formData.get("marks"),
+    [],
+  );
+  const reasons = safeParse<Record<string, string>>(formData.get("reasons"), {});
+  if (!Array.isArray(submitted)) redirect(`/mark/${sessionId}`);
   const backfillReason = String(formData.get("backfillReason") ?? "").trim();
 
   // saved status per student (server-authoritative — don't trust the client)
@@ -92,10 +98,16 @@ export async function submitMarks(formData: FormData): Promise<void> {
     if (!savedByStudent.has(m.studentId)) continue; // not on roster — ignore
     const saved = savedByStudent.get(m.studentId) ?? null;
     if (saved === null) {
-      // never marked → backfill (past) requires a reason; today is a normal app mark
+      // never marked → backfill (past) is a manual mark with a reason (the client
+      // requires one); if it's empty it's the rare midnight-rollover case where the
+      // page rendered as "today" — fall back rather than bounce the teacher.
       if (isPast) {
-        if (!backfillReason) redirect(`/mark/${sessionId}?error=backfill`);
-        writes.push({ studentId: m.studentId, status: m.status, method: "manual", reason: backfillReason });
+        writes.push({
+          studentId: m.studentId,
+          status: m.status,
+          method: "manual",
+          reason: backfillReason || "Marked just after the session",
+        });
       } else {
         writes.push({ studentId: m.studentId, status: m.status, method: "app", reason: "" });
       }
@@ -124,7 +136,16 @@ export async function cancelSession(formData: FormData): Promise<void> {
   const user = await getSession();
   if (!user) redirect("/login");
   const sessionId = String(formData.get("sessionId") ?? "");
-  if (sessionId) await cancelSessionData(sessionId);
+  const session = await getSessionMeta(sessionId);
+  if (!session) redirect("/today");
+  // only the owner or the session's own (incl. substitute) teacher may cancel,
+  // and only an upcoming, not-already-cancelled session
+  const today = await effectiveToday();
+  const owns = user.role === "owner" || session.teacher_id === user.teacherId;
+  if (!owns || session.status === "cancelled" || session.date < today) {
+    redirect("/today");
+  }
+  await cancelSessionData(sessionId);
   redirect("/today?cancelled=1");
 }
 
@@ -172,6 +193,9 @@ export async function saveRule(formData: FormData): Promise<void> {
     redirect(`${back}?error=missing`);
   }
   if (rule.start >= rule.end) redirect(`${back}?error=time`);
+  if (rule.effective_to && rule.effective_to < rule.effective_from) {
+    redirect(`${back}?error=range`);
+  }
 
   const clash = await ruleClashes(rule);
   if (clash.blocking.length) {
