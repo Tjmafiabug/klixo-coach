@@ -5,6 +5,7 @@ import { getBatchDetail, getFormOptions, effectiveToday } from "@/lib/data";
 import { saveBatch, toggleBatchActive, addEnrollment, endEnrollmentAction } from "@/lib/actions";
 import { Banner, fieldClass, ActiveChip } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ExportButton } from "@/components/ExportButton";
 
 export const dynamic = "force-dynamic";
 
@@ -120,9 +121,12 @@ export default async function EditBatchPage({
 
       {/* Enrollments */}
       <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
-        <p className="text-sm font-semibold text-foreground">
-          Students <span className="text-muted-foreground">({enrollments.filter((e) => e.status === "active" && !e.end_date).length} active)</span>
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-foreground">
+            Students <span className="text-muted-foreground">({enrollments.filter((e) => e.status === "active" && !e.end_date).length} active)</span>
+          </p>
+          <ExportButton kind="attendance" label="Export attendance" params={{ batch: batch.batch_id }} />
+        </div>
         {enrollments.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No enrollments yet.</p>
         ) : (

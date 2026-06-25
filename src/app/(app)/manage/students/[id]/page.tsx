@@ -10,6 +10,7 @@ import {
 import { saveStudent, toggleStudentActive, addEnrollment, endEnrollmentAction } from "@/lib/actions";
 import { Banner, fieldClass, ActiveChip, PctBadge, StatusPill } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ExportButton } from "@/components/ExportButton";
 
 export const dynamic = "force-dynamic";
 
@@ -188,7 +189,10 @@ export default async function StudentProfilePage({
       {/* Attendance history */}
       {history.length > 0 ? (
         <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
-          <p className="text-sm font-semibold text-foreground">Recent attendance</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-foreground">Recent attendance</p>
+            <ExportButton kind="student" label="Export CSV" params={{ id: student.student_id }} />
+          </div>
           <ul className="mt-3 flex flex-col gap-1.5">
             {history.map((h, i) => (
               <li key={i} className="flex items-center justify-between gap-3 text-sm">

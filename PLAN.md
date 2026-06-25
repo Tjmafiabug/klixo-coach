@@ -127,7 +127,11 @@ and deployed._
 
 ## NOT done / NEXT (resume here)
 
-A–D are live-tested + deployed. Next: **E — Phase 1 (sellable)**.
+A–D live-tested + deployed. **E started:** reports/CSV exports done (owner-only
+`/api/export` — attendance log, defaulters, batch summary, per-student history;
+buttons on dashboard/student/batch; teacher+no-auth → 401; live-verified read-only).
+Next in E: **WhatsApp absent alerts + monthly summary** (needs a provider account +
+sender number + approved templates — procurement), then **fees**, then **branding**.
 
 Recommended order (see BUILD.md for full specs + acceptance):
 - **E — Phase 1 (sellable):** WhatsApp absent alerts + monthly summary, fees module,

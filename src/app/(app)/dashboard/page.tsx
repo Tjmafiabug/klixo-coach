@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getOwnerDashboard } from "@/lib/data";
 import { PctBadge, StatusPill } from "@/components/ui";
+import { ExportButton } from "@/components/ExportButton";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,12 @@ export default async function DashboardPage() {
           </ul>
         </div>
       ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <ExportButton kind="attendance" label="Attendance log" />
+        <ExportButton kind="defaulters" label="Defaulters" />
+        <ExportButton kind="batches" label="Batch summary" />
+      </div>
 
       <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Overall attendance" value={pct(stats.overall)} tone="brand" />

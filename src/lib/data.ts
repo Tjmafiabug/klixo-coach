@@ -1771,3 +1771,107 @@ export async function updateCenterConfig(
   }
   await Promise.all([batchUpdateValues(updates), appendRows("Config", appends)]);
 }
+
+// ============================================================================
+// Milestone E — reports / CSV exports (read-only, owner)
+// ============================================================================
+
+/** RFC-4180 CSV: quote cells containing comma/quote/newline; CRLF line breaks. */
+export function toCsv(rows: string[][]): string {
+  const cell = (v: string) =>
+    /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  return rows.map((r) => r.map((c) => cell(c ?? "")).join(",")).join("\r\n");
+}
+
+/**
+ * Attendance log: the latest mark per (session, student), enriched with names,
+ * optionally filtered by date range and/or batch. Newest first.
+ */
+export async function reportAttendance(opts: {
+  from?: string;
+  to?: string;
+  batchId?: string;
+}): Promise<string[][]> {
+  const [attendance, students, batches, teachers] = await Promise.all([
+    readTab<AttendanceRow>("Attendance"),
+    readTab<Student>("Students"),
+    readTab<Batch>("Batches"),
+    readTab<Teacher>("Teachers"),
+  ]);
+  const sName = new Map(students.map((s) => [s.student_id, s.name]));
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const tName = new Map(teachers.map((t) => [t.teacher_id, t.name]));
+
+  const latest = new Map<string, AttendanceRow>();
+  for (const a of attendance) {
+    if (opts.from && a.date < opts.from) continue;
+    if (opts.to && a.date > opts.to) continue;
+    if (opts.batchId && a.batch_id !== opts.batchId) continue;
+    const k = `${a.session_id}|${a.student_id}`;
+    const prev = latest.get(k);
+    if (
+      !prev ||
+      a.timestamp > prev.timestamp ||
+      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
+    )
+      latest.set(k, a);
+  }
+  const rows = [...latest.values()]
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) ||
+        (bName.get(a.batch_id) ?? "").localeCompare(bName.get(b.batch_id) ?? "") ||
+        (sName.get(a.student_id) ?? "").localeCompare(sName.get(b.student_id) ?? ""),
+    )
+    .map((a) => [
+      a.date,
+      bName.get(a.batch_id) ?? a.batch_id,
+      sName.get(a.student_id) ?? a.student_id,
+      a.status,
+      a.method,
+      tName.get(a.marked_by) ?? a.marked_by,
+      a.reason ?? "",
+      a.timestamp,
+    ]);
+  return [
+    ["date", "batch", "student", "status", "method", "marked_by", "reason", "timestamp"],
+    ...rows,
+  ];
+}
+
+/** Defaulters (below threshold), as a CSV table. */
+export async function reportDefaulters(): Promise<string[][]> {
+  const stats = await getOwnerStats();
+  return [
+    ["student", "attendance_pct", "sessions", "threshold_pct"],
+    ...stats.defaulters.map((d) => [
+      d.name,
+      String(Math.round(d.pct * 100)),
+      String(d.total),
+      String(stats.threshold),
+    ]),
+  ];
+}
+
+/** Per-batch attendance summary, as a CSV table. */
+export async function reportBatches(): Promise<string[][]> {
+  const stats = await getOwnerStats();
+  return [
+    ["batch", "attendance_pct", "marks"],
+    ...stats.batchStats.map((b) => [
+      b.name,
+      String(Math.round(b.pct * 100)),
+      String(b.total),
+    ]),
+  ];
+}
+
+/** One student's attendance history, as a CSV table. */
+export async function reportStudent(studentId: string): Promise<string[][] | null> {
+  const p = await getStudentProfile(studentId);
+  if (!p) return null;
+  return [
+    ["date", "batch", "status", "method"],
+    ...p.history.map((h) => [h.date, h.batchName, h.status, h.method]),
+  ];
+}
