@@ -22,7 +22,8 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ saved?: string; error?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const [cfg, sp] = await Promise.all([getCenterConfig(), searchParams]);
   const err = errorText(sp.error);
@@ -32,7 +33,7 @@ export default async function SettingsPage({
       <Link href="/manage" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Manage
       </Link>
-      <h1 className="mt-3 text-2xl font-bold tracking-tight">Settings</h1>
+      <h2 className="mt-3 text-2xl font-bold tracking-tight">Settings</h2>
       <p className="mt-1 text-sm text-muted-foreground">Centre name, threshold and branding.</p>
 
       <div className="mt-4 space-y-3">

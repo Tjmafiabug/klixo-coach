@@ -1,8 +1,9 @@
 "use client";
 
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { useState } from "react";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { useReducedMotion } from "framer-motion";
-import { CHART, TooltipCard, ChartEmpty } from "./chart-kit";
+import { CHART, ChartEmpty } from "./chart-kit";
 
 export function AttendanceDonut({
   present,
@@ -14,6 +15,7 @@ export function AttendanceDonut({
   late: number;
 }) {
   const reduce = useReducedMotion();
+  const [active, setActive] = useState<number | null>(null);
   const total = present + absent + late;
   const pct = total ? Math.round((present / total) * 100) : 0;
 
@@ -29,6 +31,14 @@ export function AttendanceDonut({
   const summary = `Attendance mix: ${segments
     .map((s) => `${s.value} ${s.name.toLowerCase()}`)
     .join(", ")} — ${pct}% present.`;
+
+  // Center reflects the hovered slice, or the overall present rate at rest —
+  // no floating tooltip, so nothing overlaps the centre label.
+  const hovered = active !== null ? data[active] : null;
+  const centerValue = hovered
+    ? `${Math.round((hovered.value / total) * 100)}%`
+    : `${pct}%`;
+  const centerLabel = hovered ? hovered.name.toLowerCase() : "present";
 
   return (
     <div>
@@ -47,40 +57,23 @@ export function AttendanceDonut({
               startAngle={90}
               endAngle={-270}
               isAnimationActive={!reduce}
+              onMouseEnter={(_, i) => setActive(i)}
+              onMouseLeave={() => setActive(null)}
             >
               {data.map((d) => (
                 <Cell key={d.name} fill={d.color} />
               ))}
             </Pie>
-            <Tooltip
-              cursor={false}
-              content={(p: unknown) => {
-                const tip = p as {
-                  active?: boolean;
-                  payload?: { name?: string; value?: number }[];
-                };
-                if (!tip.active || !tip.payload?.length) return null;
-                const slice = tip.payload[0];
-                const v = slice.value ?? 0;
-                return (
-                  <TooltipCard
-                    title={String(slice.name ?? "")}
-                    items={[
-                      { label: "Marks", value: v.toLocaleString() },
-                      { label: "Share", value: `${Math.round((v / total) * 100)}%` },
-                    ]}
-                  />
-                );
-              }}
-            />
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="text-center">
             <p className="font-mono text-3xl font-bold tabular-nums text-foreground">
-              {pct}%
+              {centerValue}
             </p>
-            <p className="text-xs font-medium text-muted-foreground">present</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {centerLabel}
+            </p>
           </div>
         </div>
       </div>

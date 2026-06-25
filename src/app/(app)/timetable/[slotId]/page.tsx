@@ -23,7 +23,8 @@ export default async function EditRulePage({
   params: Promise<{ slotId: string }>;
   searchParams: Promise<{ error?: string; with?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { slotId } = await params;
   const [rule, options, today, sp] = await Promise.all([
@@ -40,7 +41,7 @@ export default async function EditRulePage({
       <Link href="/timetable" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Timetable
       </Link>
-      <h1 className="mt-3 text-xl font-bold tracking-tight">Edit rule</h1>
+      <h2 className="mt-3 text-xl font-bold tracking-tight">Edit rule</h2>
       <p className="mt-1 text-sm text-muted-foreground">{slotId}</p>
       {err ? (
         <p className="mt-3 rounded-lg bg-danger-subtle px-3 py-2 text-sm font-medium text-danger">{err}</p>
@@ -62,7 +63,7 @@ export default async function EditRulePage({
               type="date"
               name="effectiveTo"
               defaultValue={today}
-              className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
           </label>
           <button className="h-10 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-4 text-sm font-semibold text-danger transition-colors hover:bg-danger/10">

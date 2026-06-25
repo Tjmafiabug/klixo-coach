@@ -19,7 +19,8 @@ export default async function NewBatchPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const [options, sp] = await Promise.all([getFormOptions(), searchParams]);
   const err = errorText(sp.error);
@@ -29,7 +30,7 @@ export default async function NewBatchPage({
       <Link href="/manage/batches" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Batches
       </Link>
-      <h1 className="mt-3 text-xl font-bold tracking-tight">Add batch</h1>
+      <h2 className="mt-3 text-xl font-bold tracking-tight">Add batch</h2>
       <p className="mt-1 text-sm text-muted-foreground">Enroll students and add timetable rules after saving.</p>
       {err ? <div className="mt-3"><Banner tone="danger">{err}</Banner></div> : null}
 

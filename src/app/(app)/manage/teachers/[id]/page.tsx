@@ -23,7 +23,8 @@ export default async function EditTeacherPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string; pinset?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
   const [teacher, others, sp] = await Promise.all([
@@ -42,7 +43,7 @@ export default async function EditTeacherPage({
         ← Teachers
       </Link>
       <div className="mt-3 flex items-center gap-2">
-        <h1 className="text-xl font-bold tracking-tight">Edit teacher</h1>
+        <h2 className="text-xl font-bold tracking-tight">Edit teacher</h2>
         <ActiveChip active={active} />
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{teacher.teacher_id}</p>

@@ -41,7 +41,7 @@ export default async function RoomsPage({
         action={saveRoom}
         className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]"
       >
-        <label className="min-w-[10rem] flex-1">
+        <label className="w-full sm:min-w-[10rem] sm:flex-1">
           <span className="text-sm font-medium">Room name</span>
           <input
             name="name"
@@ -50,7 +50,7 @@ export default async function RoomsPage({
             aria-invalid={sp.error === "missing" || undefined}
           />
         </label>
-        <label className="w-28">
+        <label className="w-full sm:w-28">
           <span className="text-sm font-medium">Capacity</span>
           <input
             name="capacity"
@@ -60,7 +60,7 @@ export default async function RoomsPage({
             aria-invalid={sp.error === "missing" || undefined}
           />
         </label>
-        <div className="w-32">
+        <div className="w-full sm:w-32">
           <SubmitButton pendingText="Adding…">+ Add room</SubmitButton>
         </div>
       </form>

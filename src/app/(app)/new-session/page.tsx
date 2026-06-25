@@ -11,7 +11,8 @@ export default async function NewSessionPage({
 }: {
   searchParams: Promise<{ error?: string; with?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today"); // scheduling is owner-only
   const [options, today, sp] = await Promise.all([
     getFormOptions(),
@@ -48,7 +49,7 @@ export default async function NewSessionPage({
         Today
       </Link>
 
-      <h1 className="mt-3 text-xl font-bold tracking-tight">Add extra class</h1>
+      <h2 className="mt-3 text-xl font-bold tracking-tight">Add extra class</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Unplanned / make-up session. It becomes markable straight away.
       </p>

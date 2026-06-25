@@ -109,7 +109,7 @@ export default async function TodayPage({
       ) : null}
 
       {sessions.length === 0 ? (
-        <div className="mt-8 rounded-3xl border border-dashed border-border bg-surface p-12 text-center">
+        <div className="mt-8 rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
           <p className="font-medium text-foreground">No sessions</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {isToday ? "No scheduled classes today." : `No classes on ${date}.`}

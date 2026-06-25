@@ -19,7 +19,8 @@ export default async function NewStudentPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const [today, sp] = await Promise.all([effectiveToday(), searchParams]);
   const err = errorText(sp.error);
@@ -29,7 +30,7 @@ export default async function NewStudentPage({
       <Link href="/manage/students" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Students
       </Link>
-      <h1 className="mt-3 text-xl font-bold tracking-tight">Add student</h1>
+      <h2 className="mt-3 text-xl font-bold tracking-tight">Add student</h2>
       <p className="mt-1 text-sm text-muted-foreground">Enroll them in batches after saving.</p>
       {err ? <div className="mt-3"><Banner tone="danger">{err}</Banner></div> : null}
 

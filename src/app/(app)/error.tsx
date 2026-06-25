@@ -17,9 +17,9 @@ export default function AppError({
 
   return (
     <main className="mx-auto w-full max-w-md px-4 py-16 text-center">
-      <h1 className="text-xl font-bold tracking-tight text-foreground">
+      <h2 className="text-xl font-bold tracking-tight text-foreground">
         Something went wrong
-      </h1>
+      </h2>
       <p className="mt-2 text-sm text-muted-foreground">
         We couldn&apos;t load this screen. This is often a temporary connection issue
         with the data source.

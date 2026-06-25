@@ -30,7 +30,8 @@ export default async function EditBatchPage({
     warn?: string;
   }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
   const [detail, options, today, sp] = await Promise.all([
@@ -56,7 +57,7 @@ export default async function EditBatchPage({
         ← Batches
       </Link>
       <div className="mt-3 flex items-center gap-2">
-        <h1 className="text-2xl font-bold tracking-tight">{batch.name}</h1>
+        <h2 className="text-2xl font-bold tracking-tight">{batch.name}</h2>
         <ActiveChip active={active} />
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{batch.batch_id}</p>
@@ -154,7 +155,7 @@ export default async function EditBatchPage({
                         type="date"
                         name="endDate"
                         defaultValue={today}
-                        className="h-9 rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                        className="h-9 rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                       />
                       <button className="h-9 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-3 text-sm font-semibold text-danger transition-colors hover:bg-danger/10">
                         End

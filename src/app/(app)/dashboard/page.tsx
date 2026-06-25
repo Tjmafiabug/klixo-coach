@@ -238,7 +238,7 @@ function KpiTile({
           <p className="text-xs font-medium text-muted-foreground">{label}</p>
           <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
         </div>
-        <p className={`mt-3 font-mono text-3xl font-bold tabular-nums ${text}`}>
+        <p className={`mt-3 font-mono text-2xl font-bold tabular-nums sm:text-3xl ${text}`}>
           {children}
         </p>
         {sub ? (

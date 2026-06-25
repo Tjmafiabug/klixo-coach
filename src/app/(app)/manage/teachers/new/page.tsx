@@ -19,7 +19,8 @@ export default async function NewTeacherPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const sp = await searchParams;
   const err = errorText(sp.error);
@@ -29,7 +30,7 @@ export default async function NewTeacherPage({
       <Link href="/manage/teachers" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Teachers
       </Link>
-      <h1 className="mt-3 text-xl font-bold tracking-tight">Add teacher</h1>
+      <h2 className="mt-3 text-xl font-bold tracking-tight">Add teacher</h2>
       <p className="mt-1 text-sm text-muted-foreground">They sign in with phone + PIN.</p>
       {err ? <div className="mt-3"><Banner tone="danger">{err}</Banner></div> : null}
 

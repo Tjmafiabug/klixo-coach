@@ -20,7 +20,8 @@ export default async function NewRulePage({
 }: {
   searchParams: Promise<{ error?: string; with?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const [options, today, sp] = await Promise.all([
     getFormOptions(),
@@ -34,7 +35,7 @@ export default async function NewRulePage({
       <Link href="/timetable" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Timetable
       </Link>
-      <h1 className="mt-3 text-xl font-bold tracking-tight">Add timetable rule</h1>
+      <h2 className="mt-3 text-xl font-bold tracking-tight">Add timetable rule</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         A recurring weekly slot. Sessions are generated from it.
       </p>

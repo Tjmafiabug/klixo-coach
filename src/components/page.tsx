@@ -98,24 +98,6 @@ export function PrimaryLink({
   );
 }
 
-/** Secondary action link, styled as a bordered surface button. */
-export function SecondaryLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-all hover:bg-muted active:scale-[0.98]"
-    >
-      {children}
-    </Link>
-  );
-}
-
 /** Chevron affordance for clickable list rows. */
 export function RowChevron() {
   return (

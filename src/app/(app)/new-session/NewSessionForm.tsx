@@ -6,7 +6,7 @@ import { addExtraClass } from "@/lib/actions";
 import type { FormOptions } from "@/lib/data";
 
 const field =
-  "mt-1 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
+  "mt-1 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
 function Submit() {
   const { pending } = useFormStatus();

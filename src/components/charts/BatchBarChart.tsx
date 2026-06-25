@@ -22,9 +22,11 @@ export function BatchBarChart({
   threshold: number;
 }) {
   const reduce = useReducedMotion();
+  // Worst attendance first — this card is an exception-finder, so the batches
+  // nearest/below the threshold line should sit at the top, in view.
   const rows = data
     .map((d) => ({ name: d.name, pct: Math.round(d.pct * 100), total: d.total }))
-    .sort((a, b) => b.pct - a.pct);
+    .sort((a, b) => a.pct - b.pct);
 
   if (!rows.length) return <ChartEmpty>No batch attendance yet.</ChartEmpty>;
 
@@ -39,7 +41,7 @@ export function BatchBarChart({
         <BarChart
         data={rows}
         layout="vertical"
-        margin={{ left: 0, right: 36, top: 4, bottom: 4 }}
+        margin={{ left: 0, right: 48, top: 4, bottom: 4 }}
         barCategoryGap={12}
       >
         <CartesianGrid horizontal={false} stroke={CHART.grid} />
@@ -57,6 +59,13 @@ export function BatchBarChart({
           stroke={CHART.danger}
           strokeDasharray="4 4"
           strokeWidth={1.5}
+          label={{
+            value: `min ${threshold}%`,
+            position: "top",
+            fill: CHART.danger,
+            fontSize: 11,
+            fontWeight: 600,
+          }}
         />
         <Tooltip
           cursor={{ fill: "rgba(10,10,11,0.04)" }}

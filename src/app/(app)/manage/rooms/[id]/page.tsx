@@ -15,7 +15,8 @@ export default async function EditRoomPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
   const [room, usage, sp] = await Promise.all([getRoom(id), roomUsage(id), searchParams]);
@@ -26,7 +27,7 @@ export default async function EditRoomPage({
       <Link href="/manage/rooms" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Rooms
       </Link>
-      <h1 className="mt-3 text-xl font-bold tracking-tight">Edit room</h1>
+      <h2 className="mt-3 text-xl font-bold tracking-tight">Edit room</h2>
       <p className="mt-1 text-sm text-muted-foreground">{room.room_id}</p>
 
       <div className="mt-3 space-y-3">

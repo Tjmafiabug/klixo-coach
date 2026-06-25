@@ -194,18 +194,9 @@ export function AppShell({
               </p>
             </div>
 
-            <div className="hidden items-center gap-2.5 rounded-full border border-border bg-surface py-1 pl-1 pr-3 sm:flex">
-              <InitialsAvatar name={name} />
-              <div className="leading-tight">
-                <p className="max-w-[12rem] truncate text-sm font-semibold text-foreground">
-                  {name}
-                </p>
-                <p className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-                  {role}
-                </p>
-              </div>
-            </div>
-            <div className="sm:hidden">
+            {/* Identity lives in the sidebar footer; on mobile the sidebar is a
+                drawer, so keep a compact avatar here for at-a-glance identity. */}
+            <div className="lg:hidden">
               <InitialsAvatar name={name} />
             </div>
           </div>

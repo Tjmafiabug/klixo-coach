@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   AreaChart,
   Area,
@@ -19,6 +20,7 @@ export function AttendanceTrend({
   data: { date: string; pct: number; present: number; total: number }[];
 }) {
   const reduce = useReducedMotion();
+  const gradId = useId().replace(/:/g, "");
   const rows = data.map((d) => ({
     label: shortDate(d.date),
     value: Math.round(d.pct * 100),
@@ -37,12 +39,18 @@ export function AttendanceTrend({
   const last = rows[rows.length - 1];
   const summary = `Attendance trend over the last ${rows.length} marked days: from ${rows[0].label} at ${rows[0].value}% to ${last.label} at ${last.value}%.`;
 
+  // Zoom the Y-axis to the data band (floored to a clean 10) so day-to-day
+  // variation is visible instead of a flat ribbon hugging 100%.
+  const minV = Math.min(...rows.map((r) => r.value));
+  const lower = Math.max(0, Math.floor((minV - 5) / 10) * 10);
+  const yTicks = [lower, Math.round((lower + 100) / 2), 100];
+
   return (
     <div role="img" aria-label={summary}>
       <ResponsiveContainer width="100%" height={224}>
-        <AreaChart data={rows} margin={{ left: -16, right: 8, top: 8, bottom: 0 }}>
+        <AreaChart data={rows} margin={{ left: 4, right: 10, top: 8, bottom: 0 }}>
         <defs>
-          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={CHART.accent} stopOpacity={0.22} />
             <stop offset="100%" stopColor={CHART.accent} stopOpacity={0} />
           </linearGradient>
@@ -56,12 +64,12 @@ export function AttendanceTrend({
           tick={{ fill: CHART.axis, fontSize: 11 }}
         />
         <YAxis
-          domain={[0, 100]}
-          ticks={[0, 50, 100]}
+          domain={[lower, 100]}
+          ticks={yTicks}
           tickFormatter={(v: number) => `${v}%`}
           tickLine={false}
           axisLine={false}
-          width={40}
+          width={44}
           tick={{ fill: CHART.axis, fontSize: 11 }}
         />
         <Tooltip
@@ -91,7 +99,7 @@ export function AttendanceTrend({
           dataKey="value"
           stroke={CHART.accent}
           strokeWidth={2.5}
-          fill="url(#trendFill)"
+          fill={`url(#${gradId})`}
           dot={false}
           activeDot={{ r: 4, strokeWidth: 2, stroke: "#fff" }}
           isAnimationActive={!reduce}

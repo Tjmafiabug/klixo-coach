@@ -28,7 +28,7 @@ export function TodayDateNav({ date, today }: { date: string; today: string }) {
         value={date}
         max={today}
         onChange={(e) => e.target.value && go(e.target.value)}
-        className="h-9 cursor-pointer rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+        className="h-9 cursor-pointer rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
       />
       <button
         type="button"

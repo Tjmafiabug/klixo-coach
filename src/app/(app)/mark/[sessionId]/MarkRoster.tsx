@@ -196,7 +196,7 @@ export default function MarkRoster({
             value={backfillReason}
             onChange={(e) => setBackfillReason(e.target.value)}
             placeholder="Reason"
-            className="mt-2 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+            className="mt-2 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
         </div>
       ) : null}

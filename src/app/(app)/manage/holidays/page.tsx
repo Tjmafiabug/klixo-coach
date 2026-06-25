@@ -48,11 +48,11 @@ export default async function HolidaysPage({
         action={saveHoliday}
         className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]"
       >
-        <label className="w-44">
+        <label className="w-full sm:w-44">
           <span className="text-sm font-medium">Date</span>
           <input type="date" name="date" defaultValue={today} className={fieldClass} />
         </label>
-        <label className="min-w-[10rem] flex-1">
+        <label className="w-full sm:min-w-[10rem] sm:flex-1">
           <span className="text-sm font-medium">Name</span>
           <input
             name="name"
@@ -61,7 +61,7 @@ export default async function HolidaysPage({
             aria-invalid={sp.error === "missing" || undefined}
           />
         </label>
-        <div className="w-32">
+        <div className="w-full sm:w-32">
           <SubmitButton pendingText="Adding…">+ Add</SubmitButton>
         </div>
       </form>
@@ -81,7 +81,7 @@ export default async function HolidaysPage({
                 </div>
                 <form action={deleteHolidayAction}>
                   <input type="hidden" name="date" value={h.date} />
-                  <button className="h-9 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-3 text-sm font-semibold text-danger transition-colors hover:bg-danger/10 active:scale-[0.98]">
+                  <button className="h-10 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-3 text-sm font-semibold text-danger transition-colors hover:bg-danger/10 active:scale-[0.98]">
                     Remove
                   </button>
                 </form>

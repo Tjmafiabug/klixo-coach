@@ -30,7 +30,7 @@ export function SessionAdmin({
             <select
               name="teacherId"
               defaultValue={currentTeacherId}
-              className="mt-1 h-10 w-full cursor-pointer rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              className="mt-1 h-10 w-full cursor-pointer rounded-lg border border-border bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             >
               {teachers.map((t) => (
                 <option key={t.id} value={t.id}>
