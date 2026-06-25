@@ -98,4 +98,4 @@ export function Banner({
  * styling — no per-call-site class needed.
  */
 export const fieldClass =
-  "mt-1 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground aria-invalid:border-danger aria-invalid:focus:border-danger aria-invalid:focus:ring-danger/20";
+  "mt-1 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground aria-invalid:border-danger aria-invalid:focus:border-danger aria-invalid:focus:ring-danger/20";

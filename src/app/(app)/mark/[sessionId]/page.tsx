@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   getSessionMeta,
   getRoster,
@@ -7,6 +6,8 @@ import {
   effectiveToday,
 } from "@/lib/data";
 import { getSession } from "@/lib/auth";
+import { Reveal } from "@/components/motion";
+import { BackLink } from "@/components/page";
 import MarkRoster from "./MarkRoster";
 import { SessionAdmin } from "./SessionAdmin";
 
@@ -27,7 +28,8 @@ export default async function MarkPage({
   ]);
   if (!session) notFound();
 
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   const isOwner = user.role === "owner";
   // a teacher may only open their own (incl. substituted) sessions — no peeking at
   // another teacher's roster (PII) or marking their class by guessing the URL
@@ -43,56 +45,48 @@ export default async function MarkPage({
   const markable = !isCancelled && !isFuture;
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <Link
-        href="/today"
-        className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M10 3.5 5.5 8l4.5 4.5"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        Back
-      </Link>
+    <main className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
+      <BackLink href="/today">Today</BackLink>
 
-      <div className="mt-3 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight">{session.batchName}</h1>
-              {isCancelled ? (
-                <span className="rounded bg-danger-subtle px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-danger">
-                  Cancelled
-                </span>
-              ) : isPast ? (
-                <span className="rounded bg-muted px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-muted-foreground">
-                  Past
-                </span>
-              ) : null}
+      <Reveal>
+        <div className="mt-3 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-xl font-bold tracking-tight text-foreground">
+                  {session.batchName}
+                </h2>
+                {isCancelled ? (
+                  <span className="rounded bg-danger-subtle px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-danger">
+                    Cancelled
+                  </span>
+                ) : isPast ? (
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-muted-foreground">
+                    Past
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {session.roomName} · {roster.length} students
+              </p>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {session.roomName} · {roster.length} students
-            </p>
+            <div className="shrink-0 rounded-xl bg-muted px-3 py-2 text-center">
+              <p className="font-mono text-sm font-bold tabular-nums text-foreground">
+                {session.start}–{session.end}
+              </p>
+              <p className="font-mono text-[0.7rem] text-muted-foreground tabular-nums">
+                {session.date}
+              </p>
+            </div>
           </div>
-          <div className="shrink-0 rounded-xl bg-muted px-3 py-2 text-center">
-            <p className="text-sm font-bold tabular-nums">
-              {session.start}–{session.end}
-            </p>
-            <p className="text-[0.7rem] text-muted-foreground">{session.date}</p>
-          </div>
-        </div>
 
-        {isPast && markable ? (
-          <p className="mt-3 rounded-lg bg-warning-subtle px-3 py-2 text-sm font-medium text-warning">
-            Past session — changes are logged as corrections, with a reason.
-          </p>
-        ) : null}
-      </div>
+          {isPast && markable ? (
+            <p className="mt-3 rounded-lg bg-warning-subtle px-3 py-2 text-sm font-medium text-warning">
+              Past session — changes are logged as corrections, with a reason.
+            </p>
+          ) : null}
+        </div>
+      </Reveal>
 
       {sp.error ? (
         <p className="mt-3 rounded-lg bg-danger-subtle px-3 py-2 text-sm font-medium text-danger">

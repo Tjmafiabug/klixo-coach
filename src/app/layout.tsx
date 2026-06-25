@@ -1,12 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "KLiXO Coach — Coaching attendance & timetable",
@@ -20,7 +15,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`}>
+    <html
+      lang="en"
+      className={`${GeistSans.variable} ${GeistMono.variable} h-full`}
+    >
       <body className="min-h-full">{children}</body>
     </html>
   );

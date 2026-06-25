@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { listBatches } from "@/lib/data";
 import { ActiveChip, Banner } from "@/components/ui";
+import { Reveal } from "@/components/motion";
+import { PageHeader, PrimaryLink, RowChevron } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -11,30 +13,21 @@ export default async function BatchesPage({
 }: {
   searchParams: Promise<{ saved?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const [batches, sp] = await Promise.all([listBatches(), searchParams]);
   const active = batches.filter((b) => b.active).length;
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <Link href="/manage" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-        ← Manage
-      </Link>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Batches</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {active} active · {batches.length} total
-          </p>
-        </div>
-        <Link
-          href="/manage/batches/new"
-          className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand-hover"
-        >
-          + Add batch
-        </Link>
-      </div>
+    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        backHref="/manage"
+        backLabel="Manage"
+        title="Batches"
+        subtitle={`${active} active · ${batches.length} total`}
+        actions={<PrimaryLink href="/manage/batches/new">+ Add batch</PrimaryLink>}
+      />
 
       {sp.saved ? (
         <div className="mt-4">
@@ -42,30 +35,33 @@ export default async function BatchesPage({
         </div>
       ) : null}
 
-      <ul className="mt-5 flex flex-col gap-2.5">
-        {batches.map((b) => (
-          <li key={b.batch_id}>
-            <Link
-              href={`/manage/batches/${b.batch_id}`}
-              className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-colors hover:border-brand/40"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="truncate font-semibold text-foreground">{b.name}</p>
-                  {!b.active ? <ActiveChip active={false} /> : null}
+      <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {batches.map((b, i) => (
+          <Reveal key={b.batch_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
+            <li className="h-full">
+              <Link
+                href={`/manage/batches/${b.batch_id}`}
+                className="group flex h-full items-start justify-between gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate font-semibold text-foreground">{b.name}</p>
+                    {!b.active ? <ActiveChip active={false} /> : null}
+                  </div>
+                  <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                    {b.subject} · {b.teacherName} · {b.roomName}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                    {b.enrolled} enrolled{b.fee ? ` · ₹${b.fee}` : ""}
+                    {b.level ? ` · ${b.level}` : ""}
+                  </p>
                 </div>
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                  {b.subject} · {b.teacherName} · {b.roomName}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                  {b.enrolled} enrolled{b.fee ? ` · ₹${b.fee}` : ""}{b.level ? ` · ${b.level}` : ""}
-                </p>
-              </div>
-              <span className="shrink-0 text-sm font-medium text-brand">Edit</span>
-            </Link>
-          </li>
+                <RowChevron />
+              </Link>
+            </li>
+          </Reveal>
         ))}
       </ul>
-    </main>
+    </div>
   );
 }

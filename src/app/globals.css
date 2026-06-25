@@ -1,36 +1,51 @@
 @import "tailwindcss";
 
-/* ----- KLiXO Coach design tokens (professional admin / operations) ----- */
+/* ----- KLiXO Coach design tokens — premium operations LMS -----
+   Neutral graphite/slate base + a single cobalt data accent. No indigo/violet,
+   no glows. Brand (graphite) drives primary actions & active nav; the cobalt
+   accent is confined to links and data-viz. Status colours stay semantic. */
 :root {
-  --background: #f6f8fb; /* app canvas (slate-tinted) */
-  --foreground: #0f172a; /* slate-900 */
+  --background: #f7f8fa; /* off-white, slate-tinted canvas */
+  --foreground: #0a0a0b; /* zinc-950 (off-black, never #000) */
   --surface: #ffffff; /* cards */
+  --surface-2: #fbfbfc; /* sidebar / subtly raised panels */
   --muted: #f1f5f9; /* slate-100 */
-  --muted-foreground: #64748b; /* slate-500 */
-  --border: #e2e8f0; /* slate-200 */
-  --brand: #2563eb; /* blue-600 */
-  --brand-hover: #1d4ed8; /* blue-700 */
+  --muted-foreground: #5b6473; /* slate-ish, ≥4.5:1 on white */
+  --border: #e7e9ee; /* cool slate hairline */
+
+  /* Brand = graphite. White text on it ≈ 17:1. */
+  --brand: #1c1c1f;
+  --brand-hover: #0a0a0b;
   --brand-foreground: #ffffff;
-  --brand-subtle: #eff4ff;
-  /* Foreground tones: darkened to the -700 step so they pass WCAG 2.2 AA both
-     as white-on-solid fills (e.g. the P/A/L toggles) and as text on the -subtle
-     backgrounds. amber/emerald/red -600 failed white-on-solid (~2.7:1). */
+  --brand-subtle: #f4f4f5; /* active-nav fill, brand text sits on it */
+
+  /* Lone data/link accent = cobalt. White text ≈ 4.5:1 (AA). */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-foreground: #ffffff;
+  --accent-subtle: #eff4ff;
+
+  /* Status (AA-tuned at the -700 step: pass white-on-solid AND on -subtle). */
   --success: #047857;
   --success-subtle: #ecfdf5;
   --warning: #b45309;
   --warning-subtle: #fffbeb;
   --danger: #b91c1c;
   --danger-subtle: #fef2f2;
+
   --ring: #2563eb;
-  --radius: 0.75rem;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-pop: 0 8px 24px rgba(15, 23, 42, 0.10);
+  --radius: 0.875rem;
+
+  /* Diffusion shadows, tinted to the canvas hue (premium depth, low clutter). */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 28px -14px rgba(16, 24, 40, 0.1);
+  --shadow-pop: 0 24px 48px -16px rgba(16, 24, 40, 0.18);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
@@ -38,6 +53,10 @@
   --color-brand-hover: var(--brand-hover);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-subtle: var(--brand-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-subtle: var(--accent-subtle);
   --color-success: var(--success);
   --color-success-subtle: var(--success-subtle);
   --color-warning: var(--warning);
@@ -45,7 +64,8 @@
   --color-danger: var(--danger);
   --color-danger-subtle: var(--danger-subtle);
   --color-ring: var(--ring);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
   --radius-xl: var(--radius);
 }
 
@@ -61,6 +81,11 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Tabular figures for all data/number contexts. */
+.tabular-nums {
+  font-feature-settings: "tnum" 1;
+}
+
 /* Visible, consistent keyboard focus */
 :focus-visible {
   outline: 2px solid var(--ring);
@@ -69,7 +94,13 @@ body {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--brand) 22%, transparent);
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+
+/* Thin, unobtrusive scrollbars inside scroll regions. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

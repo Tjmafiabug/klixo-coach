@@ -1,34 +1,50 @@
 "use client";
 
 import { useActionState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { login, type LoginState } from "@/lib/actions";
-import { LogoMark } from "@/components/Logo";
+import { Wordmark } from "@/components/Logo";
+import { fieldClass } from "@/components/ui";
 
 const initial: LoginState = {};
 
 export default function LoginPage() {
   const [state, action, pending] = useActionState(login, initial);
+  const reduce = useReducedMotion();
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <LogoMark size={44} />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground">
-              KLiXO Coach
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Sign in to mark attendance
-            </p>
-          </div>
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-4 py-12">
+      {/* soft graphite/cobalt ambient wash — premium depth, not a neon glow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(60rem 40rem at 50% -10%, rgba(37,99,235,0.06), transparent 60%)",
+        }}
+      />
+
+      <motion.div
+        initial={reduce ? false : { opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-sm"
+      >
+        <div className="mb-7 flex flex-col items-center gap-3 text-center">
+          <Wordmark size={32} />
+          <p className="text-sm text-muted-foreground">
+            Sign in to mark attendance
+          </p>
         </div>
 
         <form
           action={action}
-          className="rounded-2xl border border-border bg-surface p-6 shadow-[var(--shadow-card)]"
+          className="rounded-3xl border border-border bg-surface p-6 shadow-[var(--shadow-pop)] sm:p-7"
         >
-          <label htmlFor="phone" className="block text-sm font-medium text-foreground">
+          <label
+            htmlFor="phone"
+            className="block text-sm font-medium text-foreground"
+          >
             Phone number
           </label>
           <input
@@ -38,7 +54,8 @@ export default function LoginPage() {
             inputMode="numeric"
             autoComplete="username"
             placeholder="9876500001"
-            className="mt-1.5 h-11 w-full rounded-lg border border-border bg-surface px-3 text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand focus:ring-2 focus:ring-brand/20"
+            className={fieldClass}
+            aria-invalid={state.error ? true : undefined}
           />
 
           <label
@@ -54,7 +71,8 @@ export default function LoginPage() {
             inputMode="numeric"
             autoComplete="current-password"
             placeholder="••••"
-            className="mt-1.5 h-11 w-full rounded-lg border border-border bg-surface px-3 text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand focus:ring-2 focus:ring-brand/20"
+            className={fieldClass}
+            aria-invalid={state.error ? true : undefined}
           />
 
           {state.error ? (
@@ -69,17 +87,17 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={pending}
-            className="mt-6 inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-lg bg-brand font-semibold text-brand-foreground transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-6 inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-brand font-semibold text-brand-foreground shadow-[var(--shadow-card)] transition-all hover:bg-brand-hover active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pending ? "Signing in…" : "Sign in"}
           </button>
         </form>
 
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Demo — phone <span className="font-semibold">9876500001–06</span>, PIN{" "}
-          <span className="font-semibold">1234</span>
+        <p className="mt-5 text-center text-xs text-muted-foreground">
+          Demo — phone <span className="font-semibold text-foreground">9876500001–06</span>,
+          PIN <span className="font-semibold text-foreground">1234</span>
         </p>
-      </div>
+      </motion.div>
     </main>
   );
 }

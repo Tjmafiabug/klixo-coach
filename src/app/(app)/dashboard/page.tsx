@@ -4,167 +4,188 @@ import { getSession } from "@/lib/auth";
 import { getOwnerDashboard } from "@/lib/data";
 import { PctBadge, StatusPill } from "@/components/ui";
 import { ExportButton } from "@/components/ExportButton";
+import { Reveal, CountUp } from "@/components/motion";
+import { AttendanceDonut } from "@/components/charts/AttendanceDonut";
+import { BatchBarChart } from "@/components/charts/BatchBarChart";
+import { AttendanceTrend } from "@/components/charts/AttendanceTrend";
+import { shortDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-const pct = (n: number) => `${Math.round(n * 100)}%`;
-
-function shortDate(iso: string) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
-}
-
 export default async function DashboardPage() {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
 
   const { stats, health, integrity } = await getOwnerDashboard();
   const blocking = health.clashes.filter((c) => c.blocking).length;
+  const healthy = health.clashes.length === 0;
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-6">
-      <h1 className="text-2xl font-bold tracking-tight">Owner dashboard</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Attendance across the centre · latest mark per session
-      </p>
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+      {/* ---- Status row: schedule health + reports ---- */}
+      <Reveal>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Link
+            href="/timetable"
+            className={`group inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+              healthy
+                ? "border-success/25 bg-success-subtle text-success hover:bg-success/10"
+                : "border-danger/25 bg-danger-subtle text-danger hover:bg-danger/10"
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${healthy ? "bg-success" : "bg-danger"}`}
+            />
+            {healthy
+              ? "Schedule healthy — no clashes"
+              : `${health.clashes.length} clash${health.clashes.length === 1 ? "" : "es"}` +
+                (blocking ? ` · ${blocking} blocking` : "")}
+            <span className="opacity-60 transition-transform group-hover:translate-x-0.5">
+              →
+            </span>
+          </Link>
 
-      <Link
-        href="/timetable"
-        className={`mt-4 flex items-center justify-between rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
-          health.clashes.length === 0
-            ? "border-success/20 bg-success-subtle text-success hover:bg-success/10"
-            : "border-danger/20 bg-danger-subtle text-danger hover:bg-danger/10"
-        }`}
-      >
-        <span>
-          {health.clashes.length === 0
-            ? "Schedule health: no clashes"
-            : `Schedule health: ${health.clashes.length} clash${health.clashes.length === 1 ? "" : "es"}` +
-              (blocking ? ` (${blocking} blocking)` : "")}
-        </span>
-        <span className="text-xs opacity-80">Timetable →</span>
-      </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="hidden text-xs font-medium uppercase tracking-wide text-muted-foreground sm:inline">
+              Reports
+            </span>
+            <ExportButton kind="attendance" label="Attendance log" />
+            <ExportButton kind="defaulters" label="Defaulters" />
+            <ExportButton kind="batches" label="Batch summary" />
+          </div>
+        </div>
+      </Reveal>
 
       {integrity.length > 0 ? (
-        <div className="mt-3 rounded-xl border border-warning/20 bg-warning-subtle p-3">
-          <p className="text-sm font-semibold text-warning">
-            {integrity.length} data integrity issue{integrity.length === 1 ? "" : "s"} — likely a direct-Sheet edit
-          </p>
-          <ul className="mt-1.5 space-y-1 text-xs text-warning/90">
-            {integrity.slice(0, 6).map((it, i) => (
-              <li key={i}>
-                <span className="font-semibold uppercase">{it.kind}</span> · {it.detail}
-              </li>
-            ))}
-            {integrity.length > 6 ? <li>…and {integrity.length - 6} more</li> : null}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <ExportButton kind="attendance" label="Attendance log" />
-        <ExportButton kind="defaulters" label="Defaulters" />
-        <ExportButton kind="batches" label="Batch summary" />
-      </div>
-
-      <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Overall attendance" value={pct(stats.overall)} tone="brand" />
-        <Stat label="Marks recorded" value={stats.totalMarks.toLocaleString()} />
-        <Stat label="Students tracked" value={String(stats.studentCount)} />
-        <Stat
-          label={`Defaulters <${stats.threshold}%`}
-          value={String(stats.defaulters.length)}
-          tone={stats.defaulters.length > 0 ? "danger" : "success"}
-        />
-      </section>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card title="Attendance by batch">
-          <ul className="flex flex-col gap-3">
-            {stats.batchStats.map((b) => {
-              const v = Math.round(b.pct * 100);
-              const bar =
-                v < stats.threshold
-                  ? "bg-danger"
-                  : v < stats.threshold + 10
-                    ? "bg-warning"
-                    : "bg-success";
-              return (
-                <li key={b.id}>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-foreground">{b.name}</span>
-                    <span className="tabular-nums text-muted-foreground">
-                      {v}%{" "}
-                      <span className="text-xs">({b.total})</span>
-                    </span>
-                  </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={`h-full rounded-full ${bar}`}
-                      style={{ width: `${v}%` }}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
-
-        <Card
-          title="Defaulters"
-          subtitle={`Below ${stats.threshold}% attendance`}
-        >
-          {stats.defaulters.length === 0 ? (
-            <Empty>No defaulters — everyone is above {stats.threshold}%.</Empty>
-          ) : (
-            <ul className="divide-y divide-border">
-              {stats.defaulters.map((d) => (
-                <li key={d.id} className="flex items-center justify-between py-2.5">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{d.name}</p>
-                    <p className="text-xs text-muted-foreground tabular-nums">
-                      {d.total} sessions
-                    </p>
-                  </div>
-                  <PctBadge pct={d.pct} threshold={stats.threshold} />
+        <Reveal delay={0.05}>
+          <div className="mt-4 rounded-2xl border border-warning/25 bg-warning-subtle p-4">
+            <p className="text-sm font-semibold text-warning">
+              {integrity.length} data integrity issue
+              {integrity.length === 1 ? "" : "s"} — likely a direct-Sheet edit
+            </p>
+            <ul className="mt-1.5 space-y-1 text-xs text-warning/90">
+              {integrity.slice(0, 6).map((it, i) => (
+                <li key={i}>
+                  <span className="font-semibold uppercase">{it.kind}</span> ·{" "}
+                  {it.detail}
                 </li>
               ))}
+              {integrity.length > 6 ? (
+                <li>…and {integrity.length - 6} more</li>
+              ) : null}
             </ul>
-          )}
-        </Card>
+          </div>
+        </Reveal>
+      ) : null}
+
+      {/* ---- KPI strip ---- */}
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiTile label="Overall attendance" tone="accent" delay={0.04}>
+          <CountUp value={Math.round(stats.overall * 100)} suffix="%" />
+        </KpiTile>
+        <KpiTile label="Marks recorded" tone="ink" delay={0.08}>
+          <CountUp value={stats.totalMarks} locale />
+        </KpiTile>
+        <KpiTile label="Students tracked" tone="ink" delay={0.12}>
+          <CountUp value={stats.studentCount} locale />
+        </KpiTile>
+        <KpiTile
+          label={`Defaulters below ${stats.threshold}%`}
+          tone={stats.defaulters.length > 0 ? "danger" : "success"}
+          sub={stats.defaulters.length > 0 ? "Need follow-up" : "All clear"}
+          delay={0.16}
+        >
+          <CountUp value={stats.defaulters.length} />
+        </KpiTile>
       </div>
 
-      <div className="mt-6">
+      {/* ---- Trend (wide) + Donut (narrow) ---- */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <Reveal delay={0.05} className="lg:col-span-2">
+          <Card
+            title="Attendance trend"
+            subtitle="Daily present rate · last 14 marked days"
+          >
+            <AttendanceTrend data={stats.trend} />
+          </Card>
+        </Reveal>
+        <Reveal delay={0.1}>
+          <Card title="Attendance mix" subtitle="Latest mark per session">
+            <AttendanceDonut
+              present={stats.statusBreakdown.present}
+              absent={stats.statusBreakdown.absent}
+              late={stats.statusBreakdown.late}
+            />
+          </Card>
+        </Reveal>
+      </div>
+
+      {/* ---- Batches + Defaulters ---- */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Reveal delay={0.05}>
+          <Card
+            title="Attendance by batch"
+            subtitle={`Dashed line marks the ${stats.threshold}% minimum`}
+          >
+            <BatchBarChart data={stats.batchStats} threshold={stats.threshold} />
+          </Card>
+        </Reveal>
+
+        <Reveal delay={0.1}>
+          <Card title="Defaulters" subtitle={`Below ${stats.threshold}% attendance`}>
+            {stats.defaulters.length === 0 ? (
+              <Empty>No defaulters — everyone is above {stats.threshold}%.</Empty>
+            ) : (
+              <ul className="-mx-1 max-h-[20rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+                {stats.defaulters.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex items-center justify-between py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {d.name}
+                      </p>
+                      <p className="font-mono text-xs tabular-nums text-muted-foreground">
+                        {d.total} sessions
+                      </p>
+                    </div>
+                    <PctBadge pct={d.pct} threshold={stats.threshold} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </Reveal>
+      </div>
+
+      {/* ---- Manual-mark audit ---- */}
+      <Reveal delay={0.05} className="mt-4 block">
         <Card
           title="Manual-mark audit"
           subtitle={
             stats.recentManual.length < stats.manualCount
-              ? `Showing ${stats.recentManual.length} of ${stats.manualCount} · most recent first`
-              : `${stats.manualCount} manual marks · most recent first`
+              ? `Showing ${stats.recentManual.length} of ${stats.manualCount} · newest first`
+              : `${stats.manualCount} manual marks · newest first`
           }
         >
           {stats.recentManual.length === 0 ? (
             <Empty>No manual marks recorded.</Empty>
           ) : (
-            <ul className="-mx-1 max-h-96 divide-y divide-border overflow-y-auto px-1">
+            <ul className="-mx-1 max-h-[26rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
               {stats.recentManual.map((m, i) => (
                 <li
                   key={i}
                   className="flex items-center justify-between gap-3 py-2.5"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">
+                    <p className="truncate text-sm font-medium text-foreground">
                       {m.studentName}
                     </p>
                     <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                      {m.batchName} · {shortDate(m.date)}
-                      <br className="sm:hidden" />
-                      <span className="hidden sm:inline"> · </span>
-                      marked by {m.markedByName}
+                      {m.batchName} · {shortDate(m.date)} · marked by{" "}
+                      {m.markedByName}
                     </p>
                     {m.reason ? (
                       <p className="mt-1 inline-flex rounded bg-muted px-1.5 py-0.5 text-xs italic text-muted-foreground">
@@ -180,33 +201,51 @@ export default async function DashboardPage() {
             </ul>
           )}
         </Card>
-      </div>
-    </main>
+      </Reveal>
+    </div>
   );
 }
 
-function Stat({
+function KpiTile({
   label,
-  value,
   tone,
+  sub,
+  delay,
+  children,
 }: {
   label: string;
-  value: string;
-  tone?: "brand" | "danger" | "success";
+  tone: "accent" | "ink" | "danger" | "success";
+  sub?: string;
+  delay?: number;
+  children: React.ReactNode;
 }) {
-  const color =
-    tone === "danger"
-      ? "text-danger"
-      : tone === "success"
-        ? "text-success"
-        : tone === "brand"
-          ? "text-brand"
-          : "text-foreground";
+  const dot = {
+    accent: "bg-accent",
+    ink: "bg-foreground",
+    danger: "bg-danger",
+    success: "bg-success",
+  }[tone];
+  const text = {
+    accent: "text-accent",
+    ink: "text-foreground",
+    danger: "text-danger",
+    success: "text-success",
+  }[tone];
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={`mt-1.5 text-2xl font-bold tabular-nums ${color}`}>{value}</p>
-    </div>
+    <Reveal delay={delay} className="h-full">
+      <div className="h-full rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] sm:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+        </div>
+        <p className={`mt-3 font-mono text-3xl font-bold tabular-nums ${text}`}>
+          {children}
+        </p>
+        {sub ? (
+          <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
+        ) : null}
+      </div>
+    </Reveal>
   );
 }
 
@@ -220,11 +259,11 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
-      <div className="mb-3">
-        <h2 className="font-semibold text-foreground">{title}</h2>
+    <section className="h-full rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-4">
+        <h2 className="font-semibold tracking-tight text-foreground">{title}</h2>
         {subtitle ? (
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
         ) : null}
       </div>
       {children}
@@ -234,6 +273,8 @@ function Card({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="py-4 text-center text-sm text-muted-foreground">{children}</p>
+    <div className="grid h-[200px] place-items-center rounded-xl border border-dashed border-border bg-surface-2">
+      <p className="px-4 text-center text-sm text-muted-foreground">{children}</p>
+    </div>
   );
 }

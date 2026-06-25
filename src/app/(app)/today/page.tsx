@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getSessionsOnDate, effectiveToday } from "@/lib/data";
 import { runGeneration } from "@/lib/actions";
+import { Reveal } from "@/components/motion";
 import { TodayDateNav } from "./TodayDateNav";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +34,8 @@ export default async function TodayPage({
     date?: string;
   }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   const isOwner = user.role === "owner";
   const [today, sp] = await Promise.all([effectiveToday(), searchParams]);
   // selected date: valid ISO, never in the future
@@ -55,39 +58,41 @@ export default async function TodayPage({
             : null;
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {isToday ? "Today’s sessions" : "Sessions"}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{prettyDate(date)}</p>
+    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <Reveal>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold tracking-tight text-foreground">
+              {isToday ? "Today" : "Sessions"}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">{prettyDate(date)}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {sessions.length > 0 && isToday ? (
+              <span className="rounded-full bg-brand-subtle px-3 py-1.5 text-sm font-semibold text-brand tabular-nums">
+                {pending} to mark
+              </span>
+            ) : null}
+            {isOwner ? (
+              <>
+                <form action={runGeneration}>
+                  <button className="inline-flex items-center rounded-xl border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-all hover:bg-muted active:scale-[0.98]">
+                    Generate
+                  </button>
+                </form>
+                <Link
+                  href="/new-session"
+                  className="inline-flex items-center gap-1 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-foreground shadow-[var(--shadow-card)] transition-all hover:bg-brand-hover active:scale-[0.98]"
+                >
+                  + Extra class
+                </Link>
+              </>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {sessions.length > 0 && isToday ? (
-            <span className="rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground tabular-nums">
-              {pending} to mark
-            </span>
-          ) : null}
-          {isOwner ? (
-            <>
-              <form action={runGeneration}>
-                <button className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted">
-                  Generate
-                </button>
-              </form>
-              <Link
-                href="/new-session"
-                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
-              >
-                + Extra class
-              </Link>
-            </>
-          ) : null}
-        </div>
-      </div>
+      </Reveal>
 
-      <div className="mt-3">
+      <div className="mt-4">
         <TodayDateNav date={date} today={today} />
       </div>
 
@@ -104,7 +109,7 @@ export default async function TodayPage({
       ) : null}
 
       {sessions.length === 0 ? (
-        <div className="mt-8 rounded-2xl border border-dashed border-border bg-surface p-10 text-center">
+        <div className="mt-8 rounded-3xl border border-dashed border-border bg-surface p-12 text-center">
           <p className="font-medium text-foreground">No sessions</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {isToday ? "No scheduled classes today." : `No classes on ${date}.`}
@@ -112,52 +117,54 @@ export default async function TodayPage({
         </div>
       ) : (
         <ul className="mt-5 flex flex-col gap-3">
-          {sessions.map((s) => (
-            <li key={s.session_id}>
-              <Link
-                href={`/mark/${s.session_id}`}
-                className="group flex items-center gap-4 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/40 hover:shadow-[var(--shadow-pop)]"
-              >
-                <div className="flex w-16 shrink-0 flex-col items-center rounded-xl bg-muted py-2 text-center">
-                  <span className="text-sm font-bold tabular-nums text-foreground">
-                    {s.start}
-                  </span>
-                  <span className="text-[0.7rem] text-muted-foreground tabular-nums">
-                    {s.end}
-                  </span>
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate font-semibold text-foreground">
-                      {s.batchName}
-                    </p>
-                    {s.source === "adhoc" ? (
-                      <span className="rounded bg-warning-subtle px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-warning">
-                        Extra
-                      </span>
-                    ) : null}
+          {sessions.map((s, i) => (
+            <Reveal key={s.session_id} delay={Math.min(i * 0.04, 0.3)} className="block">
+              <li>
+                <Link
+                  href={`/mark/${s.session_id}`}
+                  className="group flex items-center gap-4 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
+                >
+                  <div className="flex w-16 shrink-0 flex-col items-center rounded-xl bg-muted py-2 text-center">
+                    <span className="font-mono text-sm font-bold tabular-nums text-foreground">
+                      {s.start}
+                    </span>
+                    <span className="font-mono text-[0.7rem] text-muted-foreground tabular-nums">
+                      {s.end}
+                    </span>
                   </div>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {s.roomName} · {s.rosterSize} students
-                  </p>
-                </div>
 
-                {s.marked ? (
-                  <span className="flex items-center gap-1.5 rounded-full bg-success-subtle px-2.5 py-1 text-xs font-semibold text-success">
-                    <CheckIcon /> {s.presentCount}/{s.rosterSize}
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-brand px-3 py-1.5 text-sm font-semibold text-brand-foreground transition-colors group-hover:bg-brand-hover">
-                    Mark
-                  </span>
-                )}
-              </Link>
-            </li>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate font-semibold text-foreground">
+                        {s.batchName}
+                      </p>
+                      {s.source === "adhoc" ? (
+                        <span className="rounded bg-warning-subtle px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-warning">
+                          Extra
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {s.roomName} · {s.rosterSize} students
+                    </p>
+                  </div>
+
+                  {s.marked ? (
+                    <span className="flex items-center gap-1.5 rounded-full bg-success-subtle px-2.5 py-1 text-xs font-semibold text-success tabular-nums">
+                      <CheckIcon /> {s.presentCount}/{s.rosterSize}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-brand px-3.5 py-1.5 text-sm font-semibold text-brand-foreground transition-colors group-hover:bg-brand-hover">
+                      Mark
+                    </span>
+                  )}
+                </Link>
+              </li>
+            </Reveal>
           ))}
         </ul>
       )}
-    </main>
+    </div>
   );
 }
 

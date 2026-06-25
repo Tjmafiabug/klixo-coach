@@ -5,6 +5,8 @@ import { listRooms } from "@/lib/data";
 import { saveRoom } from "@/lib/actions";
 import { Banner, fieldClass } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { Reveal } from "@/components/motion";
+import { PageHeader, RowChevron } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -13,22 +15,26 @@ export default async function RoomsPage({
 }: {
   searchParams: Promise<{ saved?: string; deleted?: string; error?: string }>;
 }) {
-  const user = (await getSession())!;
+  const user = await getSession();
+  if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const [rooms, sp] = await Promise.all([listRooms(), searchParams]);
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <Link href="/manage" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-        ← Manage
-      </Link>
-      <h1 className="mt-3 text-2xl font-bold tracking-tight">Rooms</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{rooms.length} rooms</p>
+    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        backHref="/manage"
+        backLabel="Manage"
+        title="Rooms"
+        subtitle={`${rooms.length} rooms`}
+      />
 
       <div className="mt-4 space-y-3">
         {sp.saved ? <Banner tone="success">Room saved.</Banner> : null}
         {sp.deleted ? <Banner tone="success">Room deleted.</Banner> : null}
-        {sp.error === "missing" ? <Banner tone="danger">Enter a name and a numeric capacity.</Banner> : null}
+        {sp.error === "missing" ? (
+          <Banner tone="danger">Enter a name and a numeric capacity.</Banner>
+        ) : null}
       </div>
 
       <form
@@ -37,35 +43,48 @@ export default async function RoomsPage({
       >
         <label className="min-w-[10rem] flex-1">
           <span className="text-sm font-medium">Room name</span>
-          <input name="name" placeholder="Room D" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
+          <input
+            name="name"
+            placeholder="Room D"
+            className={fieldClass}
+            aria-invalid={sp.error === "missing" || undefined}
+          />
         </label>
         <label className="w-28">
           <span className="text-sm font-medium">Capacity</span>
-          <input name="capacity" inputMode="numeric" placeholder="30" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
+          <input
+            name="capacity"
+            inputMode="numeric"
+            placeholder="30"
+            className={fieldClass}
+            aria-invalid={sp.error === "missing" || undefined}
+          />
         </label>
         <div className="w-32">
           <SubmitButton pendingText="Adding…">+ Add room</SubmitButton>
         </div>
       </form>
 
-      <ul className="mt-5 flex flex-col gap-2.5">
-        {rooms.map((r) => (
-          <li key={r.room_id}>
-            <Link
-              href={`/manage/rooms/${r.room_id}`}
-              className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-colors hover:border-brand/40"
-            >
-              <div>
-                <p className="font-semibold text-foreground">{r.name}</p>
-                <p className="mt-0.5 text-sm text-muted-foreground tabular-nums">
-                  Capacity {r.capacity} · {r.inUse} in use
-                </p>
-              </div>
-              <span className="shrink-0 text-sm font-medium text-brand">Edit</span>
-            </Link>
-          </li>
+      <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {rooms.map((r, i) => (
+          <Reveal key={r.room_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
+            <li className="h-full">
+              <Link
+                href={`/manage/rooms/${r.room_id}`}
+                className="group flex h-full items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground">{r.name}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground tabular-nums">
+                    Capacity {r.capacity} · {r.inUse} in use
+                  </p>
+                </div>
+                <RowChevron />
+              </Link>
+            </li>
+          </Reveal>
         ))}
       </ul>
-    </main>
+    </div>
   );
 }

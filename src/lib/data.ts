@@ -852,6 +852,10 @@ export interface OwnerStats {
     reason: string;
     timestamp: string;
   }[];
+  /** Present/absent/late split of the latest marks — drives the attendance donut. */
+  statusBreakdown: { present: number; absent: number; late: number };
+  /** Daily attendance %, oldest→newest, last 14 marked days — drives the trend chart. */
+  trend: { date: string; pct: number; present: number; total: number }[];
 }
 
 export interface StatsTabs {
@@ -885,6 +889,30 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
 
   const present = marks.filter((m) => m.status === "present").length;
   const overall = marks.length ? present / marks.length : 0;
+
+  const statusBreakdown = {
+    present,
+    absent: marks.filter((m) => m.status === "absent").length,
+    late: marks.filter((m) => m.status === "late").length,
+  };
+
+  // Daily attendance %: latest marks grouped by date, last 14 marked days.
+  const byDate = new Map<string, { present: number; total: number }>();
+  for (const m of marks) {
+    const e = byDate.get(m.date) ?? { present: 0, total: 0 };
+    e.total++;
+    if (m.status === "present") e.present++;
+    byDate.set(m.date, e);
+  }
+  const trend = [...byDate.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-14)
+    .map(([date, e]) => ({
+      date,
+      pct: e.total ? e.present / e.total : 0,
+      present: e.present,
+      total: e.total,
+    }));
 
   const perStudent = aggregate(marks, (m) => m.student_id);
   const defaulters = [...perStudent.entries()]
@@ -930,6 +958,8 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
     batchStats,
     manualCount: manual.length,
     recentManual,
+    statusBreakdown,
+    trend,
   };
 }
 
