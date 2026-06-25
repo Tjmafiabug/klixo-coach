@@ -13,7 +13,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function errorText(e?: string) {
   if (e === "missing") return "Centre name is required.";
   if (e === "threshold") return "Attendance threshold must be a whole number 0–100.";
-  if (e === "buffer") return "Room changeover buffer must be a whole number of minutes.";
+  if (e === "buffer") return "Room changeover buffer must be a whole number, 0–180 minutes.";
   return null;
 }
 

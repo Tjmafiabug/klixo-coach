@@ -103,12 +103,16 @@ export async function getSessionsOnDate(
     .sort((a, b) => a.start.localeCompare(b.start))
     .map((s) => {
       const latest = latestPerStudent(attendance, s.session_id);
-      const present = [...latest.values()].filter((a) => a.status === "present").length;
+      const rosterSet = rosterByBatch.get(s.batch_id) ?? new Set<string>();
+      // count present only among current roster, so presentCount never exceeds rosterSize
+      const present = [...latest.values()].filter(
+        (a) => a.status === "present" && rosterSet.has(a.student_id),
+      ).length;
       return {
         ...s,
         batchName: batchById.get(s.batch_id)?.name ?? s.batch_id,
         roomName: roomById.get(s.room_id)?.name ?? s.room_id,
-        rosterSize: rosterByBatch.get(s.batch_id)?.size ?? 0,
+        rosterSize: rosterSet.size,
         marked: latest.size > 0,
         presentCount: present,
       };
@@ -626,10 +630,12 @@ export interface RuleInput {
 export async function ruleClashes(
   cand: RuleInput,
 ): Promise<{ blocking: ClashType[]; warnings: ClashType[] }> {
-  const [rules, enrolls] = await Promise.all([
+  const [rules, enrolls, cfg] = await Promise.all([
     readTab<TimetableRule>("Timetable"),
     readTab<Enrollment>("Enrollments"),
+    config(),
   ]);
+  const buffer = parseInt(cfg.get("room_changeover_buffer_min") ?? "0", 10) || 0;
   const studentsByBatch = await activeStudentsByBatch(enrolls);
   const candDays = new Set(cand.day_of_week.split(",").map((x) => x.trim()));
   const candStu = studentsByBatch.get(cand.batch_id) ?? new Set();
@@ -644,11 +650,15 @@ export async function ruleClashes(
     if (!sharedDay) continue;
     if (!rangesIntersect(cand.effective_from, cand.effective_to, r.effective_from, r.effective_to))
       continue;
-    if (!overlaps(cand.start, cand.end, r.start, r.end)) continue;
-    if (r.room_id === cand.room_id) block.add("room");
-    if (r.teacher_id === cand.teacher_id) block.add("teacher");
+    // room clash respects the changeover buffer (matches scheduleHealth); teacher
+    // and student use the plain half-open overlap
+    const sameTime = overlaps(cand.start, cand.end, r.start, r.end);
+    if (r.room_id === cand.room_id && overlaps(cand.start, cand.end, r.start, r.end, buffer))
+      block.add("room");
+    if (r.teacher_id === cand.teacher_id && sameTime) block.add("teacher");
     if (
       r.batch_id !== cand.batch_id &&
+      sameTime &&
       shareAny(candStu, studentsByBatch.get(r.batch_id) ?? new Set())
     )
       warn.add("student");
@@ -1008,22 +1018,20 @@ export async function updateRoom(
   ]);
 }
 
-/** References that block deleting a room: active batches + timetable rules +
- *  future, non-cancelled sessions (incl. adhoc/extra) pointing at it. */
+/** References that block deleting a room: active batches + timetable rules + ANY
+ *  non-cancelled session (past or future, incl. adhoc/extra) pointing at it.
+ *  Past sessions count too — deleting their room would orphan attendance history
+ *  and, since ids are reused on delete, mis-attribute it to a future new room. */
 export async function roomUsage(id: string): Promise<number> {
-  const [batches, rules, sessions, cfg] = await Promise.all([
+  const [batches, rules, sessions] = await Promise.all([
     readTab<Batch>("Batches"),
     readTab<TimetableRule>("Timetable"),
     readTab<Session>("Sessions"),
-    config(),
   ]);
-  const today = todayFromCfg(cfg);
   return (
     batches.filter((b) => b.active === "TRUE" && b.room_id === id).length +
     rules.filter((r) => r.room_id === id).length +
-    sessions.filter(
-      (s) => s.room_id === id && s.status !== "cancelled" && s.date >= today,
-    ).length
+    sessions.filter((s) => s.room_id === id && s.status !== "cancelled").length
   );
 }
 

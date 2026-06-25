@@ -70,18 +70,20 @@ export default async function TodayPage({
             </span>
           ) : null}
           {isOwner ? (
-            <form action={runGeneration}>
-              <button className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted">
-                Generate
-              </button>
-            </form>
+            <>
+              <form action={runGeneration}>
+                <button className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted">
+                  Generate
+                </button>
+              </form>
+              <Link
+                href="/new-session"
+                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
+              >
+                + Extra class
+              </Link>
+            </>
           ) : null}
-          <Link
-            href="/new-session"
-            className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
-          >
-            + Extra class
-          </Link>
         </div>
       </div>
 

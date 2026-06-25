@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
 import { getFormOptions, effectiveToday } from "@/lib/data";
 import { NewSessionForm } from "./NewSessionForm";
 
@@ -9,6 +11,8 @@ export default async function NewSessionPage({
 }: {
   searchParams: Promise<{ error?: string; with?: string }>;
 }) {
+  const user = (await getSession())!;
+  if (user.role !== "owner") redirect("/today"); // scheduling is owner-only
   const [options, today, sp] = await Promise.all([
     getFormOptions(),
     effectiveToday(),
@@ -20,9 +24,11 @@ export default async function NewSessionPage({
       ? `Clash: this ${sp.with ?? "resource"} is already booked at that time. Pick another time/room/teacher.`
       : sp.error === "time"
         ? "End time must be after start time."
-        : sp.error === "missing"
-          ? "Fill in every field."
-          : null;
+        : sp.error === "past"
+          ? "Can't create a class in the past."
+          : sp.error === "missing"
+            ? "Fill in every field."
+            : null;
 
   return (
     <main className="mx-auto w-full max-w-md px-4 py-6">

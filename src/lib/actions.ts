@@ -110,6 +110,11 @@ export async function submitMarks(formData: FormData): Promise<void> {
   const session = await getSessionMeta(sessionId);
   if (!session) redirect("/today");
 
+  // a teacher may only mark their own (incl. substituted) sessions; owner marks all
+  if (user.role !== "owner" && session.teacher_id !== user.teacherId) {
+    redirect("/today");
+  }
+
   // can't mark cancelled or future sessions
   const today = await effectiveToday();
   if (session.status === "cancelled" || session.date > today) {
@@ -197,7 +202,11 @@ export async function substituteTeacher(formData: FormData): Promise<void> {
   if (user.role !== "owner") redirect("/today");
   const sessionId = String(formData.get("sessionId") ?? "");
   const teacherId = String(formData.get("teacherId") ?? "");
-  if (sessionId && teacherId) await setSubstitute(sessionId, teacherId);
+  // the substitute must be a real, active teacher (else the session becomes
+  // unmarkable — a deactivated/unknown teacher can't sign in to mark it)
+  if (sessionId && teacherId && (await refsExist({ teacherId }))) {
+    await setSubstitute(sessionId, teacherId);
+  }
   redirect(`/mark/${sessionId}`);
 }
 
@@ -263,8 +272,7 @@ export async function expireRuleAction(formData: FormData): Promise<void> {
 }
 
 export async function addExtraClass(formData: FormData): Promise<void> {
-  const user = await getSession();
-  if (!user) redirect("/login");
+  await requireOwner(); // scheduling is owner-only (matches generation/timetable)
 
   const date = String(formData.get("date") ?? "").trim();
   const batchId = String(formData.get("batchId") ?? "").trim();
@@ -276,6 +284,7 @@ export async function addExtraClass(formData: FormData): Promise<void> {
     redirect("/new-session?error=missing");
   }
   if (start >= end) redirect("/new-session?error=time");
+  if (date < (await effectiveToday())) redirect("/new-session?error=past"); // no back-dating
   if (!(await refsExist({ batchId, roomId, teacherId }))) redirect("/new-session?error=missing"); // N7
   // room/teacher clash blocks; student clash is a warning (allowed)
   const clash = await clashesForCandidate({ date, batchId, start, end, roomId, teacherId });
@@ -513,7 +522,7 @@ export async function saveSettings(formData: FormData): Promise<void> {
 
   if (!centerName) redirect("/manage/settings?error=missing");
   if (!isInt(threshold) || Number(threshold) > 100) redirect("/manage/settings?error=threshold");
-  if (!isInt(buffer)) redirect("/manage/settings?error=buffer");
+  if (!isInt(buffer) || Number(buffer) > 180) redirect("/manage/settings?error=buffer");
 
   await updateCenterConfig({
     center_name: centerName,

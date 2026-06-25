@@ -107,6 +107,24 @@ and deployed._
 - N12: marking blocked for cancelled + future sessions; enroll-window via the roster gate.
 - **N8 (attendance archival / dashboard pagination) deferred → Phase 3/G** (only open item).
 
+**Pre-production audit (tester pass)** — fanned out auditors over A–D; fixed the real bugs:
+- **Access control:** marking now enforces session ownership (teacher can only view/mark
+  their own sessions — no roster PII leak or cross-teacher marking by URL), at both the
+  `/mark` page and the `submitMarks` action. Extra-class creation is owner-only
+  (`/new-session` page + `addExtraClass`); link hidden from teachers; no back-dating.
+- **Substitute:** `substituteTeacher` now requires a real, active teacher (else the
+  session became unmarkable).
+- **Clash parity:** `ruleClashes` applies the room changeover buffer, matching
+  `scheduleHealth`/`clashesForCandidate` (no more save-then-flagged rules).
+- **Room delete:** `roomUsage` counts ANY session (past included), so a room with
+  attendance history can't be deleted into an orphan (also avoids id-reuse mis-attribution).
+- **Today list:** `presentCount` counts only current-roster students (no "5/3").
+- **Settings:** changeover buffer capped 0–180 min.
+- Accepted tradeoffs (not bugs): JWT role is fixed for its 12h life (demote/deactivate
+  applies next login); login lockout is per-phone/per-process (fine at one-centre scale);
+  `demo_today` Config override is honored in prod paths (real centres omit it); log_id is
+  last-write-wins per N10. Recurring session-id 9000 namespace + attendance archival → G.
+
 ## NOT done / NEXT (resume here)
 
 A–D are live-tested + deployed. Next: **E — Phase 1 (sellable)**.

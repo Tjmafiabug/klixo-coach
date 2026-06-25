@@ -29,6 +29,9 @@ export default async function MarkPage({
 
   const user = (await getSession())!;
   const isOwner = user.role === "owner";
+  // a teacher may only open their own (incl. substituted) sessions — no peeking at
+  // another teacher's roster (PII) or marking their class by guessing the URL
+  if (!isOwner && session.teacher_id !== user.teacherId) notFound();
   const [{ roster, alreadyMarked }, opts] = await Promise.all([
     getRoster(session.batch_id, sessionId, session.date),
     isOwner ? getFormOptions() : Promise.resolve(null),
