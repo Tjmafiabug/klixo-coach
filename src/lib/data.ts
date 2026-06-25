@@ -201,6 +201,28 @@ function latestPerStudent(
 }
 
 /**
+ * Latest mark per (session, student) across the given rows — the canonical
+ * "winning" attendance record (timestamp, then log_id tiebreak). Single source
+ * for dashboard stats, the student profile, and the CSV exports.
+ */
+function latestPerSessionStudent(
+  rows: AttendanceRow[],
+): Map<string, AttendanceRow> {
+  const m = new Map<string, AttendanceRow>();
+  for (const a of rows) {
+    const k = `${a.session_id}|${a.student_id}`;
+    const prev = m.get(k);
+    if (
+      !prev ||
+      a.timestamp > prev.timestamp ||
+      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
+    )
+      m.set(k, a);
+  }
+  return m;
+}
+
+/**
  * Save attendance. Each mark carries its own method/reason (the action layer
  * decides app vs manual per student). In-place: existing (session, student)
  * rows are updated; only new students are appended — never duplicates.
@@ -857,19 +879,7 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
   const threshold = parseInt(cfg.get("attendance_threshold") ?? "75", 10);
   const teacherById = new Map(teachers.map((t) => [t.teacher_id, t]));
 
-  // latest mark per (session, student)
-  const latest = new Map<string, AttendanceRow>();
-  for (const a of attendance) {
-    const k = `${a.session_id}|${a.student_id}`;
-    const prev = latest.get(k);
-    if (
-      !prev ||
-      a.timestamp > prev.timestamp ||
-      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
-    )
-      latest.set(k, a);
-  }
-  const marks = [...latest.values()];
+  const marks = [...latestPerSessionStudent(attendance).values()];
   const studentById = new Map(students.map((s) => [s.student_id, s]));
   const batchById = new Map(batches.map((b) => [b.batch_id, b]));
 
@@ -1303,18 +1313,9 @@ export async function getStudentProfile(id: string): Promise<StudentProfile | nu
     }));
 
   // latest mark per session for this student
-  const latest = new Map<string, AttendanceRow>();
-  for (const a of attendance) {
-    if (a.student_id !== id) continue;
-    const prev = latest.get(a.session_id);
-    if (
-      !prev ||
-      a.timestamp > prev.timestamp ||
-      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
-    )
-      latest.set(a.session_id, a);
-  }
-  const marks = [...latest.values()];
+  const marks = [
+    ...latestPerSessionStudent(attendance.filter((a) => a.student_id === id)).values(),
+  ];
   const present = marks.filter((m) => m.status === "present").length;
   const history = marks
     .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp))
@@ -1776,11 +1777,19 @@ export async function updateCenterConfig(
 // Milestone E — reports / CSV exports (read-only, owner)
 // ============================================================================
 
-/** RFC-4180 CSV: quote cells containing comma/quote/newline; CRLF line breaks. */
+/**
+ * RFC-4180 CSV: quote cells containing comma/quote/newline; CRLF line breaks.
+ * Also neutralizes CSV/formula injection — a cell starting with = + - @ (or a
+ * control char) is prefixed with ' so a malicious name like =HYPERLINK(...) is
+ * not executed as a formula when the file is opened in Excel/Sheets.
+ */
 export function toCsv(rows: string[][]): string {
-  const cell = (v: string) =>
-    /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-  return rows.map((r) => r.map((c) => cell(c ?? "")).join(",")).join("\r\n");
+  const cell = (v: string) => {
+    let s = v ?? "";
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return rows.map((r) => r.map(cell).join(",")).join("\r\n");
 }
 
 /**
@@ -1802,21 +1811,13 @@ export async function reportAttendance(opts: {
   const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
   const tName = new Map(teachers.map((t) => [t.teacher_id, t.name]));
 
-  const latest = new Map<string, AttendanceRow>();
-  for (const a of attendance) {
-    if (opts.from && a.date < opts.from) continue;
-    if (opts.to && a.date > opts.to) continue;
-    if (opts.batchId && a.batch_id !== opts.batchId) continue;
-    const k = `${a.session_id}|${a.student_id}`;
-    const prev = latest.get(k);
-    if (
-      !prev ||
-      a.timestamp > prev.timestamp ||
-      (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
-    )
-      latest.set(k, a);
-  }
-  const rows = [...latest.values()]
+  const filtered = attendance.filter(
+    (a) =>
+      (!opts.from || a.date >= opts.from) &&
+      (!opts.to || a.date <= opts.to) &&
+      (!opts.batchId || a.batch_id === opts.batchId),
+  );
+  const rows = [...latestPerSessionStudent(filtered).values()]
     .sort(
       (a, b) =>
         b.date.localeCompare(a.date) ||
@@ -1866,12 +1867,20 @@ export async function reportBatches(): Promise<string[][]> {
   ];
 }
 
-/** One student's attendance history, as a CSV table. */
+/** One student's FULL attendance history, as a CSV table (no UI 100-row cap —
+ *  an export must be complete). Latest mark per session, newest first. */
 export async function reportStudent(studentId: string): Promise<string[][] | null> {
-  const p = await getStudentProfile(studentId);
-  if (!p) return null;
-  return [
-    ["date", "batch", "status", "method"],
-    ...p.history.map((h) => [h.date, h.batchName, h.status, h.method]),
-  ];
+  const [students, attendance, batches] = await Promise.all([
+    readTab<Student>("Students"),
+    readTab<AttendanceRow>("Attendance"),
+    readTab<Batch>("Batches"),
+  ]);
+  if (!students.some((s) => s.student_id === studentId)) return null;
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const rows = [
+    ...latestPerSessionStudent(attendance.filter((a) => a.student_id === studentId)).values(),
+  ]
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp))
+    .map((a) => [a.date, bName.get(a.batch_id) ?? a.batch_id, a.status, a.method]);
+  return [["date", "batch", "status", "method"], ...rows];
 }

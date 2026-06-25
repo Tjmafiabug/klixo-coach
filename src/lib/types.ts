@@ -3,6 +3,9 @@
 
 export type AttendanceStatus = "present" | "absent" | "late";
 
+/** Kinds accepted by the /api/export route (shared by the export buttons). */
+export type ExportKind = "attendance" | "defaulters" | "batches" | "student";
+
 export interface Teacher {
   teacher_id: string;
   name: string;

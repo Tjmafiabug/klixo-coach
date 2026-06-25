@@ -1,3 +1,5 @@
+import type { ExportKind } from "@/lib/types";
+
 // Owner CSV export link → /api/export. Server component (just an anchor); the
 // download filename comes from the route's Content-Disposition header.
 export function ExportButton({
@@ -5,7 +7,7 @@ export function ExportButton({
   label,
   params,
 }: {
-  kind: string;
+  kind: ExportKind;
   label: string;
   params?: Record<string, string>;
 }) {
