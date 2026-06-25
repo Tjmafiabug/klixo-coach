@@ -854,8 +854,9 @@ export interface OwnerStats {
   }[];
   /** Present/absent/late split of the latest marks — drives the attendance donut. */
   statusBreakdown: { present: number; absent: number; late: number };
-  /** Daily attendance %, oldest→newest, last 14 marked days — drives the trend chart. */
-  trend: { date: string; pct: number; present: number; total: number }[];
+  /** Daily attendance %, oldest→newest, continuous over the last 14 marked days'
+   *  span. Unmarked days in range carry pct=null (gap) — drives the trend chart. */
+  trend: { date: string; pct: number | null; present: number; total: number }[];
 }
 
 export interface StatsTabs {
@@ -896,23 +897,40 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
     late: marks.filter((m) => m.status === "late").length,
   };
 
-  // Daily attendance %: latest marks grouped by date, last 14 marked days.
-  const byDate = new Map<string, { present: number; total: number }>();
+  // Daily attendance %: a CONTINUOUS calendar range spanning the last 14 marked
+  // days, so every date in between (incl. days with no sessions, e.g. a holiday)
+  // still appears on the axis. Unmarked days carry pct=null → the chart bridges
+  // them (connectNulls) but the date label is shown.
+  const dayAgg = new Map<string, { present: number; total: number }>();
   for (const m of marks) {
-    const e = byDate.get(m.date) ?? { present: 0, total: 0 };
+    const e = dayAgg.get(m.date) ?? { present: 0, total: 0 };
     e.total++;
     if (m.status === "present") e.present++;
-    byDate.set(m.date, e);
+    dayAgg.set(m.date, e);
   }
-  const trend = [...byDate.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(-14)
-    .map(([date, e]) => ({
-      date,
-      pct: e.total ? e.present / e.total : 0,
-      present: e.present,
-      total: e.total,
-    }));
+  const markedDays = [...dayAgg.keys()].sort();
+  const windowDays = markedDays.slice(-14);
+  const trend: {
+    date: string;
+    pct: number | null;
+    present: number;
+    total: number;
+  }[] = [];
+  if (windowDays.length) {
+    const end = windowDays[windowDays.length - 1];
+    let iso = windowDays[0];
+    for (let i = 0; iso <= end && i < 400; i++) {
+      const e = dayAgg.get(iso);
+      trend.push({
+        date: iso,
+        pct: e ? e.present / e.total : null,
+        present: e?.present ?? 0,
+        total: e?.total ?? 0,
+      });
+      const [y, mo, d] = iso.split("-").map(Number);
+      iso = new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10);
+    }
+  }
 
   const perStudent = aggregate(marks, (m) => m.student_id);
   const defaulters = [...perStudent.entries()]

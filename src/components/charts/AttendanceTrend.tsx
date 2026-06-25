@@ -17,18 +17,23 @@ import { shortDate } from "@/lib/format";
 export function AttendanceTrend({
   data,
 }: {
-  data: { date: string; pct: number; present: number; total: number }[];
+  data: { date: string; pct: number | null; present: number; total: number }[];
 }) {
   const reduce = useReducedMotion();
   const gradId = useId().replace(/:/g, "");
+  // Unmarked days (pct=null) keep their axis slot but have a null value so the
+  // line bridges the gap (connectNulls) without drawing a dot or a false 0%.
   const rows = data.map((d) => ({
     label: shortDate(d.date),
-    value: Math.round(d.pct * 100),
+    value: d.pct === null ? null : Math.round(d.pct * 100),
     present: d.present,
     total: d.total,
   }));
+  const marked = rows.filter(
+    (r): r is typeof r & { value: number } => r.value !== null,
+  );
 
-  if (rows.length < 2) {
+  if (marked.length < 2) {
     return (
       <ChartEmpty>
         Not enough history yet — mark a few more days to see the trend.
@@ -36,12 +41,12 @@ export function AttendanceTrend({
     );
   }
 
-  const last = rows[rows.length - 1];
-  const summary = `Attendance trend over the last ${rows.length} marked days: from ${rows[0].label} at ${rows[0].value}% to ${last.label} at ${last.value}%.`;
+  const last = marked[marked.length - 1];
+  const summary = `Attendance trend across ${rows.length} days: from ${marked[0].label} at ${marked[0].value}% to ${last.label} at ${last.value}%.`;
 
   // Zoom the Y-axis to the data band (floored to a clean 10) so day-to-day
   // variation is visible instead of a flat ribbon hugging 100%.
-  const minV = Math.min(...rows.map((r) => r.value));
+  const minV = Math.min(...marked.map((r) => r.value));
   const lower = Math.max(0, Math.floor((minV - 5) / 10) * 10);
   const yTicks = [lower, Math.round((lower + 100) / 2), 100];
 
@@ -83,6 +88,14 @@ export function AttendanceTrend({
             };
             const row = tip.active ? tip.payload?.[0]?.payload : undefined;
             if (!row) return null;
+            if (!row.total) {
+              return (
+                <TooltipCard
+                  title={row.label}
+                  items={[{ label: "No sessions marked", value: "—" }]}
+                />
+              );
+            }
             return (
               <TooltipCard
                 title={row.label}
@@ -100,6 +113,7 @@ export function AttendanceTrend({
           stroke={CHART.accent}
           strokeWidth={2.5}
           fill={`url(#${gradId})`}
+          connectNulls
           dot={false}
           activeDot={{ r: 4, strokeWidth: 2, stroke: "#fff" }}
           isAnimationActive={!reduce}
