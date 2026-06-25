@@ -46,17 +46,17 @@ export default async function SettingsPage({
       >
         <label className="block">
           <span className="text-sm font-medium">Centre name</span>
-          <input name="centerName" defaultValue={cfg.center_name} className={fieldClass} />
+          <input name="centerName" defaultValue={cfg.center_name} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm font-medium">Attendance threshold (%)</span>
-            <input name="threshold" inputMode="numeric" defaultValue={cfg.attendance_threshold} className={fieldClass} />
+            <input name="threshold" inputMode="numeric" defaultValue={cfg.attendance_threshold} className={fieldClass} aria-invalid={sp.error === "threshold" || undefined} />
           </label>
           <label className="block">
             <span className="text-sm font-medium">Changeover buffer (min)</span>
-            <input name="buffer" inputMode="numeric" defaultValue={cfg.room_changeover_buffer_min} className={fieldClass} />
+            <input name="buffer" inputMode="numeric" defaultValue={cfg.room_changeover_buffer_min} className={fieldClass} aria-invalid={sp.error === "buffer" || undefined} />
           </label>
         </div>
 

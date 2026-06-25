@@ -16,7 +16,7 @@ export function ExportButton({
     <a
       href={`/api/export?${qs}`}
       download
-      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted-foreground transition-[color,background-color,transform] hover:bg-muted hover:text-foreground active:scale-[0.98]"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path

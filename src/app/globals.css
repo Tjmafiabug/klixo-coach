@@ -12,11 +12,14 @@
   --brand-hover: #1d4ed8; /* blue-700 */
   --brand-foreground: #ffffff;
   --brand-subtle: #eff4ff;
-  --success: #059669;
+  /* Foreground tones: darkened to the -700 step so they pass WCAG 2.2 AA both
+     as white-on-solid fills (e.g. the P/A/L toggles) and as text on the -subtle
+     backgrounds. amber/emerald/red -600 failed white-on-solid (~2.7:1). */
+  --success: #047857;
   --success-subtle: #ecfdf5;
-  --warning: #d97706;
+  --warning: #b45309;
   --warning-subtle: #fffbeb;
-  --danger: #dc2626;
+  --danger: #b91c1c;
   --danger-subtle: #fef2f2;
   --ring: #2563eb;
   --radius: 0.75rem;

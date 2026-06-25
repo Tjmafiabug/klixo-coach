@@ -37,11 +37,11 @@ export default async function RoomsPage({
       >
         <label className="min-w-[10rem] flex-1">
           <span className="text-sm font-medium">Room name</span>
-          <input name="name" placeholder="Room D" className={fieldClass} />
+          <input name="name" placeholder="Room D" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="w-28">
           <span className="text-sm font-medium">Capacity</span>
-          <input name="capacity" inputMode="numeric" placeholder="30" className={fieldClass} />
+          <input name="capacity" inputMode="numeric" placeholder="30" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <div className="w-32">
           <SubmitButton pendingText="Adding…">+ Add room</SubmitButton>

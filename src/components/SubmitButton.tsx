@@ -20,9 +20,10 @@ export function SubmitButton({
     <button
       type="submit"
       disabled={pending}
+      aria-busy={pending}
       className={
         className ??
-        "inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-lg bg-brand font-semibold text-brand-foreground transition-colors hover:bg-brand-hover disabled:opacity-60"
+        "inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-lg bg-brand font-semibold text-brand-foreground transition-colors hover:bg-brand-hover active:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
       }
     >
       {pending ? pendingText : children}

@@ -47,7 +47,7 @@ export default async function HolidaysPage({
         </label>
         <label className="min-w-[10rem] flex-1">
           <span className="text-sm font-medium">Name</span>
-          <input name="name" placeholder="Independence Day" className={fieldClass} />
+          <input name="name" placeholder="Independence Day" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <div className="w-32">
           <SubmitButton pendingText="Adding…">+ Add</SubmitButton>

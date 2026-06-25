@@ -21,7 +21,8 @@ export default async function NewTeacherPage({
 }) {
   const user = (await getSession())!;
   if (user.role !== "owner") redirect("/today");
-  const err = errorText((await searchParams).error);
+  const sp = await searchParams;
+  const err = errorText(sp.error);
 
   return (
     <main className="mx-auto w-full max-w-md px-4 py-6">
@@ -38,11 +39,11 @@ export default async function NewTeacherPage({
       >
         <label className="block">
           <span className="text-sm font-medium">Name</span>
-          <input name="name" className={fieldClass} />
+          <input name="name" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Phone</span>
-          <input name="phone" inputMode="numeric" placeholder="9876500000" className={fieldClass} />
+          <input name="phone" inputMode="numeric" placeholder="9876500000" className={fieldClass} aria-invalid={sp.error === "missing" || sp.error === "phone" || undefined} />
         </label>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">
@@ -54,7 +55,7 @@ export default async function NewTeacherPage({
           </label>
           <label className="block">
             <span className="text-sm font-medium">PIN (4–6 digits)</span>
-            <input name="pin" inputMode="numeric" placeholder="1234" className={fieldClass} />
+            <input name="pin" inputMode="numeric" placeholder="1234" className={fieldClass} aria-invalid={sp.error === "pin" || undefined} />
           </label>
         </div>
         <label className="mt-3 block">

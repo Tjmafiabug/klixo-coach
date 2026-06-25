@@ -39,25 +39,25 @@ export default async function NewStudentPage({
       >
         <label className="block">
           <span className="text-sm font-medium">Name</span>
-          <input name="name" className={fieldClass} />
+          <input name="name" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm font-medium">
               Phone <span className="text-muted-foreground">(optional)</span>
             </span>
-            <input name="phone" inputMode="numeric" className={fieldClass} />
+            <input name="phone" inputMode="numeric" className={fieldClass} aria-invalid={sp.error === "phone" || undefined} />
           </label>
           <label className="block">
             <span className="text-sm font-medium">
               Parent phone <span className="text-muted-foreground">(optional)</span>
             </span>
-            <input name="parentPhone" inputMode="numeric" className={fieldClass} />
+            <input name="parentPhone" inputMode="numeric" className={fieldClass} aria-invalid={sp.error === "phone" || undefined} />
           </label>
         </div>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Join date</span>
-          <input type="date" name="joinDate" defaultValue={today} className={fieldClass} />
+          <input type="date" name="joinDate" defaultValue={today} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">

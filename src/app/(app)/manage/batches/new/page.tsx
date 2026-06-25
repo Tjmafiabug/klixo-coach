@@ -39,11 +39,11 @@ export default async function NewBatchPage({
       >
         <label className="block">
           <span className="text-sm font-medium">Name</span>
-          <input name="name" placeholder="Class 10 Maths" className={fieldClass} />
+          <input name="name" placeholder="Class 10 Maths" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Subject</span>
-          <input name="subject" placeholder="Mathematics" className={fieldClass} />
+          <input name="subject" placeholder="Mathematics" className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Teacher</span>
@@ -66,7 +66,7 @@ export default async function NewBatchPage({
             <span className="text-sm font-medium">
               Fee <span className="text-muted-foreground">(optional)</span>
             </span>
-            <input name="fee" inputMode="numeric" placeholder="1200" className={fieldClass} />
+            <input name="fee" inputMode="numeric" placeholder="1200" className={fieldClass} aria-invalid={sp.error === "fee" || undefined} />
           </label>
           <label className="block">
             <span className="text-sm font-medium">

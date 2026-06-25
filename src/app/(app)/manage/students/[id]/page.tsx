@@ -97,21 +97,21 @@ export default async function StudentProfilePage({
         <input type="hidden" name="studentId" value={student.student_id} />
         <label className="mt-3 block">
           <span className="text-sm font-medium">Name</span>
-          <input name="name" defaultValue={student.name} className={fieldClass} />
+          <input name="name" defaultValue={student.name} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm font-medium">Phone</span>
-            <input name="phone" inputMode="numeric" defaultValue={student.phone} className={fieldClass} />
+            <input name="phone" inputMode="numeric" defaultValue={student.phone} className={fieldClass} aria-invalid={sp.error === "phone" || undefined} />
           </label>
           <label className="block">
             <span className="text-sm font-medium">Parent phone</span>
-            <input name="parentPhone" inputMode="numeric" defaultValue={student.parent_phone} className={fieldClass} />
+            <input name="parentPhone" inputMode="numeric" defaultValue={student.parent_phone} className={fieldClass} aria-invalid={sp.error === "phone" || undefined} />
           </label>
         </div>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Join date</span>
-          <input type="date" name="joinDate" defaultValue={student.join_date} className={fieldClass} />
+          <input type="date" name="joinDate" defaultValue={student.join_date} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Notes</span>

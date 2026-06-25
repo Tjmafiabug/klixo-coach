@@ -46,11 +46,11 @@ export default async function EditRoomPage({
         <input type="hidden" name="roomId" value={room.room_id} />
         <label className="block">
           <span className="text-sm font-medium">Room name</span>
-          <input name="name" defaultValue={room.name} className={fieldClass} />
+          <input name="name" defaultValue={room.name} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Capacity</span>
-          <input name="capacity" inputMode="numeric" defaultValue={room.capacity} className={fieldClass} />
+          <input name="capacity" inputMode="numeric" defaultValue={room.capacity} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <div className="mt-4">
           <SubmitButton>Save changes</SubmitButton>

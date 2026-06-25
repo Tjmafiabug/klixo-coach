@@ -80,11 +80,11 @@ export default async function EditBatchPage({
         <input type="hidden" name="batchId" value={batch.batch_id} />
         <label className="mt-3 block">
           <span className="text-sm font-medium">Name</span>
-          <input name="name" defaultValue={batch.name} className={fieldClass} />
+          <input name="name" defaultValue={batch.name} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Subject</span>
-          <input name="subject" defaultValue={batch.subject} className={fieldClass} />
+          <input name="subject" defaultValue={batch.subject} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">
@@ -107,7 +107,7 @@ export default async function EditBatchPage({
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm font-medium">Fee</span>
-            <input name="fee" inputMode="numeric" defaultValue={batch.fee} className={fieldClass} />
+            <input name="fee" inputMode="numeric" defaultValue={batch.fee} className={fieldClass} aria-invalid={sp.error === "fee" || undefined} />
           </label>
           <label className="block">
             <span className="text-sm font-medium">Level</span>

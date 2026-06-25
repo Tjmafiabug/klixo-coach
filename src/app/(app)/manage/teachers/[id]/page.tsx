@@ -59,11 +59,11 @@ export default async function EditTeacherPage({
         <input type="hidden" name="teacherId" value={teacher.teacher_id} />
         <label className="block">
           <span className="text-sm font-medium">Name</span>
-          <input name="name" defaultValue={teacher.name} className={fieldClass} />
+          <input name="name" defaultValue={teacher.name} className={fieldClass} aria-invalid={sp.error === "missing" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Phone</span>
-          <input name="phone" inputMode="numeric" defaultValue={teacher.phone} className={fieldClass} />
+          <input name="phone" inputMode="numeric" defaultValue={teacher.phone} className={fieldClass} aria-invalid={sp.error === "missing" || sp.error === "phone" || undefined} />
         </label>
         <label className="mt-3 block">
           <span className="text-sm font-medium">Role</span>
@@ -104,7 +104,7 @@ export default async function EditTeacherPage({
         <div className="mt-2 flex items-end gap-2">
           <label className="flex-1">
             <span className="block text-xs font-medium">New PIN (4–6 digits)</span>
-            <input name="pin" inputMode="numeric" placeholder="1234" className={fieldClass} />
+            <input name="pin" inputMode="numeric" placeholder="1234" className={fieldClass} aria-invalid={sp.error === "pin" || undefined} />
           </label>
           <button className="h-11 cursor-pointer rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted">
             Set PIN
