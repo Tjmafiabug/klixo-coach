@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getTimetableView } from "@/lib/data";
 import { Reveal } from "@/components/motion";
-import { PageHeader, PrimaryLink, RowChevron } from "@/components/page";
+import { PageHeader, PrimaryLink } from "@/components/page";
+import { CalendarGrid } from "./CalendarGrid";
 
 export const dynamic = "force-dynamic";
 
@@ -64,41 +64,9 @@ export default async function TimetablePage({
         )}
       </Reveal>
 
-      <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {rules.map((r, i) => (
-          <Reveal key={r.slot_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
-            <li className="h-full">
-              <Link
-                href={`/timetable/${r.slot_id}`}
-                className="group flex h-full items-start justify-between gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
-              >
-                <div className="min-w-0">
-                  <p className="font-semibold text-foreground">{r.batchName}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground tabular-nums">
-                    {r.start}–{r.end} · {r.roomName} · {r.teacherName}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {r.days.map((d) => (
-                      <span
-                        key={d}
-                        className="rounded-md bg-muted px-1.5 py-0.5 text-[0.7rem] font-semibold text-muted-foreground"
-                      >
-                        {d}
-                      </span>
-                    ))}
-                    {r.effective_to ? (
-                      <span className="rounded-md bg-warning-subtle px-1.5 py-0.5 text-[0.7rem] font-semibold text-warning">
-                        until {r.effective_to}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                <RowChevron />
-              </Link>
-            </li>
-          </Reveal>
-        ))}
-      </ul>
+      <Reveal delay={0.1}>
+        <CalendarGrid rules={rules} />
+      </Reveal>
     </div>
   );
 }

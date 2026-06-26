@@ -1,0 +1,198 @@
+import Link from "next/link";
+import type { TimetableRuleView } from "@/lib/data";
+
+/* Weekly calendar grid for recurring timetable rules.
+   Days are columns, time is the vertical axis (1px per minute). Each rule paints
+   a block on every day it runs; classes that overlap within a day are packed
+   side-by-side (Google-Calendar style). Server component — no client JS. */
+
+const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const PPM = 1; // pixels per minute
+const SNAP = 60; // axis snaps to whole hours
+
+const toMin = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+
+interface Block {
+  rule: TimetableRuleView;
+  s: number;
+  e: number;
+  col: number;
+  cols: number;
+}
+
+/** Greedy column packing: split a day's events into overlap clusters, then place
+ *  each in the first free column. Returns each with its column index + cluster width. */
+function packDay(events: { rule: TimetableRuleView; s: number; e: number }[]): Block[] {
+  const sorted = [...events].sort((a, b) => a.s - b.s || a.e - b.e);
+  const out: Block[] = [];
+  let cluster: { rule: TimetableRuleView; s: number; e: number }[] = [];
+  let clusterEnd = -1;
+
+  const flush = () => {
+    const colEnds: number[] = [];
+    const placed = cluster.map((ev) => {
+      let c = colEnds.findIndex((end) => end <= ev.s);
+      if (c === -1) {
+        c = colEnds.length;
+        colEnds.push(ev.e);
+      } else {
+        colEnds[c] = ev.e;
+      }
+      return { ev, col: c };
+    });
+    const cols = colEnds.length;
+    for (const p of placed) out.push({ ...p.ev, col: p.col, cols });
+    cluster = [];
+  };
+
+  for (const ev of sorted) {
+    if (cluster.length && ev.s >= clusterEnd) flush();
+    cluster.push(ev);
+    clusterEnd = Math.max(clusterEnd, ev.e);
+  }
+  if (cluster.length) flush();
+  return out;
+}
+
+export function CalendarGrid({ rules }: { rules: TimetableRuleView[] }) {
+  if (rules.length === 0) {
+    return (
+      <div className="mt-6 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-16 text-center">
+        <p className="font-semibold text-foreground">No classes scheduled yet</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Add a recurring rule to see it on the weekly calendar.
+        </p>
+      </div>
+    );
+  }
+
+  // Stable, well-separated colour per batch (golden-angle hue rotation).
+  const batchIds = Array.from(new Set(rules.map((r) => r.batch_id)));
+  const hueOf = (id: string) =>
+    Math.round((batchIds.indexOf(id) * 137.508) % 360);
+
+  // Full week, Mon→Sun.
+  const activeDays = DAY_ORDER;
+
+  // Vertical range, snapped to whole hours, with a little breathing room.
+  let minM = Infinity;
+  let maxM = -Infinity;
+  for (const r of rules) {
+    minM = Math.min(minM, toMin(r.start));
+    maxM = Math.max(maxM, toMin(r.end));
+  }
+  const rangeStart = Math.floor(minM / SNAP) * SNAP;
+  const rangeEnd = Math.ceil(maxM / SNAP) * SNAP;
+  const height = (rangeEnd - rangeStart) * PPM;
+  const hours: number[] = [];
+  for (let h = rangeStart; h <= rangeEnd; h += SNAP) hours.push(h);
+
+  // Per-day packed blocks.
+  const byDay = activeDays.map((day) => {
+    const events = rules
+      .filter((r) => r.days.includes(day))
+      .map((r) => ({ rule: r, s: toMin(r.start), e: toMin(r.end) }));
+    return { day, blocks: packDay(events) };
+  });
+
+  return (
+    <div className="mt-5 overflow-x-auto scroll-slim rounded-2xl border border-border bg-surface shadow-[var(--shadow-card)]">
+      <div
+        className="grid min-w-[760px]"
+        style={{
+          gridTemplateColumns: `56px repeat(${activeDays.length}, minmax(100px, 1fr))`,
+        }}
+      >
+        {/* Header row */}
+        <div className="sticky left-0 z-20 border-b border-border bg-surface" />
+        {activeDays.map((d) => (
+          <div
+            key={d}
+            className="border-b border-l border-border bg-surface px-3 py-2.5 text-center"
+          >
+            <span className="label-mono text-muted-foreground">{d}</span>
+          </div>
+        ))}
+
+        {/* Time gutter */}
+        <div
+          className="sticky left-0 z-10 bg-surface"
+          style={{ height }}
+        >
+          {hours.map((h) => (
+            <div
+              key={h}
+              className="absolute -translate-y-1/2 pr-2 text-right tabular-nums label-mono text-muted-foreground"
+              style={{ top: (h - rangeStart) * PPM, right: 0, width: 56 }}
+            >
+              {String(Math.floor(h / 60)).padStart(2, "0")}:00
+            </div>
+          ))}
+        </div>
+
+        {/* Day columns */}
+        {byDay.map(({ day, blocks }) => (
+          <div
+            key={day}
+            className="relative border-l border-border"
+            style={{ height }}
+          >
+            {/* hour gridlines */}
+            {hours.slice(0, -1).map((h) => (
+              <div
+                key={h}
+                className="absolute inset-x-0 border-t border-border/60"
+                style={{ top: (h - rangeStart) * PPM }}
+              />
+            ))}
+
+            {blocks.map(({ rule, s, e, col, cols }) => {
+              const hue = hueOf(rule.batch_id);
+              const top = (s - rangeStart) * PPM;
+              const blockH = Math.max((e - s) * PPM, 30);
+              const widthPct = 100 / cols;
+              return (
+                <Link
+                  key={`${rule.slot_id}-${day}`}
+                  href={`/timetable/${rule.slot_id}`}
+                  className="group absolute overflow-hidden rounded-lg border border-l-[3px] px-2 py-1 transition-shadow hover:z-10 hover:shadow-[var(--shadow-pop)]"
+                  style={{
+                    top,
+                    height: blockH - 3,
+                    left: `calc(${col * widthPct}% + 3px)`,
+                    width: `calc(${widthPct}% - 6px)`,
+                    background: `hsl(${hue} 70% 96%)`,
+                    borderColor: `hsl(${hue} 55% 78%)`,
+                    borderLeftColor: `hsl(${hue} 60% 50%)`,
+                    color: `hsl(${hue} 45% 26%)`,
+                  }}
+                >
+                  <p className="truncate text-[0.78rem] font-semibold leading-tight">
+                    {rule.batchName}
+                  </p>
+                  <p className="truncate text-[0.68rem] tabular-nums opacity-80">
+                    {rule.start}–{rule.end}
+                  </p>
+                  {blockH > 56 ? (
+                    <p className="truncate text-[0.68rem] opacity-70">
+                      {rule.roomName} · {rule.teacherName}
+                    </p>
+                  ) : null}
+                  {rule.effective_to ? (
+                    <span className="mt-0.5 inline-block rounded bg-warning-subtle px-1 text-[0.6rem] font-semibold text-warning">
+                      until {rule.effective_to}
+                    </span>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
