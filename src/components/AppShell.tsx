@@ -18,38 +18,33 @@ interface NavItem {
   ownerOnly: boolean;
 }
 
-const NAV: NavItem[] = [
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+// Every main feature is one click from the sidebar — Workspace = daily ops,
+// Manage = the centre's data & config (the old /manage hub's cards, promoted).
+const SECTIONS: NavSection[] = [
   {
-    href: "/today",
-    label: "Today",
-    desc: "Mark attendance for the day",
-    icon: TodayIcon,
-    match: ["/today", "/mark", "/new-session"],
-    ownerOnly: false,
+    title: "Workspace",
+    items: [
+      { href: "/today", label: "Today", desc: "Mark attendance for the day", icon: TodayIcon, match: ["/today", "/mark", "/new-session"], ownerOnly: false },
+      { href: "/dashboard", label: "Dashboard", desc: "Attendance health across the centre", icon: DashIcon, match: ["/dashboard"], ownerOnly: true },
+      { href: "/timetable", label: "Timetable", desc: "Recurring schedule & clashes", icon: ClockIcon, match: ["/timetable"], ownerOnly: true },
+    ],
   },
   {
-    href: "/dashboard",
-    label: "Dashboard",
-    desc: "Attendance health across the centre",
-    icon: DashIcon,
-    match: ["/dashboard"],
-    ownerOnly: true,
-  },
-  {
-    href: "/timetable",
-    label: "Timetable",
-    desc: "Recurring schedule & clashes",
-    icon: ClockIcon,
-    match: ["/timetable"],
-    ownerOnly: true,
-  },
-  {
-    href: "/manage",
-    label: "Manage",
-    desc: "People, rooms & settings",
-    icon: ManageIcon,
-    match: ["/manage"],
-    ownerOnly: true,
+    title: "Manage",
+    items: [
+      { href: "/manage/students", label: "Students", desc: "Roster & enrollments", icon: UsersIcon, match: ["/manage/students"], ownerOnly: true },
+      { href: "/manage/batches", label: "Batches", desc: "Classes, fees & curriculum progress", icon: BatchesIcon, match: ["/manage/batches"], ownerOnly: true },
+      { href: "/manage/curriculum", label: "Curriculum", desc: "Syllabus & chapters by class", icon: CurriculumIcon, match: ["/manage/curriculum"], ownerOnly: true },
+      { href: "/manage/teachers", label: "Teachers", desc: "Staff & PINs", icon: TeachersIcon, match: ["/manage/teachers"], ownerOnly: true },
+      { href: "/manage/rooms", label: "Rooms", desc: "Rooms & capacity", icon: RoomsIcon, match: ["/manage/rooms"], ownerOnly: true },
+      { href: "/manage/holidays", label: "Holidays", desc: "Non-teaching days", icon: HolidaysIcon, match: ["/manage/holidays"], ownerOnly: true },
+      { href: "/manage/settings", label: "Settings", desc: "Centre name, threshold & term", icon: SettingsIcon, match: ["/manage/settings"], ownerOnly: true },
+    ],
   },
 ];
 
@@ -71,8 +66,19 @@ export function AppShell({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
 
-  const items = NAV.filter((i) => role === "owner" || !i.ownerOnly);
-  const active = items.find((i) => isMatch(pathname, i)) ?? items[0];
+  // sections with role-visible items only (drops a section that empties out,
+  // e.g. teachers see just Workspace > Today)
+  const sections = SECTIONS.map((s) => ({
+    ...s,
+    items: s.items.filter((i) => role === "owner" || !i.ownerOnly),
+  })).filter((s) => s.items.length > 0);
+  const flat = sections.flatMap((s) => s.items);
+  // header title/subtitle: matched item, the /manage overview, or the first item
+  const active =
+    flat.find((i) => isMatch(pathname, i)) ??
+    (pathname === "/manage" || pathname.startsWith("/manage/")
+      ? { label: "Manage", desc: "Centre data & configuration" }
+      : flat[0]);
 
   // Accessible modal behaviour for the mobile drawer: lock body scroll, trap
   // focus, close on Escape, and return focus to the trigger on close.
@@ -126,7 +132,7 @@ export function AppShell({
       {/* ---- Desktop sidebar ---- */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-border bg-surface-2 px-4 py-5 lg:flex">
         <SidebarBody
-          items={items}
+          sections={sections}
           pathname={pathname}
           name={name}
           role={role}
@@ -159,7 +165,7 @@ export function AppShell({
               aria-label="Navigation"
             >
               <SidebarBody
-                items={items}
+                sections={sections}
                 pathname={pathname}
                 name={name}
                 role={role}
@@ -209,20 +215,21 @@ export function AppShell({
 }
 
 function SidebarBody({
-  items,
+  sections,
   pathname,
   name,
   role,
   reduce,
   onNavigate,
 }: {
-  items: NavItem[];
+  sections: NavSection[];
   pathname: string;
   name: string;
   role: Role;
   reduce: boolean;
   onNavigate?: () => void;
 }) {
+  let idx = 0; // running index → stagger animation flows across both groups
   return (
     <>
       <Link
@@ -235,46 +242,51 @@ function SidebarBody({
       </Link>
 
       <nav className="mt-6 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto scroll-slim">
-        <p className="px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
-          Workspace
-        </p>
-        {items.map((item, i) => {
-          const active = isMatch(pathname, item);
-          const Icon = item.icon;
-          return (
-            <motion.div
-              key={item.href}
-              initial={reduce ? false : { opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: reduce ? 0 : 0.04 * i + 0.04, duration: 0.25 }}
-            >
-              <Link
-                href={item.href}
-                onClick={onNavigate}
-                aria-current={active ? "page" : undefined}
-                className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors active:scale-[0.98] ${
-                  active
-                    ? "text-brand"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                {active ? (
-                  <motion.span
-                    layoutId={reduce ? undefined : "nav-active"}
-                    className="absolute inset-0 -z-10 rounded-xl bg-brand-subtle"
-                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                  />
-                ) : null}
-                <Icon
-                  className={`h-[1.15rem] w-[1.15rem] shrink-0 ${
-                    active ? "text-brand" : "text-muted-foreground group-hover:text-foreground"
-                  }`}
-                />
-                {item.label}
-              </Link>
-            </motion.div>
-          );
-        })}
+        {sections.map((section, si) => (
+          <div key={section.title} className={si > 0 ? "mt-4" : undefined}>
+            <p className="px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              {section.title}
+            </p>
+            {section.items.map((item) => {
+              const active = isMatch(pathname, item);
+              const Icon = item.icon;
+              const i = idx++;
+              return (
+                <motion.div
+                  key={item.href}
+                  initial={reduce ? false : { opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: reduce ? 0 : 0.03 * i + 0.04, duration: 0.25 }}
+                >
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
+                    className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors active:scale-[0.98] ${
+                      active
+                        ? "text-brand"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    {active ? (
+                      <motion.span
+                        layoutId={reduce ? undefined : "nav-active"}
+                        className="absolute inset-0 -z-10 rounded-xl bg-brand-subtle"
+                        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                      />
+                    ) : null}
+                    <Icon
+                      className={`h-[1.15rem] w-[1.15rem] shrink-0 ${
+                        active ? "text-brand" : "text-muted-foreground group-hover:text-foreground"
+                      }`}
+                    />
+                    {item.label}
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="mt-auto border-t border-border pt-3">
@@ -359,12 +371,63 @@ function ClockIcon({ className }: IconProps) {
     </svg>
   );
 }
-function ManageIcon({ className }: IconProps) {
+function UsersIcon({ className }: IconProps) {
   return (
     <svg {...base(className)}>
-      <path d="M4 7h11M4 17h7" />
-      <circle cx="18" cy="7" r="2.4" />
-      <circle cx="14" cy="17" r="2.4" />
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+      <path d="M16 5.5a3 3 0 0 1 0 5.8M17 19a5.5 5.5 0 0 0-3-4.9" />
+    </svg>
+  );
+}
+function BatchesIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" />
+      <path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" />
+    </svg>
+  );
+}
+function CurriculumIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M12 6.5C10.5 5 8 4.5 4 4.5V18c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2V4.5c-4 0-6.5.5-8 2Z" />
+      <path d="M12 6.5V20" />
+    </svg>
+  );
+}
+function TeachersIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M6 20a6 6 0 0 1 12 0" />
+      <path d="m9 8 1.8 1.8L14 6.5" />
+    </svg>
+  );
+}
+function RoomsIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M4 20V6.5L13 4v16M13 9l6 2v9M3 20h18" />
+      <path d="M9 12v2" />
+    </svg>
+  );
+}
+function HolidaysIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <rect x="3.5" y="5" width="17" height="15" rx="3" />
+      <path d="M3.5 9.5h17M8 3.5v3M16 3.5v3" />
+      <path d="m10 14 4 3M14 14l-4 3" />
+    </svg>
+  );
+}
+function SettingsIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M4 7h10M4 17h6" />
+      <circle cx="17" cy="7" r="2.4" />
+      <circle cx="13" cy="17" r="2.4" />
     </svg>
   );
 }
