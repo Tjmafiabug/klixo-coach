@@ -1536,9 +1536,14 @@ export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
     .map((s) => ({ id: s.student_id, name: s.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const key = (s: string) => s.trim().toLowerCase();
+  // only an ACTIVE course maps to the batch — deactivating a course hides its
+  // syllabus from batch pages (it stays in the sheet so reactivation restores it)
   const course =
     courses.find(
-      (c) => key(c.subject) === key(batch.subject) && key(c.level) === key(batch.level),
+      (c) =>
+        c.active === "TRUE" &&
+        key(c.subject) === key(batch.subject) &&
+        key(c.level) === key(batch.level),
     ) ?? null;
   return {
     batch,
@@ -1987,9 +1992,9 @@ export async function updateChapter(
 /** Delete a chapter, then renumber its course's survivors 1..n (no gaps). */
 export async function deleteChapter(id: string): Promise<void> {
   const chapters = await readTab<Chapter>("Chapters");
-  const target = chapters.find((c) => c.chapter_id === id);
-  if (!target) return;
   const idx = chapters.findIndex((c) => c.chapter_id === id);
+  if (idx < 0) return;
+  const target = chapters[idx];
   await deleteRows("Chapters", [idx + 2]);
   // re-read (row numbers shift after the delete) and resequence the siblings
   const remaining = await readTab<Chapter>("Chapters");

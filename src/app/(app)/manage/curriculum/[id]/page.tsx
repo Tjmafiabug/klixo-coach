@@ -109,27 +109,27 @@ export default async function CourseDetailPage({
                       <input type="hidden" name="courseId" value={course.course_id} />
                       <input type="hidden" name="chapterId" value={ch.chapter_id} />
                       <input type="hidden" name="dir" value="up" />
-                      <button
-                        type="submit"
-                        disabled={i === 0}
-                        aria-label="Move up"
+                      <SubmitButton
                         className={iconBtn}
+                        disabled={i === 0}
+                        ariaLabel="Move up"
+                        pendingText="·"
                       >
                         ↑
-                      </button>
+                      </SubmitButton>
                     </form>
                     <form action={moveChapterAction}>
                       <input type="hidden" name="courseId" value={course.course_id} />
                       <input type="hidden" name="chapterId" value={ch.chapter_id} />
                       <input type="hidden" name="dir" value="down" />
-                      <button
-                        type="submit"
-                        disabled={i === chapters.length - 1}
-                        aria-label="Move down"
+                      <SubmitButton
                         className={iconBtn}
+                        disabled={i === chapters.length - 1}
+                        ariaLabel="Move down"
+                        pendingText="·"
                       >
                         ↓
-                      </button>
+                      </SubmitButton>
                     </form>
                     <Link
                       href={`/manage/curriculum/${id}/chapters/${ch.chapter_id}`}

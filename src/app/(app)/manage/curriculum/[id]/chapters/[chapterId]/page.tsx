@@ -108,9 +108,12 @@ export default async function EditChapterPage({
         <p className="mt-0.5 text-xs text-muted-foreground">
           Removes it permanently. Remaining chapters renumber automatically.
         </p>
-        <button className="mt-2 h-10 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-4 text-sm font-semibold text-danger transition-colors hover:bg-danger/10">
+        <SubmitButton
+          pendingText="Deleting…"
+          className="mt-2 inline-flex h-10 cursor-pointer items-center justify-center rounded-lg border border-danger/30 bg-danger-subtle px-4 text-sm font-semibold text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
           Delete chapter
-        </button>
+        </SubmitButton>
       </form>
     </main>
   );
