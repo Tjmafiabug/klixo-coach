@@ -3,12 +3,14 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import {
   getTimetableView,
-  getWeekSessions,
+  getSessionsInRange,
   weekStartOf,
   weekDays,
+  dayCell,
   addDays,
   effectiveToday,
   monthMatrix,
+  type WeekDay,
 } from "@/lib/data";
 import { Reveal } from "@/components/motion";
 import { PageHeader, PrimaryLink } from "@/components/page";
@@ -23,7 +25,14 @@ const fmt = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.sl
 export default async function TimetablePage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; expired?: string; warn?: string; week?: string }>;
+  searchParams: Promise<{
+    saved?: string;
+    expired?: string;
+    warn?: string;
+    week?: string;
+    view?: string;
+    d?: string;
+  }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
@@ -31,20 +40,63 @@ export default async function TimetablePage({
 
   const sp = await searchParams;
   const today = await effectiveToday();
-  const weekStart = weekStartOf(isISO(sp.week) ? sp.week! : today);
-  const dates = weekDays(weekStart);
+  const view: "day" | "week" | "month" =
+    sp.view === "day" || sp.view === "month" ? sp.view : "week";
+  // anchor date (?d=, legacy ?week=, else today)
+  const d = isISO(sp.d) ? sp.d! : isISO(sp.week) ? sp.week! : today;
+  const weekStart = weekStartOf(d);
+  const month = monthMatrix(d);
+
+  let dates: WeekDay[] = [];
+  let rangeStart: string;
+  let rangeEnd: string;
+  if (view === "day") {
+    dates = [dayCell(d)];
+    rangeStart = d;
+    rangeEnd = d;
+  } else if (view === "month") {
+    rangeStart = month.weeks[0][0].iso;
+    rangeEnd = month.weeks[5][6].iso;
+  } else {
+    dates = weekDays(weekStart);
+    rangeStart = weekStart;
+    rangeEnd = addDays(weekStart, 6);
+  }
+
   const [{ clashes }, sessions] = await Promise.all([
     getTimetableView(),
-    getWeekSessions(weekStart),
+    getSessionsInRange(rangeStart, rangeEnd),
   ]);
 
-  const prevWeek = addDays(weekStart, -7);
-  const nextWeek = addDays(weekStart, 7);
-  const thisWeek = weekStartOf(today);
-  const label = `${fmt(dates[0].iso)} – ${fmt(dates[6].iso)}, ${dates[6].iso.slice(0, 4)}`;
-  const month = monthMatrix(weekStart);
-  const monthPrevWeek = weekStartOf(month.prevAnchor);
-  const monthNextWeek = weekStartOf(month.nextAnchor);
+  const href = (v: string, dd: string) => `/timetable?view=${v}&d=${dd}`;
+  let prevD: string;
+  let nextD: string;
+  let label: string;
+  let atToday: boolean;
+  if (view === "day") {
+    prevD = addDays(d, -1);
+    nextD = addDays(d, 1);
+    label = `${dayCell(d).weekday} ${fmt(d)}, ${d.slice(0, 4)}`;
+    atToday = d === today;
+  } else if (view === "month") {
+    prevD = month.prevAnchor;
+    nextD = month.nextAnchor;
+    label = month.label;
+    atToday = monthMatrix(today).label === month.label;
+  } else {
+    prevD = addDays(weekStart, -7);
+    nextD = addDays(weekStart, 7);
+    label = `${fmt(weekStart)} – ${fmt(addDays(weekStart, 6))}, ${addDays(weekStart, 6).slice(0, 4)}`;
+    atToday = weekStart === weekStartOf(today);
+  }
+  const nav = {
+    prevHref: href(view, prevD),
+    nextHref: href(view, nextD),
+    todayHref: href(view, today),
+    label,
+    atToday,
+  };
+  const viewHrefs = { day: href("day", d), week: href("week", d), month: href("month", d) };
 
   const notice = sp.saved ? "Timetable saved." : sp.expired ? "Rule expired." : null;
 
@@ -52,7 +104,7 @@ export default async function TimetablePage({
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         title="Timetable"
-        subtitle="Weekly class calendar"
+        subtitle="Class calendar"
         actions={
           <>
             <Link
@@ -97,17 +149,16 @@ export default async function TimetablePage({
 
       <Reveal delay={0.1}>
         <TimetableView
+          view={view}
           sessions={sessions}
           dates={dates}
           today={today}
           weekStart={weekStart}
-          prevWeek={prevWeek}
-          nextWeek={nextWeek}
-          thisWeek={thisWeek}
-          label={label}
           month={month}
-          monthPrevWeek={monthPrevWeek}
-          monthNextWeek={monthNextWeek}
+          nav={nav}
+          viewHrefs={viewHrefs}
+          miniPrevHref={href(view, month.prevAnchor)}
+          miniNextHref={href(view, month.nextAnchor)}
         />
       </Reveal>
     </div>

@@ -14,12 +14,14 @@ export function MiniCalendar({
   today,
   prevHref,
   nextHref,
+  view,
 }: {
   month: MonthGrid;
   weekStart: string;
   today: string;
   prevHref: string;
   nextHref: string;
+  view: string;
 }) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-3 shadow-[var(--shadow-card)]">
@@ -45,7 +47,7 @@ export function MiniCalendar({
           return (
             <Link
               key={c.iso}
-              href={`/timetable?week=${c.weekStart}`}
+              href={`/timetable?view=${view}&d=${c.iso}`}
               className={`flex h-8 items-center justify-center rounded-md text-sm tabular-nums transition-colors ${
                 isToday
                   ? "bg-accent font-semibold text-accent-foreground"

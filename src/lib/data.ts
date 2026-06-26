@@ -420,6 +420,11 @@ export function weekDays(weekStart: string): WeekDay[] {
   });
 }
 
+/** Single WeekDay descriptor for `iso` (Day-view column). */
+export function dayCell(iso: string): WeekDay {
+  return { weekday: dowOf(iso), iso, dayNum: Number(iso.slice(8, 10)) };
+}
+
 export interface SessionView {
   session_id: string;
   date: string;
@@ -436,11 +441,10 @@ export interface SessionView {
   source: string; // recurring | adhoc
 }
 
-/** Active sessions (scheduled + extra) for the week [weekStart, weekStart+6],
+/** Active sessions (scheduled + extra) in the inclusive date range [start, end],
  *  date-resolved — this is what the calendar renders (holidays show as gaps,
  *  one-off extras show inline). ISO dates compare lexicographically. */
-export async function getWeekSessions(weekStart: string): Promise<SessionView[]> {
-  const weekEnd = addDays(weekStart, 6);
+export async function getSessionsInRange(start: string, end: string): Promise<SessionView[]> {
   const [sessions, batches, rooms, teachers] = await Promise.all([
     readTab<Session>("Sessions"),
     readTab<Batch>("Batches"),
@@ -453,8 +457,8 @@ export async function getWeekSessions(weekStart: string): Promise<SessionView[]>
   return sessions
     .filter(
       (s) =>
-        s.date >= weekStart &&
-        s.date <= weekEnd &&
+        s.date >= start &&
+        s.date <= end &&
         (s.status === "scheduled" || s.status === "extra"),
     )
     .map((s) => ({

@@ -5,14 +5,13 @@ import { useMemo, useState } from "react";
 import type { SessionView, WeekDay, MonthGrid } from "@/lib/data";
 import { CalendarGrid } from "./CalendarGrid";
 import { AgendaGrid } from "./AgendaGrid";
+import { MonthView } from "./MonthView";
 import { MiniCalendar } from "./MiniCalendar";
 
 /* Two-pane calendar shell (Edmingle-style): a left rail with the month picker +
-   filters + batch legend, and a main pane with week navigation and the grid.
-   The grid layout adapts to the scope:
-   - "All" → agenda (sorted chips per day): readable at any density.
-   - Scoped to one batch/teacher/room → time-grid: sparse, so gaps read as free
-     capacity and clicking one books an extra class. */
+   filters + batch legend, and a main pane with a Day/Week/Month toggle, date
+   navigation, and the grid. Day/Week reuse the agenda (All) / time-grid (scoped)
+   layouts; Month is its own overview. */
 
 const field =
   "h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 cursor-pointer";
@@ -26,29 +25,27 @@ function uniq(pairs: [string, string][]): { id: string; name: string }[] {
 }
 
 export function TimetableView({
+  view,
   sessions,
   dates,
   today,
   weekStart,
-  prevWeek,
-  nextWeek,
-  thisWeek,
-  label,
   month,
-  monthPrevWeek,
-  monthNextWeek,
+  nav,
+  viewHrefs,
+  miniPrevHref,
+  miniNextHref,
 }: {
+  view: "day" | "week" | "month";
   sessions: SessionView[];
   dates: WeekDay[];
   today: string;
   weekStart: string;
-  prevWeek: string;
-  nextWeek: string;
-  thisWeek: string;
-  label: string;
   month: MonthGrid;
-  monthPrevWeek: string;
-  monthNextWeek: string;
+  nav: { prevHref: string; nextHref: string; todayHref: string; label: string; atToday: boolean };
+  viewHrefs: { day: string; week: string; month: string };
+  miniPrevHref: string;
+  miniNextHref: string;
 }) {
   // "all" | "batch:<id>" | "teacher:<id>" | "room:<id>"
   const [scope, setScope] = useState("all");
@@ -62,8 +59,6 @@ export function TimetableView({
     [sessions],
   );
 
-  // Stable, well-separated colour per batch (golden-angle), keyed off ALL the
-  // week's sessions so a batch keeps the same hue everywhere.
   const hueOf = useMemo(() => {
     const ids = [...new Set(sessions.map((s) => s.batch_id))];
     const m = new Map(ids.map((id, i) => [id, Math.round((i * 137.508) % 360)]));
@@ -86,6 +81,17 @@ export function TimetableView({
     : type === "room" ? { room: id }
     : undefined;
 
+  const viewTab = (v: "day" | "week" | "month", href: string, labelText: string) => (
+    <Link
+      href={href}
+      className={`inline-flex h-8 items-center px-3 text-sm font-medium transition-colors ${
+        view === v ? "bg-brand text-brand-foreground" : "bg-surface hover:bg-muted"
+      }`}
+    >
+      {labelText}
+    </Link>
+  );
+
   return (
     <div className="mt-5 lg:flex lg:gap-6">
       {/* Left rail */}
@@ -94,8 +100,9 @@ export function TimetableView({
           month={month}
           weekStart={weekStart}
           today={today}
-          prevHref={`/timetable?week=${monthPrevWeek}`}
-          nextHref={`/timetable?week=${monthNextWeek}`}
+          prevHref={miniPrevHref}
+          nextHref={miniNextHref}
+          view={view}
         />
 
         <div>
@@ -159,24 +166,27 @@ export function TimetableView({
       {/* Main pane */}
       <div className="mt-5 min-w-0 flex-1 lg:mt-0">
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/timetable?week=${prevWeek}`} className={navBtn} aria-label="Previous week">
-            ‹
-          </Link>
-          <Link href={`/timetable?week=${nextWeek}`} className={navBtn} aria-label="Next week">
-            ›
-          </Link>
-          {weekStart !== thisWeek ? (
-            <Link href="/timetable" className={navBtn}>
-              Today
-            </Link>
+          <div className="inline-flex overflow-hidden rounded-lg border border-border">
+            {viewTab("day", viewHrefs.day, "Day")}
+            <span className="w-px bg-border" />
+            {viewTab("week", viewHrefs.week, "Week")}
+            <span className="w-px bg-border" />
+            {viewTab("month", viewHrefs.month, "Month")}
+          </div>
+          <Link href={nav.prevHref} className={navBtn} aria-label="Previous">‹</Link>
+          <Link href={nav.nextHref} className={navBtn} aria-label="Next">›</Link>
+          {!nav.atToday ? (
+            <Link href={nav.todayHref} className={navBtn}>Today</Link>
           ) : null}
-          <span className="ml-1 text-sm font-semibold tabular-nums">{label}</span>
+          <span className="ml-1 text-sm font-semibold tabular-nums">{nav.label}</span>
           <span className="ml-auto text-sm text-muted-foreground tabular-nums">
             {shown.length} class{shown.length === 1 ? "" : "es"}
           </span>
         </div>
 
-        {scope === "all" ? (
+        {view === "month" ? (
+          <MonthView sessions={shown} month={month} today={today} hueOf={hueOf} />
+        ) : scope === "all" ? (
           <AgendaGrid sessions={shown} dates={dates} hueOf={hueOf} today={today} />
         ) : (
           <CalendarGrid sessions={shown} dates={dates} hueOf={hueOf} today={today} prefill={prefill} />
