@@ -65,7 +65,7 @@ export default async function TimetablePage({
       </Reveal>
 
       <Reveal delay={0.1}>
-        <CalendarGrid rules={rules} />
+        <TimetableView rules={rules} />
       </Reveal>
     </div>
   );

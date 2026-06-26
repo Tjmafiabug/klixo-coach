@@ -44,6 +44,10 @@ klixo-coach-*.json
 # vercel
 .vercel
 
+# Edmingle/SkillCircle competitive-research material — NEVER commit/push
+/edmingle/
+screencapture-lms-skillcircle-*
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
