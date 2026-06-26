@@ -25,7 +25,7 @@ export default async function CurriculumPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         backHref="/manage"
         backLabel="Manage"
@@ -47,13 +47,13 @@ export default async function CurriculumPage() {
           No courses yet. Add the first one above.
         </p>
       ) : (
-        <div className="mt-6 space-y-8">
+        <div className="mt-6 space-y-6">
           {groups.map((group, gi) => (
             <section key={group.level}>
               <h3 className="text-sm font-semibold text-muted-foreground">
                 {group.level}
               </h3>
-              <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {group.items.map((c, i) => (
                   <Reveal
                     key={c.course_id}

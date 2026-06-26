@@ -53,7 +53,7 @@ export default async function FeesPage({
   const periodOutstanding = expectedThisPeriod - collectedThisPeriod;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         backHref="/manage"
         backLabel="Manage"
@@ -151,11 +151,11 @@ export default async function FeesPage({
               </p>
             </div>
           ) : (
-            <ul className="-mx-1 divide-y divide-border px-1">
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {rows
                 .filter((r) => r.outstanding !== 0)
                 .map((r) => (
-                  <li key={r.student_id} className="flex items-center justify-between gap-3 py-2.5">
+                  <li key={r.student_id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-2 p-3">
                     <Link
                       href={`/manage/students/${r.student_id}`}
                       className="group min-w-0 flex-1"
@@ -203,7 +203,7 @@ function KpiTile({
   const dot = {
     accent: "bg-accent",
     ink: "bg-foreground",
-    danger: "bg-danger",
+    danger: "bg-hazard",
     success: "bg-success",
   }[tone];
   const text = {
@@ -216,10 +216,10 @@ function KpiTile({
     <Reveal delay={delay} className="h-full">
       <div className="h-full rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] sm:p-5">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="label-mono text-muted-foreground">{label}</p>
           <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
         </div>
-        <p className={`mt-3 text-2xl font-bold sm:text-3xl ${text}`}>
+        <p className={`metric mt-3 font-mono text-2xl font-bold tabular-nums sm:text-3xl ${text}`}>
           {children}
         </p>
       </div>

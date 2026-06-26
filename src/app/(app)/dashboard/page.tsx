@@ -6,7 +6,7 @@ import { PctBadge, StatusPill, OnTrackChip } from "@/components/ui";
 import { ExportButton } from "@/components/ExportButton";
 import { Reveal, CountUp } from "@/components/motion";
 import { AttendanceDonut } from "@/components/charts/AttendanceDonut";
-import { BatchBarChart } from "@/components/charts/BatchBarChart";
+import { BatchAttendancePicker } from "@/components/charts/BatchAttendancePicker";
 import { AttendanceTrend } from "@/components/charts/AttendanceTrend";
 import { shortDate, rupees } from "@/lib/format";
 
@@ -131,9 +131,9 @@ export default async function DashboardPage() {
         <Reveal delay={0.05}>
           <Card
             title="Attendance by batch"
-            subtitle={`Dashed line marks the ${stats.threshold}% minimum`}
+            subtitle="Worst first · marker shows the minimum"
           >
-            <BatchBarChart data={stats.batchStats} threshold={stats.threshold} />
+            <BatchAttendancePicker data={stats.batchStats} threshold={stats.threshold} />
           </Card>
         </Reveal>
 
@@ -142,7 +142,7 @@ export default async function DashboardPage() {
             {stats.defaulters.length === 0 ? (
               <Empty>No defaulters — everyone is above {stats.threshold}%.</Empty>
             ) : (
-              <ul className="-mx-1 max-h-[20rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+              <ul className="-mx-1 h-[15rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
                 {stats.defaulters.map((d) => (
                   <li
                     key={d.id}
@@ -165,8 +165,9 @@ export default async function DashboardPage() {
         </Reveal>
       </div>
 
-      {/* ---- Curriculum progress (per-batch pacing rollup) ---- */}
-      <Reveal delay={0.05} className="mt-4 block">
+      {/* ---- Detail band: curriculum · fees · audit (3-up, fixed-height) ---- */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <Reveal delay={0.05} className="h-full">
         <Card
           title="Curriculum progress"
           subtitle={
@@ -180,7 +181,7 @@ export default async function DashboardPage() {
           {rollup.batches.length === 0 ? (
             <Empty>No active batches.</Empty>
           ) : (
-            <ul className="-mx-1 max-h-[26rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+            <ul className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
               {rollup.batches.map((b) => (
                 <li key={b.batch_id} className="py-2.5">
                   <Link
@@ -219,7 +220,7 @@ export default async function DashboardPage() {
       </Reveal>
 
       {/* ---- Fees & dues ---- */}
-      <Reveal delay={0.05} className="mt-4 block">
+      <Reveal delay={0.1} className="h-full">
         <Card
           title="Fees & dues"
           subtitle={
@@ -232,7 +233,7 @@ export default async function DashboardPage() {
           {feesRollup.top.length === 0 ? (
             <Empty>No outstanding fees.</Empty>
           ) : (
-            <ul className="-mx-1 max-h-[20rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+            <ul className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
               {feesRollup.top.map((d) => (
                 <li key={d.student_id} className="flex items-center justify-between gap-3 py-2.5">
                   <Link href={`/manage/students/${d.student_id}`} className="group min-w-0 flex-1">
@@ -255,7 +256,7 @@ export default async function DashboardPage() {
       </Reveal>
 
       {/* ---- Manual-mark audit ---- */}
-      <Reveal delay={0.05} className="mt-4 block">
+      <Reveal delay={0.15} className="h-full">
         <Card
           title="Manual-mark audit"
           subtitle={
@@ -267,7 +268,7 @@ export default async function DashboardPage() {
           {stats.recentManual.length === 0 ? (
             <Empty>No manual marks recorded.</Empty>
           ) : (
-            <ul className="-mx-1 max-h-[26rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+            <ul className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
               {stats.recentManual.map((m, i) => (
                 <li
                   key={i}
@@ -296,6 +297,7 @@ export default async function DashboardPage() {
           )}
         </Card>
       </Reveal>
+      </div>
     </div>
   );
 }
@@ -316,7 +318,7 @@ function KpiTile({
   const dot = {
     accent: "bg-accent",
     ink: "bg-foreground",
-    danger: "bg-danger",
+    danger: "bg-hazard",
     success: "bg-success",
   }[tone];
   const text = {
@@ -329,10 +331,10 @@ function KpiTile({
     <Reveal delay={delay} className="h-full">
       <div className="h-full rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] sm:p-5">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="label-mono text-muted-foreground">{label}</p>
           <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
         </div>
-        <p className={`mt-3 font-mono text-2xl font-bold tabular-nums sm:text-3xl ${text}`}>
+        <p className={`metric mt-3 font-mono text-2xl font-bold tabular-nums sm:text-3xl ${text}`}>
           {children}
         </p>
         {sub ? (

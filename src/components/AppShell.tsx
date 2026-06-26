@@ -245,7 +245,7 @@ function SidebarBody({
       <nav className="mt-6 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto scroll-slim">
         {sections.map((section, si) => (
           <div key={section.title} className={si > 0 ? "mt-4" : undefined}>
-            <p className="px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="px-3 pb-1 font-mono text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
               {section.title}
             </p>
             {section.items.map((item) => {

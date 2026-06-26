@@ -52,7 +52,7 @@ export default async function EditBatchPage({
     : [{ id: batch.teacher_id, name: `${teacherName} (inactive)` }, ...options.teachers];
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6">
+    <main className="mx-auto w-full max-w-5xl px-4 py-6">
       <Link href="/manage/batches" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Batches
       </Link>
@@ -72,10 +72,11 @@ export default async function EditBatchPage({
         ) : null}
       </div>
 
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
       {/* Edit details */}
       <form
         action={saveBatch}
-        className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]"
+        className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]"
       >
         <p className="text-sm font-semibold text-foreground">Details</p>
         <input type="hidden" name="batchId" value={batch.batch_id} />
@@ -121,7 +122,7 @@ export default async function EditBatchPage({
       </form>
 
       {/* Enrollments */}
-      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-foreground">
             Students <span className="text-muted-foreground">({enrollments.filter((e) => e.status === "active" && !e.end_date).length} active)</span>
@@ -196,7 +197,7 @@ export default async function EditBatchPage({
       </div>
 
       {/* Curriculum */}
-      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-foreground">Curriculum</p>
           {progress ? <OnTrackChip onTrack={progress.onTrack} /> : null}
@@ -246,7 +247,7 @@ export default async function EditBatchPage({
       </div>
 
       {/* Active toggle */}
-      <form action={toggleBatchActive} className="mt-4 rounded-2xl border border-border bg-surface p-4">
+      <form action={toggleBatchActive} className="rounded-2xl border border-border bg-surface p-4">
         <input type="hidden" name="batchId" value={batch.batch_id} />
         <input type="hidden" name="active" value={active ? "false" : "true"} />
         <p className="text-sm font-semibold text-foreground">
@@ -267,6 +268,7 @@ export default async function EditBatchPage({
           {active ? "Deactivate" : "Reactivate"}
         </button>
       </form>
+      </div>
     </main>
   );
 }

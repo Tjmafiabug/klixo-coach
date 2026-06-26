@@ -21,7 +21,7 @@ export default async function RoomsPage({
   const [rooms, sp] = await Promise.all([listRooms(), searchParams]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         backHref="/manage"
         backLabel="Manage"
@@ -65,7 +65,7 @@ export default async function RoomsPage({
         </div>
       </form>
 
-      <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {rooms.map((r, i) => (
           <Reveal key={r.room_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
             <li className="h-full">

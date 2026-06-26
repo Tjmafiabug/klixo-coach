@@ -10,7 +10,7 @@ export function StatusPill({ status }: { status: AttendanceStatus | string }) {
   const s = STATUS[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}
+      className={`inline-flex items-center rounded-[3px] px-2 py-0.5 font-mono text-[0.68rem] font-semibold uppercase tracking-wide ${s.cls}`}
     >
       {s.label}
     </span>
@@ -26,7 +26,7 @@ export function LedgerStatusPill({ status }: { status: "due" | "settled" | "cred
   };
   const s = LEDGER[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>
+    <span className={`inline-flex items-center rounded-[3px] px-2 py-0.5 font-mono text-[0.68rem] font-semibold uppercase tracking-wide ${s.cls}`}>
       {s.label}
     </span>
   );
@@ -43,7 +43,7 @@ export function PctBadge({ pct, threshold }: { pct: number; threshold: number })
         : "bg-success-subtle text-success";
   return (
     <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums ${tone}`}
+      className={`inline-flex items-center rounded-[3px] px-2 py-0.5 font-mono text-sm font-bold tabular-nums tracking-tight ${tone}`}
     >
       {v}%
     </span>
@@ -66,7 +66,7 @@ export function Avatar({ name }: { name: string }) {
 
 export function RoleChip({ role }: { role: string }) {
   return (
-    <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
+    <span className="rounded-[3px] border border-border bg-muted px-2 py-0.5 font-mono text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
       {role}
     </span>
   );
@@ -76,7 +76,7 @@ export function RoleChip({ role }: { role: string }) {
 export function ActiveChip({ active }: { active: boolean }) {
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide ${
+      className={`rounded-[3px] px-2 py-0.5 font-mono text-[0.7rem] font-semibold uppercase tracking-wide ${
         active ? "bg-success-subtle text-success" : "bg-muted text-muted-foreground"
       }`}
     >
@@ -91,7 +91,7 @@ export function OnTrackChip({ onTrack }: { onTrack: boolean | null }) {
   if (onTrack === null) return null;
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide ${
+      className={`rounded-[3px] px-2 py-0.5 font-mono text-[0.7rem] font-semibold uppercase tracking-wide ${
         onTrack ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning"
       }`}
     >
@@ -111,7 +111,7 @@ export function Banner({
   const cls = {
     success: "border-success/20 bg-success-subtle text-success",
     warning: "border-warning/20 bg-warning-subtle text-warning",
-    danger: "border-danger/20 bg-danger-subtle text-danger",
+    danger: "border-danger/20 hazard-edge bg-danger-subtle text-danger",
     info: "border-border bg-muted text-muted-foreground",
   }[tone];
   return (

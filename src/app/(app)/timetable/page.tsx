@@ -23,7 +23,7 @@ export default async function TimetablePage({
   const notice = sp.saved ? "Timetable saved." : sp.expired ? "Rule expired." : null;
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         title="Timetable"
         subtitle={`Weekly recurring rules · ${rules.length} slots`}
@@ -64,7 +64,7 @@ export default async function TimetablePage({
         )}
       </Reveal>
 
-      <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {rules.map((r, i) => (
           <Reveal key={r.slot_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
             <li className="h-full">

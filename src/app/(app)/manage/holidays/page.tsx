@@ -24,7 +24,7 @@ export default async function HolidaysPage({
   ]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         backHref="/manage"
         backLabel="Manage"
@@ -69,7 +69,7 @@ export default async function HolidaysPage({
       {holidays.length === 0 ? (
         <p className="mt-6 text-sm text-muted-foreground">No holidays yet.</p>
       ) : (
-        <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {holidays.map((h, i) => (
             <Reveal key={h.date} delay={Math.min(i * 0.03, 0.3)} className="h-full">
               <li className="flex h-full items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">

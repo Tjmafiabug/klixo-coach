@@ -58,7 +58,7 @@ export default async function TodayPage({
             : null;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
       <Reveal>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
@@ -116,13 +116,13 @@ export default async function TodayPage({
           </p>
         </div>
       ) : (
-        <ul className="mt-5 flex flex-col gap-3">
+        <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {sessions.map((s, i) => (
-            <Reveal key={s.session_id} delay={Math.min(i * 0.04, 0.3)} className="block">
-              <li>
+            <Reveal key={s.session_id} delay={Math.min(i * 0.04, 0.3)} className="h-full">
+              <li className="h-full">
                 <Link
                   href={`/mark/${s.session_id}`}
-                  className="group flex items-center gap-4 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
+                  className="group flex h-full items-center gap-4 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
                 >
                   <div className="flex w-16 shrink-0 flex-col items-center rounded-xl bg-muted py-2 text-center">
                     <span className="font-mono text-sm font-bold tabular-nums text-foreground">

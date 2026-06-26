@@ -70,7 +70,7 @@ export default async function StudentProfilePage({
   const err = errorText(sp.error);
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6">
+    <main className="mx-auto w-full max-w-5xl px-4 py-6">
       <Link href="/manage/students" className="text-sm font-medium text-muted-foreground hover:text-foreground">
         ← Students
       </Link>
@@ -105,10 +105,11 @@ export default async function StudentProfilePage({
         )}
       </div>
 
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
       {/* Edit details */}
       <form
         action={saveStudent}
-        className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]"
+        className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]"
       >
         <p className="text-sm font-semibold text-foreground">Details</p>
         <input type="hidden" name="studentId" value={student.student_id} />
@@ -139,8 +140,9 @@ export default async function StudentProfilePage({
         </div>
       </form>
 
+      <div className="space-y-4">
       {/* Enrollments */}
-      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
         <p className="text-sm font-semibold text-foreground">Enrollments</p>
         {enrollments.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">Not enrolled in any batch.</p>
@@ -205,7 +207,7 @@ export default async function StudentProfilePage({
 
       {/* Attendance history */}
       {history.length > 0 ? (
-        <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+        <div className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold text-foreground">Recent attendance</p>
             <ExportButton kind="student" label="Export CSV" params={{ id: student.student_id }} />
@@ -226,6 +228,8 @@ export default async function StudentProfilePage({
           </ul>
         </div>
       ) : null}
+      </div>
+      </div>
 
       {/* ---- Fees ledger ---- */}
       <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
@@ -262,6 +266,7 @@ export default async function StudentProfilePage({
           </div>
         </div>
 
+        <div className="mt-2 grid items-start gap-x-5 lg:grid-cols-2">
         {/* Record payment form */}
         <div className="mt-5 border-t border-border pt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record payment</p>
@@ -455,6 +460,7 @@ export default async function StudentProfilePage({
             </ul>
           </div>
         ) : null}
+      </div>
       </div>
 
       {/* Active toggle */}

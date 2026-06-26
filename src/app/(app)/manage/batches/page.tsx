@@ -20,7 +20,7 @@ export default async function BatchesPage({
   const active = batches.filter((b) => b.active).length;
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         backHref="/manage"
         backLabel="Manage"
@@ -35,7 +35,7 @@ export default async function BatchesPage({
         </div>
       ) : null}
 
-      <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {batches.map((b, i) => (
           <Reveal key={b.batch_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
             <li className="h-full">
