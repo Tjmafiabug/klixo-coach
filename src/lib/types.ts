@@ -112,6 +112,16 @@ export interface Chapter {
   resource_url: string;
 }
 
+/** Per-batch teaching progress for a single chapter (P3). One row per touched
+ *  (batch, chapter); an absent row reads as "pending". `done_date` is set only
+ *  while status is "done". */
+export interface BatchProgressRow {
+  batch_id: string;
+  chapter_id: string;
+  status: string; // "done" | "in_progress" | "pending"
+  done_date: string; // YYYY-MM-DD when done, else ""
+}
+
 export const ATTENDANCE_HEADER = [
   "log_id",
   "session_id",

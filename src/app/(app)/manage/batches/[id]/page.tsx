@@ -3,10 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getBatchDetail, getFormOptions, effectiveToday } from "@/lib/data";
 import { saveBatch, toggleBatchActive, addEnrollment, endEnrollmentAction } from "@/lib/actions";
-import { Banner, fieldClass, ActiveChip } from "@/components/ui";
+import { Banner, fieldClass, ActiveChip, OnTrackChip } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ExportButton } from "@/components/ExportButton";
-import { RowChevron } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +41,7 @@ export default async function EditBatchPage({
     searchParams,
   ]);
   if (!detail) notFound();
-  const { batch, teacherName, enrollments, candidates, course } = detail;
+  const { batch, teacherName, enrollments, candidates, course, progress } = detail;
   const active = batch.active === "TRUE";
   const back = `/manage/batches/${id}`;
   const err = errorText(sp.error);
@@ -198,20 +197,47 @@ export default async function EditBatchPage({
 
       {/* Curriculum */}
       <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
-        <p className="text-sm font-semibold text-foreground">Curriculum</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-foreground">Curriculum</p>
+          {progress ? <OnTrackChip onTrack={progress.onTrack} /> : null}
+        </div>
         {course ? (
-          <Link
-            href={`/manage/curriculum/${course.course_id}`}
-            className="group mt-2 flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5 transition-colors hover:border-brand/30"
-          >
-            <span className="min-w-0">
-              <span className="block font-medium text-foreground">{course.name}</span>
-              <span className="block text-xs text-muted-foreground">
-                View syllabus &amp; chapters
-              </span>
-            </span>
-            <RowChevron />
-          </Link>
+          <>
+            <p className="mt-2 font-medium text-foreground">{course.name}</p>
+            {progress && progress.total > 0 ? (
+              <div className="mt-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums">
+                  <span>
+                    {progress.done}/{progress.total} done · {Math.round(progress.pct * 100)}%
+                    {progress.inProgress > 0 ? ` · ${progress.inProgress} in progress` : ""}
+                  </span>
+                  {progress.termElapsedPct !== null ? (
+                    <span>{Math.round(progress.termElapsedPct * 100)}% of term</span>
+                  ) : null}
+                </div>
+                <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-brand"
+                    style={{ width: `${Math.round(progress.pct * 100)}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href={`/manage/batches/${batch.batch_id}/progress`}
+                className="inline-flex h-9 items-center rounded-lg bg-brand px-3 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand-hover active:brightness-95"
+              >
+                Update progress
+              </Link>
+              <Link
+                href={`/manage/curriculum/${course.course_id}`}
+                className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-brand/30"
+              >
+                View syllabus
+              </Link>
+            </div>
+          </>
         ) : (
           <p className="mt-1 text-xs text-muted-foreground">
             No syllabus mapped for {batch.subject} · {batch.level} yet.

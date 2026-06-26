@@ -19,6 +19,7 @@ import type {
   TimetableRule,
   Course,
   Chapter,
+  BatchProgressRow,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -1499,17 +1500,24 @@ export interface BatchDetail {
   candidates: { id: string; name: string }[];
   /** the syllabus this batch maps to (by subject + level), or null if none. */
   course: Course | null;
+  /** curriculum pacing summary for the card, or null when no course maps (P3). */
+  progress: ProgressSummary | null;
 }
 
 export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
-  const [batches, teachers, rooms, students, enrolls, courses] = await Promise.all([
-    readTab<Batch>("Batches"),
-    readTab<Teacher>("Teachers"),
-    readTab<Room>("Rooms"),
-    readTab<Student>("Students"),
-    readTab<Enrollment>("Enrollments"),
-    readTab<Course>("Courses"),
-  ]);
+  const [batches, teachers, rooms, students, enrolls, courses, chapters, progressRows, cfg, today] =
+    await Promise.all([
+      readTab<Batch>("Batches"),
+      readTab<Teacher>("Teachers"),
+      readTab<Room>("Rooms"),
+      readTab<Student>("Students"),
+      readTab<Enrollment>("Enrollments"),
+      readTab<Course>("Courses"),
+      readTab<Chapter>("Chapters"),
+      readTab<BatchProgressRow>("BatchProgress"),
+      getCenterConfig(),
+      effectiveToday(),
+    ]);
   const batch = batches.find((b) => b.batch_id === id);
   if (!batch) return null;
   const sName = new Map(students.map((s) => [s.student_id, s.name]));
@@ -1545,6 +1553,12 @@ export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
         key(c.subject) === key(batch.subject) &&
         key(c.level) === key(batch.level),
     ) ?? null;
+  const progress = await getBatchProgressSummary(
+    batch,
+    { chapters, progress: progressRows, course },
+    cfg,
+    today,
+  );
   return {
     batch,
     teacherName: teachers.find((t) => t.teacher_id === batch.teacher_id)?.name ?? batch.teacher_id,
@@ -1552,6 +1566,7 @@ export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
     enrollments,
     candidates,
     course,
+    progress,
   };
 }
 
@@ -1795,6 +1810,10 @@ export interface CenterConfig {
   week_start: string;
   logo_url: string;
   room_changeover_buffer_min: string;
+  /** Academic term bounds (YYYY-MM-DD) — drive curriculum "on-track" pacing.
+   *  Empty when unset, in which case the on-track verdict is hidden (P3). */
+  term_start: string;
+  term_end: string;
 }
 
 const CONFIG_KEYS: (keyof CenterConfig)[] = [
@@ -1804,6 +1823,8 @@ const CONFIG_KEYS: (keyof CenterConfig)[] = [
   "week_start",
   "logo_url",
   "room_changeover_buffer_min",
+  "term_start",
+  "term_end",
 ];
 
 export async function getCenterConfig(): Promise<CenterConfig> {
@@ -1815,6 +1836,8 @@ export async function getCenterConfig(): Promise<CenterConfig> {
     week_start: m.get("week_start") ?? "Mon",
     logo_url: m.get("logo_url") ?? "",
     room_changeover_buffer_min: m.get("room_changeover_buffer_min") ?? "0",
+    term_start: m.get("term_start") ?? "",
+    term_end: m.get("term_end") ?? "",
   };
 }
 
@@ -2031,6 +2054,190 @@ export async function moveChapter(id: string, dir: "up" | "down"): Promise<void>
     .filter((u) => u.was !== u.now)
     .map((u) => ({ range: `Chapters!C${u.row}`, values: [[u.now]] }));
   await batchUpdateValues(updates);
+}
+
+// ============================================================================
+// P3 — per-batch curriculum progress (the Edmingle differentiator). A batch
+// teaches its mapped course's chapters; we track per-chapter status and pace
+// it against the academic term. Tab BatchProgress: A batch_id, B chapter_id,
+// C status, D done_date. An absent (batch, chapter) row reads as "pending".
+// ============================================================================
+
+export type ProgressStatus = "pending" | "in_progress" | "done";
+const PROGRESS_STATUSES: readonly ProgressStatus[] = [
+  "pending",
+  "in_progress",
+  "done",
+];
+export function isProgressStatus(s: string): s is ProgressStatus {
+  return (PROGRESS_STATUSES as readonly string[]).includes(s);
+}
+
+/** Whole days from `a` to `b` (YYYY-MM-DD), tz-independent. Negative if b<a. */
+function daysBetween(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  return Math.round(
+    (Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000,
+  );
+}
+
+export interface ProgressSummary {
+  total: number;
+  done: number;
+  inProgress: number;
+  /** Fraction of chapters done, 0..1 (0 when the course has no chapters). */
+  pct: number;
+  /** Fraction of the term elapsed today, 0..1 — null when term dates are unset
+   *  or invalid (then the on-track verdict is suppressed). */
+  termElapsedPct: number | null;
+  /** done% ≥ term-elapsed% → on track (or ahead); null when no term bounds. */
+  onTrack: boolean | null;
+}
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+/** Pure: fold chapter statuses + term bounds into a paced summary. */
+function computeProgressSummary(
+  statuses: ProgressStatus[],
+  term: { start: string; end: string },
+  today: string,
+): ProgressSummary {
+  const total = statuses.length;
+  const done = statuses.filter((s) => s === "done").length;
+  const inProgress = statuses.filter((s) => s === "in_progress").length;
+  const pct = total ? done / total : 0;
+
+  let termElapsedPct: number | null = null;
+  const validTerm =
+    /^\d{4}-\d{2}-\d{2}$/.test(term.start) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(term.end) &&
+    term.end > term.start;
+  if (validTerm) {
+    const span = daysBetween(term.start, term.end);
+    termElapsedPct = clamp01(daysBetween(term.start, today) / span);
+  }
+  return {
+    total,
+    done,
+    inProgress,
+    pct,
+    termElapsedPct,
+    // ahead/on-track requires a term AND at least one chapter to pace
+    onTrack: termElapsedPct === null || total === 0 ? null : pct >= termElapsedPct,
+  };
+}
+
+/** Status map (chapter_id → status) for one batch, ignoring rows for chapters
+ *  outside the given set. Absent chapters default to "pending". */
+function progressMap(
+  rows: BatchProgressRow[],
+  batchId: string,
+): Map<string, ProgressStatus> {
+  const m = new Map<string, ProgressStatus>();
+  for (const r of rows) {
+    if (r.batch_id !== batchId) continue;
+    if (isProgressStatus(r.status)) m.set(r.chapter_id, r.status);
+  }
+  return m;
+}
+
+export interface ChapterProgress extends Chapter {
+  status: ProgressStatus;
+  done_date: string;
+}
+
+export interface BatchProgressView {
+  batch: Batch;
+  course: Course | null;
+  chapters: ChapterProgress[];
+  summary: ProgressSummary;
+  term: { start: string; end: string };
+}
+
+/** Full per-chapter progress view for a batch's mapped (active) course. */
+export async function getBatchProgress(
+  batchId: string,
+): Promise<BatchProgressView | null> {
+  const [batches, courses, chapters, progress, cfg, today] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Course>("Courses"),
+    readTab<Chapter>("Chapters"),
+    readTab<BatchProgressRow>("BatchProgress"),
+    getCenterConfig(),
+    effectiveToday(),
+  ]);
+  const batch = batches.find((b) => b.batch_id === batchId);
+  if (!batch) return null;
+
+  const key = (s: string) => s.trim().toLowerCase();
+  const course =
+    courses.find(
+      (c) =>
+        c.active === "TRUE" &&
+        key(c.subject) === key(batch.subject) &&
+        key(c.level) === key(batch.level),
+    ) ?? null;
+
+  const statusOf = progressMap(progress, batchId);
+  const doneDateOf = new Map(
+    progress
+      .filter((r) => r.batch_id === batchId)
+      .map((r) => [r.chapter_id, r.done_date]),
+  );
+  const own: ChapterProgress[] = course
+    ? chapters
+        .filter((ch) => ch.course_id === course.course_id)
+        .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+        .map((ch) => ({
+          ...ch,
+          status: statusOf.get(ch.chapter_id) ?? "pending",
+          done_date: doneDateOf.get(ch.chapter_id) ?? "",
+        }))
+    : [];
+
+  const term = { start: cfg.term_start, end: cfg.term_end };
+  const summary = computeProgressSummary(own.map((c) => c.status), term, today);
+  return { batch, course, chapters: own, summary, term };
+}
+
+/** Compact summary only (for the batch-detail card): folds the same inputs but
+ *  skips building the per-chapter list. Returns null when no course maps. */
+export async function getBatchProgressSummary(
+  batch: Batch,
+  pre: { chapters: Chapter[]; progress: BatchProgressRow[]; course: Course | null },
+  cfg: CenterConfig,
+  today: string,
+): Promise<ProgressSummary | null> {
+  if (!pre.course) return null;
+  const statusOf = progressMap(pre.progress, batch.batch_id);
+  const statuses = pre.chapters
+    .filter((ch) => ch.course_id === pre.course!.course_id)
+    .map((ch) => statusOf.get(ch.chapter_id) ?? "pending");
+  return computeProgressSummary(statuses, { start: cfg.term_start, end: cfg.term_end }, today);
+}
+
+/**
+ * Upsert one chapter's status for a batch. "done" stamps done_date with today;
+ * any other status clears it. In-place on the existing (batch, chapter) row, or
+ * appends a new one — never duplicates (mirrors submitAttendance).
+ */
+export async function setChapterProgress(
+  batchId: string,
+  chapterId: string,
+  status: ProgressStatus,
+): Promise<void> {
+  const rows = await readTab<BatchProgressRow>("BatchProgress");
+  const idx = rows.findIndex(
+    (r) => r.batch_id === batchId && r.chapter_id === chapterId,
+  );
+  const doneDate = status === "done" ? await effectiveToday() : "";
+  const row = [batchId, chapterId, status, doneDate];
+  if (idx >= 0) {
+    await updateValues(`BatchProgress!A${idx + 2}:D${idx + 2}`, [row]);
+  } else {
+    await appendRows("BatchProgress", [row]);
+  }
 }
 
 // ============================================================================

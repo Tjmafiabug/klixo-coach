@@ -14,6 +14,7 @@ function errorText(e?: string) {
   if (e === "missing") return "Centre name is required.";
   if (e === "threshold") return "Attendance threshold must be a whole number 0–100.";
   if (e === "buffer") return "Room changeover buffer must be a whole number, 0–180 minutes.";
+  if (e === "term") return "Term end must be a valid date on or after the start.";
   return null;
 }
 
@@ -85,6 +86,24 @@ export default async function SettingsPage({
           </span>
           <input name="logoUrl" defaultValue={cfg.logo_url} placeholder="https://…" className={fieldClass} />
         </label>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-sm font-medium">
+              Term start <span className="text-muted-foreground">(optional)</span>
+            </span>
+            <input type="date" name="termStart" defaultValue={cfg.term_start} className={fieldClass} aria-invalid={sp.error === "term" || undefined} />
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium">
+              Term end <span className="text-muted-foreground">(optional)</span>
+            </span>
+            <input type="date" name="termEnd" defaultValue={cfg.term_end} className={fieldClass} aria-invalid={sp.error === "term" || undefined} />
+          </label>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Sets the academic term so curriculum progress can show whether each batch is on track.
+        </p>
 
         <div className="mt-4">
           <SubmitButton>Save settings</SubmitButton>

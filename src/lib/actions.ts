@@ -52,6 +52,9 @@ import {
   updateChapter,
   deleteChapter,
   moveChapter,
+  // P3 — curriculum progress
+  setChapterProgress,
+  isProgressStatus,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
@@ -528,10 +531,16 @@ export async function saveSettings(formData: FormData): Promise<void> {
   const weekStart = String(formData.get("weekStart") ?? "").trim();
   const logoUrl = String(formData.get("logoUrl") ?? "").trim();
   const buffer = String(formData.get("buffer") ?? "").trim();
+  const termStart = String(formData.get("termStart") ?? "").trim();
+  const termEnd = String(formData.get("termEnd") ?? "").trim();
 
   if (!centerName) redirect("/manage/settings?error=missing");
   if (!isInt(threshold) || Number(threshold) > 100) redirect("/manage/settings?error=threshold");
   if (!isInt(buffer) || Number(buffer) > 180) redirect("/manage/settings?error=buffer");
+  // term dates are optional, but if given must be valid and ordered
+  if (termStart && !isDate(termStart)) redirect("/manage/settings?error=term");
+  if (termEnd && !isDate(termEnd)) redirect("/manage/settings?error=term");
+  if (termStart && termEnd && termEnd < termStart) redirect("/manage/settings?error=term");
 
   await updateCenterConfig({
     center_name: centerName,
@@ -542,8 +551,25 @@ export async function saveSettings(formData: FormData): Promise<void> {
     week_start: weekStart,
     logo_url: logoUrl,
     room_changeover_buffer_min: buffer,
+    // term dates: persist as-is — empty clears them (on-track verdict hides)
+    term_start: termStart,
+    term_end: termEnd,
   });
   redirect("/manage/settings?saved=1");
+}
+
+// ---------------- P3 Curriculum progress ----------------
+
+export async function setProgress(formData: FormData): Promise<void> {
+  await requireOwner();
+  const batchId = String(formData.get("batchId") ?? "").trim();
+  const chapterId = String(formData.get("chapterId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  if (!batchId) redirect("/manage/batches");
+  const back = `/manage/batches/${batchId}/progress`;
+  if (!chapterId || !isProgressStatus(status)) redirect(back);
+  await setChapterProgress(batchId, chapterId, status);
+  redirect(`${back}?saved=1`);
 }
 
 // ---------------- P2 Curriculum (courses + chapters) ----------------

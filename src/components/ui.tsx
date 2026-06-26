@@ -70,6 +70,21 @@ export function ActiveChip({ active }: { active: boolean }) {
   );
 }
 
+/** Curriculum pacing verdict (P3). Renders nothing when null — i.e. no term
+ *  dates set, or a course with no chapters to pace. */
+export function OnTrackChip({ onTrack }: { onTrack: boolean | null }) {
+  if (onTrack === null) return null;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide ${
+        onTrack ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning"
+      }`}
+    >
+      {onTrack ? "On track" : "Behind"}
+    </span>
+  );
+}
+
 /** Tone-coloured notice banner used across the management screens. */
 export function Banner({
   tone,
