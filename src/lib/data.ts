@@ -475,6 +475,53 @@ export async function getWeekSessions(weekStart: string): Promise<SessionView[]>
     .sort((a, b) => a.start.localeCompare(b.start));
 }
 
+const MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+export interface MonthCell {
+  iso: string;
+  dayNum: number;
+  inMonth: boolean;
+  weekStart: string; // Monday of this date's week (the ?week= target)
+}
+export interface MonthGrid {
+  label: string;
+  weeks: MonthCell[][];
+  prevAnchor: string; // a date in the previous month
+  nextAnchor: string; // first day of the next month
+}
+
+/** 6×7 month matrix (Mon→Sun) for the mini-calendar of the month containing
+ *  `anchorIso`. Each cell carries the Monday of its week so a click maps to a
+ *  ?week= target. */
+export function monthMatrix(anchorIso: string): MonthGrid {
+  const [y, m] = anchorIso.split("-").map(Number);
+  const firstOfMonth = `${y}-${String(m).padStart(2, "0")}-01`;
+  const gridStart = weekStartOf(firstOfMonth);
+  const weeks: MonthCell[][] = [];
+  for (let w = 0; w < 6; w++) {
+    const row: MonthCell[] = [];
+    for (let i = 0; i < 7; i++) {
+      const iso = addDays(gridStart, w * 7 + i);
+      row.push({
+        iso,
+        dayNum: Number(iso.slice(8, 10)),
+        inMonth: Number(iso.slice(5, 7)) === m,
+        weekStart: weekStartOf(iso),
+      });
+    }
+    weeks.push(row);
+  }
+  return {
+    label: `${MONTHS_FULL[m - 1]} ${y}`,
+    weeks,
+    prevAnchor: addDays(firstOfMonth, -1),
+    nextAnchor: m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`,
+  };
+}
+
 export async function getRules(): Promise<TimetableRule[]> {
   return readTab<TimetableRule>("Timetable");
 }

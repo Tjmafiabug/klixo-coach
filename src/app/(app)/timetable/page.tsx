@@ -8,6 +8,7 @@ import {
   weekDays,
   addDays,
   effectiveToday,
+  monthMatrix,
 } from "@/lib/data";
 import { Reveal } from "@/components/motion";
 import { PageHeader, PrimaryLink } from "@/components/page";
@@ -41,10 +42,11 @@ export default async function TimetablePage({
   const nextWeek = addDays(weekStart, 7);
   const thisWeek = weekStartOf(today);
   const label = `${fmt(dates[0].iso)} – ${fmt(dates[6].iso)}, ${dates[6].iso.slice(0, 4)}`;
+  const month = monthMatrix(weekStart);
+  const monthPrevWeek = weekStartOf(month.prevAnchor);
+  const monthNextWeek = weekStartOf(month.nextAnchor);
 
   const notice = sp.saved ? "Timetable saved." : sp.expired ? "Rule expired." : null;
-  const navBtn =
-    "inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-3 text-sm font-medium transition-colors hover:bg-muted";
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
@@ -93,24 +95,20 @@ export default async function TimetablePage({
         </Reveal>
       ) : null}
 
-      {/* Week navigation */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <Link href={`/timetable?week=${prevWeek}`} className={navBtn} aria-label="Previous week">
-          ‹
-        </Link>
-        <Link href={`/timetable?week=${nextWeek}`} className={navBtn} aria-label="Next week">
-          ›
-        </Link>
-        {weekStart !== thisWeek ? (
-          <Link href="/timetable" className={navBtn}>
-            Today
-          </Link>
-        ) : null}
-        <span className="ml-1 text-sm font-semibold tabular-nums">{label}</span>
-      </div>
-
       <Reveal delay={0.1}>
-        <TimetableView sessions={sessions} dates={dates} today={today} />
+        <TimetableView
+          sessions={sessions}
+          dates={dates}
+          today={today}
+          weekStart={weekStart}
+          prevWeek={prevWeek}
+          nextWeek={nextWeek}
+          thisWeek={thisWeek}
+          label={label}
+          month={month}
+          monthPrevWeek={monthPrevWeek}
+          monthNextWeek={monthNextWeek}
+        />
       </Reveal>
     </div>
   );
