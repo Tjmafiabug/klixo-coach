@@ -43,10 +43,13 @@ export default async function FeesPage({
     totalCredit,
     studentsWithDues,
     collectedThisPeriod,
+    expectedThisPeriod,
     chargedThisPeriod,
     badCells,
     period,
   } = overview;
+
+  const periodOutstanding = expectedThisPeriod - collectedThisPeriod;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
@@ -88,21 +91,24 @@ export default async function FeesPage({
       </div>
 
       {/* ---- KPI strip ---- */}
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <KpiTile
-          label="Total outstanding"
-          tone={totalOutstanding > 0 ? "danger" : "success"}
-          delay={0.04}
-        >
-          <span className="font-mono tabular-nums">{rupees(totalOutstanding)}</span>
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 xl:grid-cols-5">
+        <KpiTile label="Total expected" tone="ink" delay={0.04}>
+          <span className="font-mono tabular-nums">{rupees(expectedThisPeriod)}</span>
         </KpiTile>
-        <KpiTile label="Students with dues" tone="ink" delay={0.08}>
-          <CountUp value={studentsWithDues} />
-        </KpiTile>
-        <KpiTile label="Collected this month" tone="ink" delay={0.12}>
+        <KpiTile label="Collected this month" tone="success" delay={0.08}>
           <span className="font-mono tabular-nums">{rupees(collectedThisPeriod)}</span>
         </KpiTile>
-        <KpiTile label="Charged this month" tone="ink" delay={0.16}>
+        <KpiTile
+          label="Total outstanding"
+          tone={periodOutstanding > 0 ? "danger" : "success"}
+          delay={0.12}
+        >
+          <span className="font-mono tabular-nums">{rupees(Math.max(0, periodOutstanding))}</span>
+        </KpiTile>
+        <KpiTile label="Students with dues" tone="ink" delay={0.16}>
+          <CountUp value={studentsWithDues} />
+        </KpiTile>
+        <KpiTile label="Charged this month" tone="ink" delay={0.20}>
           <span className="font-mono tabular-nums">{rupees(chargedThisPeriod)}</span>
         </KpiTile>
       </div>

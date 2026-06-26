@@ -2744,6 +2744,8 @@ export interface FeesOverview {
   studentsWithDues: number;
   /** Σ active-payment.amount where payment.date.slice(0,7) === period (raw, not netted). */
   collectedThisPeriod: number;
+  /** Σ active charge.amount (all kinds) where charge.period === period. Discounts reduce this. */
+  expectedThisPeriod: number;
   /** Σ active monthly charge.amount where charge.period === period. */
   chargedThisPeriod: number;
   /** Count of malformed amount cells encountered across both tabs. */
@@ -2786,6 +2788,7 @@ export async function listFeesOverview(period?: string): Promise<FeesOverview> {
   let totalCredit = 0;
   let studentsWithDues = 0;
   let collectedThisPeriod = 0;
+  let expectedThisPeriod = 0;
   let chargedThisPeriod = 0;
   let badCells = 0;
   const rows: FeesOverviewRow[] = [];
@@ -2817,6 +2820,14 @@ export async function listFeesOverview(period?: string): Promise<FeesOverview> {
     );
     badCells += badPP;
     collectedThisPeriod += periodPaid;
+
+    const { total: periodExpected, bad: badPE } = sumMoney(
+      sc
+        .filter((c) => c.status === "active" && c.period === effectivePeriod)
+        .map((c) => c.amount),
+    );
+    badCells += badPE;
+    expectedThisPeriod += periodExpected;
 
     const { total: periodCharged, bad: badPC } = sumMoney(
       sc
@@ -2859,6 +2870,7 @@ export async function listFeesOverview(period?: string): Promise<FeesOverview> {
     totalCredit,
     studentsWithDues,
     collectedThisPeriod,
+    expectedThisPeriod,
     chargedThisPeriod,
     badCells,
   };
