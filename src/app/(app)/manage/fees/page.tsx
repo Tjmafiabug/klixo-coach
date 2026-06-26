@@ -44,6 +44,7 @@ export default async function FeesPage({
     studentsWithDues,
     collectedThisPeriod,
     expectedThisPeriod,
+    studentsWithDuesPeriod,
     chargedThisPeriod,
     badCells,
     period,
@@ -106,7 +107,7 @@ export default async function FeesPage({
           <span className="font-mono tabular-nums">{rupees(Math.max(0, periodOutstanding))}</span>
         </KpiTile>
         <KpiTile label="Students with dues" tone="ink" delay={0.16}>
-          <CountUp value={studentsWithDues} />
+          <CountUp value={studentsWithDuesPeriod} />
         </KpiTile>
         <KpiTile label="Charged this month" tone="ink" delay={0.20}>
           <span className="font-mono tabular-nums">{rupees(chargedThisPeriod)}</span>
