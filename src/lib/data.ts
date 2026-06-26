@@ -20,6 +20,10 @@ import type {
   Course,
   Chapter,
   BatchProgressRow,
+  FeeChargeRow,
+  PaymentRow,
+  ChargeKind,
+  FeeMethod,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -2430,4 +2434,634 @@ export async function reportStudent(studentId: string): Promise<string[][] | nul
     .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp))
     .map((a) => [a.date, bName.get(a.batch_id) ?? a.batch_id, a.status, a.method]);
   return [["date", "batch", "status", "method"], ...rows];
+}
+
+// ============================================================================
+// Fees — two-tab append-only ledger (FeeCharges + Payments).
+// All money is in whole rupees (signed integers as strings in the Sheet).
+// ============================================================================
+
+// ---------------- Fees: kind + method guards ----------------
+
+export const CHARGE_KINDS: readonly ChargeKind[] = [
+  "monthly",
+  "admission",
+  "exam",
+  "other",
+  "discount",
+];
+export const FEE_METHODS: readonly FeeMethod[] = [
+  "cash",
+  "upi",
+  "card",
+  "bank",
+  "cheque",
+  "other",
+];
+export function isChargeKind(s: string): s is ChargeKind {
+  return (CHARGE_KINDS as readonly string[]).includes(s);
+}
+export function isFeeMethod(s: string): s is FeeMethod {
+  return (FEE_METHODS as readonly string[]).includes(s);
+}
+
+// ---------------- Fees: money parsing ----------------
+
+/** Only integer strings (optionally negative) are valid money. A malformed cell
+ *  returns null — never 0 — so a bad row is counted as an integrity issue rather
+ *  than silently swallowed. This stops "NaN > 0 is false" from hiding defaulters. */
+const MONEY = /^-?\d+$/;
+function money(s: string): number | null {
+  const t = (s ?? "").trim();
+  return MONEY.test(t) ? parseInt(t, 10) : null;
+}
+
+/** Sum money strings; tracks malformed cells separately so callers can surface
+ *  them via the integrity banner rather than silently dropping them. */
+function sumMoney(values: string[]): { total: number; bad: number } {
+  let total = 0;
+  let bad = 0;
+  for (const v of values) {
+    const n = money(v);
+    if (n === null) bad++;
+    else total += n;
+  }
+  return { total, bad };
+}
+
+// ---------------- Fees: safeReadTab ----------------
+
+/**
+ * readTab wrapper that returns [] instead of throwing when the tab hasn't been
+ * provisioned yet (HTTP 400 "Unable to parse range"). All other errors propagate.
+ * Used for BOTH fees tabs so a missing tab degrades to "₹0 / no dues" on the
+ * dashboard rather than a 500 (defence-in-depth behind the F0 provisioning gate).
+ */
+async function safeReadTab<T>(tab: string): Promise<T[]> {
+  try {
+    return await readTab<T>(tab);
+  } catch (e: unknown) {
+    const err = e as { code?: number; response?: { status?: number }; message?: string };
+    if (
+      (err?.code === 400 || err?.response?.status === 400) &&
+      /Unable to parse range/i.test(err?.message ?? "")
+    )
+      return [];
+    throw e;
+  }
+}
+
+// ---------------- Fees: period helpers ----------------
+
+/** Centre-local current month as YYYY-MM. Respects demo_today override. */
+export async function currentPeriod(): Promise<string> {
+  return (await effectiveToday()).slice(0, 7);
+}
+
+/** True when an enrollment overlaps a given YYYY-MM period. The `-99` sentinel
+ *  compares lexicographically above any real day (e.g. "2026-06-99" > "2026-06-30"),
+ *  so enrollments that started on ANY day of `period` are included. */
+export function monthOverlaps(e: Enrollment, period: string): boolean {
+  return (
+    e.start_date <= `${period}-99` &&
+    (e.end_date === "" || e.end_date >= `${period}-01`)
+  );
+}
+
+// ---------------- Fees: positional row builders ----------------
+
+/** Build the positional string array for one FeeChargeRow (A..I column order).
+ *  Exported so write helpers in the UI layer can reuse the same column order. */
+export function feeChargeRow(c: FeeChargeRow): string[] {
+  return [
+    c.charge_id,
+    c.student_id,
+    c.batch_id,
+    c.period,
+    c.kind,
+    c.amount,
+    c.note,
+    c.status,
+    c.created,
+  ];
+}
+
+/** Build the positional string array for one PaymentRow (A..H column order).
+ *  Exported so write helpers in the UI layer can reuse the same column order. */
+export function paymentRow(p: PaymentRow): string[] {
+  return [
+    p.payment_id,
+    p.student_id,
+    p.amount,
+    p.date,
+    p.method,
+    p.note,
+    p.timestamp,
+    p.status,
+  ];
+}
+
+// ---------------- Fees: per-student aggregation helpers ----------------
+
+/** outstanding = Σ active-charge.amount(signed) − Σ active-payment.amount.
+ *  Negative result = credit (student has overpaid or has more discounts than charges). */
+function studentOutstanding(
+  charges: FeeChargeRow[],
+  payments: PaymentRow[],
+): number {
+  const { total: charged } = sumMoney(
+    charges.filter((c) => c.status === "active").map((c) => c.amount),
+  );
+  const { total: paid } = sumMoney(
+    payments.filter((p) => p.status === "active").map((p) => p.amount),
+  );
+  return charged - paid;
+}
+
+/** Ledger status derived from net outstanding. */
+export function ledgerStatus(out: number): "due" | "settled" | "credit" {
+  return out > 0 ? "due" : out === 0 ? "settled" : "credit";
+}
+
+/** Oldest due period for a student with outstanding > 0: earliest of
+ *  (charge.period if non-empty, else charge.created.slice(0,7)) over active
+ *  charges. Returns "" when outstanding ≤ 0 or there are no active charges. */
+function oldestDue(charges: FeeChargeRow[], out: number): string {
+  if (out <= 0) return "";
+  const active = charges.filter((c) => c.status === "active");
+  if (active.length === 0) return "";
+  const months = active.map((c) =>
+    c.period !== "" ? c.period : c.created.slice(0, 7),
+  );
+  return months.reduce((min, m) => (m < min ? m : min), months[0]);
+}
+
+// ---------------- Fees: reads ----------------
+
+export interface StudentFeesResult {
+  charges: FeeChargeRow[];   // active first, then void; within each group newest-created first
+  payments: PaymentRow[];    // active first (newest timestamp); then void
+  charged: number;           // Σ active charge amounts (signed, so discounts reduce this)
+  paid: number;              // Σ active payment amounts
+  outstanding: number;       // charged - paid
+  credit: number;            // max(0, -outstanding) — positive when student overpaid
+  status: "due" | "settled" | "credit";
+}
+
+/** Full ledger for one student: charges + payments with per-student aggregates. */
+export async function getStudentFees(studentId: string): Promise<StudentFeesResult> {
+  const [charges, payments] = await Promise.all([
+    safeReadTab<FeeChargeRow>("FeeCharges"),
+    safeReadTab<PaymentRow>("Payments"),
+  ]);
+
+  const myCharges = charges.filter((c) => c.student_id === studentId);
+  const myPayments = payments.filter((p) => p.student_id === studentId);
+
+  // sort: active first, within group newest-created / newest-timestamp first
+  const sortedCharges = [...myCharges].sort((a, b) => {
+    const aActive = a.status === "active" ? 0 : 1;
+    const bActive = b.status === "active" ? 0 : 1;
+    return aActive - bActive || b.created.localeCompare(a.created);
+  });
+  const sortedPayments = [...myPayments].sort((a, b) => {
+    const aActive = a.status === "active" ? 0 : 1;
+    const bActive = b.status === "active" ? 0 : 1;
+    return aActive - bActive || b.timestamp.localeCompare(a.timestamp);
+  });
+
+  const { total: charged } = sumMoney(
+    myCharges.filter((c) => c.status === "active").map((c) => c.amount),
+  );
+  const { total: paid } = sumMoney(
+    myPayments.filter((p) => p.status === "active").map((p) => p.amount),
+  );
+  const outstanding = charged - paid;
+
+  return {
+    charges: sortedCharges,
+    payments: sortedPayments,
+    charged,
+    paid,
+    outstanding,
+    credit: Math.max(0, -outstanding),
+    status: ledgerStatus(outstanding),
+  };
+}
+
+export interface FeesRollupStudent {
+  student_id: string;
+  name: string;
+  parent_phone: string;
+  outstanding: number;
+  oldestDue: string;
+}
+
+export interface FeesRollup {
+  /** Σ max(0, per-student outstanding) — creditors don't offset debtors. */
+  totalOutstanding: number;
+  /** Σ max(0, -per-student outstanding) — shown separately. */
+  totalCredit: number;
+  studentsWithDues: number;
+  /** Top defaulters, sorted descending by outstanding. */
+  top: FeesRollupStudent[];
+}
+
+/** Centre-wide fees rollup for the dashboard KPI card. Includes inactive students
+ *  who still have an outstanding balance (they owe money regardless of status). */
+export async function getFeesRollup(): Promise<FeesRollup> {
+  const [charges, payments, students] = await Promise.all([
+    safeReadTab<FeeChargeRow>("FeeCharges"),
+    safeReadTab<PaymentRow>("Payments"),
+    readTab<Student>("Students"),
+  ]);
+
+  const studentById = new Map(students.map((s) => [s.student_id, s]));
+
+  // group by student
+  const chargesByStudent = new Map<string, FeeChargeRow[]>();
+  for (const c of charges) {
+    if (!chargesByStudent.has(c.student_id)) chargesByStudent.set(c.student_id, []);
+    chargesByStudent.get(c.student_id)!.push(c);
+  }
+  const paymentsByStudent = new Map<string, PaymentRow[]>();
+  for (const p of payments) {
+    if (!paymentsByStudent.has(p.student_id)) paymentsByStudent.set(p.student_id, []);
+    paymentsByStudent.get(p.student_id)!.push(p);
+  }
+
+  // all student ids that appear in either tab (include inactive with balance)
+  const allIds = new Set<string>([
+    ...chargesByStudent.keys(),
+    ...paymentsByStudent.keys(),
+  ]);
+
+  let totalOutstanding = 0;
+  let totalCredit = 0;
+  let studentsWithDues = 0;
+  const top: FeesRollupStudent[] = [];
+
+  for (const id of allIds) {
+    const sc = chargesByStudent.get(id) ?? [];
+    const sp = paymentsByStudent.get(id) ?? [];
+    const out = studentOutstanding(sc, sp);
+    totalOutstanding += Math.max(0, out);
+    totalCredit += Math.max(0, -out);
+    if (out > 0) {
+      studentsWithDues++;
+      const s = studentById.get(id);
+      top.push({
+        student_id: id,
+        name: s?.name ?? id,
+        parent_phone: s?.parent_phone ?? "",
+        outstanding: out,
+        oldestDue: oldestDue(sc, out),
+      });
+    }
+  }
+
+  top.sort((a, b) => b.outstanding - a.outstanding);
+
+  return { totalOutstanding, totalCredit, studentsWithDues, top };
+}
+
+export interface FeesOverviewRow {
+  student_id: string;
+  name: string;
+  active: boolean;
+  charged: number;
+  paid: number;
+  outstanding: number;
+  status: "due" | "settled" | "credit";
+  oldestDue: string;
+}
+
+export interface FeesOverview {
+  period: string;
+  rows: FeesOverviewRow[];
+  totalOutstanding: number;
+  totalCredit: number;
+  studentsWithDues: number;
+  /** Σ active-payment.amount where payment.date.slice(0,7) === period (raw, not netted). */
+  collectedThisPeriod: number;
+  /** Σ active monthly charge.amount where charge.period === period. */
+  chargedThisPeriod: number;
+  /** Count of malformed amount cells encountered across both tabs. */
+  badCells: number;
+}
+
+/** Per-student fees overview for the /manage/fees page. `period` defaults to the
+ *  current centre month. Includes all students who appear in either fees tab plus
+ *  active students with no fees history (so the owner can add charges for them). */
+export async function listFeesOverview(period?: string): Promise<FeesOverview> {
+  const effectivePeriod = period ?? (await currentPeriod());
+
+  const [charges, payments, students] = await Promise.all([
+    safeReadTab<FeeChargeRow>("FeeCharges"),
+    safeReadTab<PaymentRow>("Payments"),
+    readTab<Student>("Students"),
+  ]);
+
+  const studentById = new Map(students.map((s) => [s.student_id, s]));
+
+  const chargesByStudent = new Map<string, FeeChargeRow[]>();
+  for (const c of charges) {
+    if (!chargesByStudent.has(c.student_id)) chargesByStudent.set(c.student_id, []);
+    chargesByStudent.get(c.student_id)!.push(c);
+  }
+  const paymentsByStudent = new Map<string, PaymentRow[]>();
+  for (const p of payments) {
+    if (!paymentsByStudent.has(p.student_id)) paymentsByStudent.set(p.student_id, []);
+    paymentsByStudent.get(p.student_id)!.push(p);
+  }
+
+  // union of ids: students in fees tabs + all currently active students
+  const allIds = new Set<string>([
+    ...chargesByStudent.keys(),
+    ...paymentsByStudent.keys(),
+    ...students.filter((s) => s.status === "active").map((s) => s.student_id),
+  ]);
+
+  let totalOutstanding = 0;
+  let totalCredit = 0;
+  let studentsWithDues = 0;
+  let collectedThisPeriod = 0;
+  let chargedThisPeriod = 0;
+  let badCells = 0;
+  const rows: FeesOverviewRow[] = [];
+
+  for (const id of allIds) {
+    const sc = chargesByStudent.get(id) ?? [];
+    const sp = paymentsByStudent.get(id) ?? [];
+
+    const { total: charged, bad: badC } = sumMoney(
+      sc.filter((c) => c.status === "active").map((c) => c.amount),
+    );
+    const { total: paid, bad: badP } = sumMoney(
+      sp.filter((p) => p.status === "active").map((p) => p.amount),
+    );
+    badCells += badC + badP;
+
+    const out = charged - paid;
+    const s = studentById.get(id);
+
+    totalOutstanding += Math.max(0, out);
+    totalCredit += Math.max(0, -out);
+    if (out > 0) studentsWithDues++;
+
+    // period-specific aggregates
+    const { total: periodPaid, bad: badPP } = sumMoney(
+      sp
+        .filter((p) => p.status === "active" && p.date.slice(0, 7) === effectivePeriod)
+        .map((p) => p.amount),
+    );
+    badCells += badPP;
+    collectedThisPeriod += periodPaid;
+
+    const { total: periodCharged, bad: badPC } = sumMoney(
+      sc
+        .filter(
+          (c) =>
+            c.status === "active" &&
+            c.kind === "monthly" &&
+            c.period === effectivePeriod,
+        )
+        .map((c) => c.amount),
+    );
+    badCells += badPC;
+    chargedThisPeriod += periodCharged;
+
+    rows.push({
+      student_id: id,
+      name: s?.name ?? id,
+      active: s?.status === "active",
+      charged,
+      paid,
+      outstanding: out,
+      status: ledgerStatus(out),
+      oldestDue: oldestDue(sc, out),
+    });
+  }
+
+  // sort: due first, then by outstanding desc, then name
+  rows.sort(
+    (a, b) =>
+      (a.status === "due" ? 0 : a.status === "settled" ? 1 : 2) -
+        (b.status === "due" ? 0 : b.status === "settled" ? 1 : 2) ||
+      b.outstanding - a.outstanding ||
+      a.name.localeCompare(b.name),
+  );
+
+  return {
+    period: effectivePeriod,
+    rows,
+    totalOutstanding,
+    totalCredit,
+    studentsWithDues,
+    collectedThisPeriod,
+    chargedThisPeriod,
+    badCells,
+  };
+}
+
+/** Redefine ManageCounts to include feesOutstanding. */
+export interface ManageCountsWithFees extends ManageCounts {
+  feesOutstanding: number;
+}
+
+/** Extended manage hub counts — includes outstanding fees KPI (uses safeReadTab
+ *  so a missing FeeCharges/Payments tab returns 0 rather than a 500). */
+export async function getManageCountsWithFees(): Promise<ManageCountsWithFees> {
+  const [base, rollup] = await Promise.all([
+    getManageCounts(),
+    getFeesRollup(),
+  ]);
+  return { ...base, feesOutstanding: rollup.totalOutstanding };
+}
+
+/**
+ * Sellable defaulters CSV: one row per student where charged ≠ paid OR who has
+ * any charge at all. Includes inactive students (they still owe money). Sorted by
+ * outstanding descending so the collector can work top-down.
+ */
+export async function reportFees(): Promise<string[][]> {
+  const [charges, payments, students] = await Promise.all([
+    safeReadTab<FeeChargeRow>("FeeCharges"),
+    safeReadTab<PaymentRow>("Payments"),
+    readTab<Student>("Students"),
+  ]);
+
+  const studentById = new Map(students.map((s) => [s.student_id, s]));
+
+  const chargesByStudent = new Map<string, FeeChargeRow[]>();
+  for (const c of charges) {
+    if (!chargesByStudent.has(c.student_id)) chargesByStudent.set(c.student_id, []);
+    chargesByStudent.get(c.student_id)!.push(c);
+  }
+  const paymentsByStudent = new Map<string, PaymentRow[]>();
+  for (const p of payments) {
+    if (!paymentsByStudent.has(p.student_id)) paymentsByStudent.set(p.student_id, []);
+    paymentsByStudent.get(p.student_id)!.push(p);
+  }
+
+  const allIds = new Set<string>([
+    ...chargesByStudent.keys(),
+    ...paymentsByStudent.keys(),
+  ]);
+
+  const rows: string[][] = [];
+  for (const id of allIds) {
+    const sc = chargesByStudent.get(id) ?? [];
+    const sp = paymentsByStudent.get(id) ?? [];
+    const { total: charged } = sumMoney(
+      sc.filter((c) => c.status === "active").map((c) => c.amount),
+    );
+    const { total: paid } = sumMoney(
+      sp.filter((p) => p.status === "active").map((p) => p.amount),
+    );
+    const out = charged - paid;
+    const s = studentById.get(id);
+    rows.push([
+      s?.name ?? id,
+      s?.parent_phone ?? "",
+      String(charged),
+      String(paid),
+      String(out),
+      String(Math.max(0, -out)),
+      oldestDue(sc, out),
+    ]);
+  }
+
+  rows.sort((a, b) => Number(b[4]) - Number(a[4]));
+
+  return [
+    ["student", "parent_phone", "charged", "paid", "outstanding", "credit", "oldest_due"],
+    ...rows,
+  ];
+}
+
+// ---------------- Fees: helper for discount bound ----------------
+
+/** Current net outstanding for a student (used by addChargeAction to bound discounts). */
+export async function currentNetOutstanding(studentId: string): Promise<number> {
+  const [charges, payments] = await Promise.all([
+    safeReadTab<FeeChargeRow>("FeeCharges"),
+    safeReadTab<PaymentRow>("Payments"),
+  ]);
+  return studentOutstanding(
+    charges.filter((c) => c.student_id === studentId),
+    payments.filter((p) => p.student_id === studentId),
+  );
+}
+
+// ---------------- Fees: writes ----------------
+
+/**
+ * Generate monthly charge rows for every active enrollment that overlaps `period`.
+ * Idempotent: skips any (student, batch, period) key that already has a monthly
+ * charge (active OR void — void-respecting so a corrected void doesn't re-fire).
+ * Appends all new rows in a single batch. Returns the count of rows written.
+ */
+export async function generateMonthlyCharges(period: string): Promise<number> {
+  const [existingCharges, batches, enrollments] = await Promise.all([
+    safeReadTab<FeeChargeRow>("FeeCharges"),
+    readTab<Batch>("Batches"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const created = await effectiveToday();
+
+  const batchById = new Map(batches.map((b) => [b.batch_id, b]));
+
+  // de-dup key: student|batch|period for BOTH active and void monthly charges
+  const existing = new Set(
+    existingCharges
+      .filter((c) => c.kind === "monthly")
+      .map((c) => `${c.student_id}|${c.batch_id}|${c.period}`),
+  );
+
+  // compute maxN once from all charge ids
+  let maxN = 0;
+  for (const c of existingCharges) {
+    const n = parseInt(c.charge_id.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n > maxN) maxN = n;
+  }
+
+  const rows: string[][] = [];
+  for (const e of enrollments) {
+    if (e.status === "inactive") continue;
+    if (!monthOverlaps(e, period)) continue;
+    const b = batchById.get(e.batch_id);
+    if (!b) continue;
+    const fee = money(b.fee);
+    if (fee === null || fee <= 0) continue;
+    const key = `${e.student_id}|${e.batch_id}|${period}`;
+    if (existing.has(key)) continue;
+    existing.add(key); // guard against duplicate enrollments in the same batch
+    rows.push([
+      `FC${String(++maxN).padStart(4, "0")}`,
+      e.student_id,
+      e.batch_id,
+      period,
+      "monthly",
+      String(fee),
+      "",
+      "active",
+      created,
+    ]);
+  }
+
+  await appendRows("FeeCharges", rows);
+  return rows.length;
+}
+
+/** Append a one-off charge. `amount` is a positive integer from the form; the
+ *  action layer negates it for discounts. `signed` encodes the correct sign here. */
+export async function addCharge(input: {
+  studentId: string;
+  batchId: string;
+  period: string;
+  kind: ChargeKind;
+  amount: number; // positive int from form
+  note: string;
+}): Promise<void> {
+  const signed =
+    input.kind === "discount" ? -Math.abs(input.amount) : Math.abs(input.amount);
+  const charges = await safeReadTab<FeeChargeRow>("FeeCharges");
+  const id = nextId(charges.map((c) => c.charge_id), "FC", 4);
+  const created = await effectiveToday();
+  await appendRows("FeeCharges", [
+    [id, input.studentId, input.batchId, input.period || "", input.kind, String(signed), input.note, "active", created],
+  ]);
+}
+
+/** Soft-void a charge by ID (fresh read → findIndex → single-cell update).
+ *  Matched by charge_id so a concurrent append can't shift the wrong row. */
+export async function voidCharge(chargeId: string): Promise<void> {
+  const charges = await safeReadTab<FeeChargeRow>("FeeCharges");
+  const idx = charges.findIndex((c) => c.charge_id === chargeId);
+  if (idx < 0) return;
+  await updateValues(`FeeCharges!H${idx + 2}`, [["void"]]);
+}
+
+/** Append a payment record. `amount` is a validated positive integer. */
+export async function recordPayment(input: {
+  studentId: string;
+  amount: number;
+  date: string;
+  method: FeeMethod;
+  note: string;
+}): Promise<void> {
+  const payments = await safeReadTab<PaymentRow>("Payments");
+  const id = nextId(payments.map((p) => p.payment_id), "PMT", 4);
+  await appendRows("Payments", [
+    [id, input.studentId, String(input.amount), input.date, input.method, input.note, centerTimestamp(), "active"],
+  ]);
+}
+
+/** Soft-void a payment by ID (fresh read → findIndex → single-cell update). */
+export async function voidPayment(paymentId: string): Promise<void> {
+  const payments = await safeReadTab<PaymentRow>("Payments");
+  const idx = payments.findIndex((p) => p.payment_id === paymentId);
+  if (idx < 0) return;
+  await updateValues(`Payments!H${idx + 2}`, [["void"]]);
 }

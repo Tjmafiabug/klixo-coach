@@ -17,6 +17,21 @@ export function StatusPill({ status }: { status: AttendanceStatus | string }) {
   );
 }
 
+/** Fee ledger status pill: due, settled, or credit. */
+export function LedgerStatusPill({ status }: { status: "due" | "settled" | "credit" }) {
+  const LEDGER: Record<string, { label: string; cls: string }> = {
+    due: { label: "Due", cls: "bg-warning-subtle text-warning" },
+    settled: { label: "Settled", cls: "bg-success-subtle text-success" },
+    credit: { label: "Credit", cls: "bg-brand-subtle text-brand" },
+  };
+  const s = LEDGER[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>
+      {s.label}
+    </span>
+  );
+}
+
 /** Coloured chip for percentages vs a threshold. */
 export function PctBadge({ pct, threshold }: { pct: number; threshold: number }) {
   const v = Math.round(pct * 100);

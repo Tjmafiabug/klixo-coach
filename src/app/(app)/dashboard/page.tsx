@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getOwnerDashboard, getCurriculumRollup } from "@/lib/data";
+import { getOwnerDashboard, getCurriculumRollup, getFeesRollup } from "@/lib/data";
 import { PctBadge, StatusPill, OnTrackChip } from "@/components/ui";
 import { ExportButton } from "@/components/ExportButton";
 import { Reveal, CountUp } from "@/components/motion";
 import { AttendanceDonut } from "@/components/charts/AttendanceDonut";
 import { BatchBarChart } from "@/components/charts/BatchBarChart";
 import { AttendanceTrend } from "@/components/charts/AttendanceTrend";
-import { shortDate } from "@/lib/format";
+import { shortDate, rupees } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +17,10 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
 
-  const [{ stats, health, integrity }, rollup] = await Promise.all([
+  const [{ stats, health, integrity }, rollup, feesRollup] = await Promise.all([
     getOwnerDashboard(),
     getCurriculumRollup(),
+    getFeesRollup(),
   ]);
   const blocking = health.clashes.filter((c) => c.blocking).length;
   const healthy = health.clashes.length === 0;
@@ -56,6 +57,7 @@ export default async function DashboardPage() {
             <ExportButton kind="attendance" label="Attendance log" />
             <ExportButton kind="defaulters" label="Defaulters" />
             <ExportButton kind="batches" label="Batch summary" />
+            <ExportButton kind="fees" label="Outstanding" />
           </div>
         </div>
       </Reveal>
@@ -209,6 +211,42 @@ export default async function DashboardPage() {
                       </p>
                     )}
                   </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </Reveal>
+
+      {/* ---- Fees & dues ---- */}
+      <Reveal delay={0.05} className="mt-4 block">
+        <Card
+          title="Fees & dues"
+          subtitle={
+            feesRollup.studentsWithDues === 0
+              ? "No outstanding fees"
+              : `${rupees(feesRollup.totalOutstanding)} outstanding · ${feesRollup.studentsWithDues} student${feesRollup.studentsWithDues === 1 ? "" : "s"}` +
+                (feesRollup.totalCredit > 0 ? ` · ${rupees(feesRollup.totalCredit)} credit` : "")
+          }
+        >
+          {feesRollup.top.length === 0 ? (
+            <Empty>No outstanding fees.</Empty>
+          ) : (
+            <ul className="-mx-1 max-h-[20rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+              {feesRollup.top.map((d) => (
+                <li key={d.student_id} className="flex items-center justify-between gap-3 py-2.5">
+                  <Link href={`/manage/students/${d.student_id}`} className="group min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground group-hover:text-brand">
+                      {d.name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {d.parent_phone ? d.parent_phone : ""}
+                      {d.oldestDue ? ` · due since ${d.oldestDue}` : ""}
+                    </p>
+                  </Link>
+                  <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-danger">
+                    {rupees(d.outstanding)}
+                  </span>
                 </li>
               ))}
             </ul>

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getManageCounts } from "@/lib/data";
+import { getManageCountsWithFees } from "@/lib/data";
+import { rupees } from "@/lib/format";
 import { Reveal } from "@/components/motion";
 
 export const dynamic = "force-dynamic";
@@ -86,17 +87,26 @@ function SettingsIcon({ className }: IconProps) {
     </svg>
   );
 }
+function FeesIcon({ className }: IconProps) {
+  return (
+    <svg {...svg(className)}>
+      <path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
+      <path d="M12 8v8M9 11h6M9 13h4" />
+    </svg>
+  );
+}
 
 export default async function ManagePage() {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
 
-  const c = await getManageCounts();
+  const c = await getManageCountsWithFees();
 
   const cards = [
     { href: "/manage/students", title: "Students", sub: `${c.studentsActive} active · ${c.studentsTotal} total`, icon: UsersIcon },
     { href: "/manage/batches", title: "Batches", sub: `${c.batchesActive} active · ${c.batchesTotal} total`, icon: BatchesIcon },
+    { href: "/manage/fees", title: "Fees", sub: `${rupees(c.feesOutstanding)} outstanding`, icon: FeesIcon },
     { href: "/manage/curriculum", title: "Curriculum", sub: "Syllabus & chapters by class", icon: CurriculumIcon },
     { href: "/manage/teachers", title: "Teachers", sub: `${c.teachersActive} active staff`, icon: TeachersIcon },
     { href: "/timetable", title: "Timetable", sub: `${c.rules} recurring rules`, icon: ClockIcon },

@@ -55,6 +55,16 @@ import {
   // P3 — curriculum progress
   setChapterProgress,
   isProgressStatus,
+  // Fees module
+  generateMonthlyCharges,
+  addCharge,
+  voidCharge,
+  recordPayment,
+  voidPayment,
+  currentNetOutstanding,
+  currentPeriod,
+  isChargeKind,
+  isFeeMethod,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
@@ -640,4 +650,95 @@ export async function moveChapterAction(formData: FormData): Promise<void> {
   if (!courseId) redirect("/manage/curriculum");
   if (chapterId) await moveChapter(chapterId, dir);
   redirect(`/manage/curriculum/${courseId}`);
+}
+
+// ============================================================================
+// Fees actions — all owner-only (requireOwner as line 1 per convention).
+// Redirects are always at the top level, never inside try/catch.
+// ============================================================================
+
+const isPeriod = (s: string) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
+
+export async function generateMonthlyChargesAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const rawPeriod = String(formData.get("period") ?? "").trim();
+  // fall back to current centre period when the field is blank
+  const period = rawPeriod !== "" ? rawPeriod : await currentPeriod();
+  if (!isPeriod(period)) redirect("/manage/fees?error=period");
+  const n = await generateMonthlyCharges(period);
+  redirect(`/manage/fees?generated=${n}&period=${period}`);
+}
+
+export async function addChargeAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const studentId = String(formData.get("studentId") ?? "").trim();
+  const batchId = String(formData.get("batchId") ?? "").trim();
+  const rawPeriod = String(formData.get("period") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "").trim();
+  const rawAmount = String(formData.get("amount") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/fees");
+
+  if (!studentId || !isChargeKind(kind)) redirect(`${back}?error=missing`);
+  if (!isInt(rawAmount) || Number(rawAmount) <= 0) redirect(`${back}?error=amount`);
+  if (rawPeriod !== "" && !isPeriod(rawPeriod)) redirect(`${back}?error=period`);
+  if (!(await refsExist({ studentId }))) redirect(`${back}?error=missing`);
+
+  const amount = parseInt(rawAmount, 10);
+
+  // discount bound: must not exceed the current net outstanding
+  if (kind === "discount") {
+    const out = await currentNetOutstanding(studentId);
+    if (Math.abs(amount) > out) redirect(`${back}?error=overdiscount`);
+  }
+
+  await addCharge({
+    studentId,
+    batchId,
+    period: rawPeriod,
+    kind,
+    amount,
+    note,
+  });
+  redirect(`${back}?charged=1`);
+}
+
+export async function voidChargeAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const chargeId = String(formData.get("chargeId") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/fees");
+  if (chargeId) await voidCharge(chargeId);
+  redirect(`${back}?voided=1`);
+}
+
+export async function recordPaymentAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const studentId = String(formData.get("studentId") ?? "").trim();
+  const rawAmount = String(formData.get("amount") ?? "").trim();
+  const date = String(formData.get("date") ?? "").trim();
+  const method = String(formData.get("method") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/fees");
+
+  if (!studentId || !isFeeMethod(method)) redirect(`${back}?error=missing`);
+  if (!isInt(rawAmount) || Number(rawAmount) <= 0) redirect(`${back}?error=amount`);
+  if (!isDate(date)) redirect(`${back}?error=date`);
+  if (!(await refsExist({ studentId }))) redirect(`${back}?error=missing`);
+
+  await recordPayment({
+    studentId,
+    amount: parseInt(rawAmount, 10),
+    date,
+    method: method as import("@/lib/types").FeeMethod,
+    note,
+  });
+  redirect(`${back}?paid=1`);
+}
+
+export async function voidPaymentAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const paymentId = String(formData.get("paymentId") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/fees");
+  if (paymentId) await voidPayment(paymentId);
+  redirect(`${back}?pvoided=1`);
 }

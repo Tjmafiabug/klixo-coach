@@ -5,6 +5,7 @@ import {
   reportDefaulters,
   reportBatches,
   reportStudent,
+  reportFees,
   effectiveToday,
 } from "@/lib/data";
 
@@ -50,6 +51,10 @@ export async function GET(req: Request) {
         name = `student-${id}`;
         break;
       }
+      case "fees":
+        rows = await reportFees();
+        name = "fees";
+        break;
       default:
         return new Response("Unknown export kind", { status: 400 });
     }

@@ -6,11 +6,22 @@ import {
   batchesForStudent,
   getCenterConfig,
   effectiveToday,
+  getStudentFees,
 } from "@/lib/data";
-import { saveStudent, toggleStudentActive, addEnrollment, endEnrollmentAction } from "@/lib/actions";
-import { Banner, fieldClass, ActiveChip, PctBadge, StatusPill } from "@/components/ui";
+import {
+  saveStudent,
+  toggleStudentActive,
+  addEnrollment,
+  endEnrollmentAction,
+  recordPaymentAction,
+  addChargeAction,
+  voidChargeAction,
+  voidPaymentAction,
+} from "@/lib/actions";
+import { Banner, fieldClass, ActiveChip, PctBadge, StatusPill, LedgerStatusPill } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ExportButton } from "@/components/ExportButton";
+import { rupees } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -33,18 +44,23 @@ export default async function StudentProfilePage({
     enrolled?: string;
     ended?: string;
     warn?: string;
+    paid?: string;
+    charged?: string;
+    voided?: string;
+    pvoided?: string;
   }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
-  const [profile, candidates, cfg, today, sp] = await Promise.all([
+  const [profile, candidates, cfg, today, sp, fees] = await Promise.all([
     getStudentProfile(id),
     batchesForStudent(id),
     getCenterConfig(),
     effectiveToday(),
     searchParams,
+    getStudentFees(id),
   ]);
   if (!profile) notFound();
   const { student, enrollments, history, present, total, pct } = profile;
@@ -210,6 +226,236 @@ export default async function StudentProfilePage({
           </ul>
         </div>
       ) : null}
+
+      {/* ---- Fees ledger ---- */}
+      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-foreground">Fees</p>
+          <LedgerStatusPill status={fees.status} />
+        </div>
+
+        {/* Summary row */}
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl border border-border bg-surface-2 px-2 py-2.5">
+            <p className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">Charged</p>
+            <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-foreground">{rupees(fees.charged)}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface-2 px-2 py-2.5">
+            <p className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">Paid</p>
+            <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-success">{rupees(fees.paid)}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface-2 px-2 py-2.5">
+            <p className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+              {fees.outstanding < 0 ? "Credit" : "Outstanding"}
+            </p>
+            <p
+              className={`mt-1 font-mono text-sm font-semibold tabular-nums ${
+                fees.outstanding > 0
+                  ? "text-danger"
+                  : fees.outstanding < 0
+                    ? "text-brand"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {rupees(Math.abs(fees.outstanding))}
+            </p>
+          </div>
+        </div>
+
+        {/* Record payment form */}
+        <div className="mt-5 border-t border-border pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record payment</p>
+          {sp.paid ? <Banner tone="success">Payment recorded.</Banner> : null}
+          <form action={recordPaymentAction} className="mt-3 space-y-3">
+            <input type="hidden" name="studentId" value={student.student_id} />
+            <input type="hidden" name="back" value={back} />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-sm font-medium">Amount (₹)</span>
+                <input
+                  type="number"
+                  name="amount"
+                  min="1"
+                  step="1"
+                  placeholder="0"
+                  className={fieldClass}
+                  aria-invalid={sp.error === "amount" || undefined}
+                />
+                {sp.error === "amount" ? (
+                  <p className="mt-1 text-xs text-danger">Enter a whole rupee amount.</p>
+                ) : null}
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium">Date</span>
+                <input
+                  type="date"
+                  name="date"
+                  defaultValue={today}
+                  className={fieldClass}
+                  aria-invalid={sp.error === "date" || undefined}
+                />
+                {sp.error === "date" ? (
+                  <p className="mt-1 text-xs text-danger">Enter a valid date.</p>
+                ) : null}
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-sm font-medium">Method</span>
+              <select name="method" className={`${fieldClass} cursor-pointer`}>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+                <option value="bank">Bank transfer</option>
+                <option value="cheque">Cheque</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium">
+                Note <span className="text-muted-foreground">(optional)</span>
+              </span>
+              <input name="note" placeholder="e.g. June installment" className={fieldClass} />
+            </label>
+            <SubmitButton pendingText="Recording…">Record payment</SubmitButton>
+          </form>
+        </div>
+
+        {/* Add charge form */}
+        <div className="mt-5 border-t border-border pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add charge</p>
+          {sp.charged ? <Banner tone="success">Charge added.</Banner> : null}
+          {sp.error === "overdiscount" ? (
+            <Banner tone="danger">Discount can&apos;t exceed the outstanding balance.</Banner>
+          ) : null}
+          <form action={addChargeAction} className="mt-3 space-y-3">
+            <input type="hidden" name="studentId" value={student.student_id} />
+            <input type="hidden" name="back" value={back} />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-sm font-medium">Kind</span>
+                <select name="kind" className={`${fieldClass} cursor-pointer`}>
+                  <option value="monthly">Monthly fee</option>
+                  <option value="admission">Admission</option>
+                  <option value="exam">Exam fee</option>
+                  <option value="other">Other</option>
+                  <option value="discount">Discount</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium">Amount (₹)</span>
+                <input
+                  type="number"
+                  name="amount"
+                  min="1"
+                  step="1"
+                  placeholder="0"
+                  className={fieldClass}
+                  aria-invalid={sp.error === "amount" || undefined}
+                />
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-sm font-medium">
+                Period <span className="text-muted-foreground">(optional, for monthly)</span>
+              </span>
+              <input type="month" name="period" className={fieldClass} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium">
+                Note <span className="text-muted-foreground">(optional)</span>
+              </span>
+              <input name="note" placeholder="e.g. June 2025" className={fieldClass} />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              For discounts, enter the rupee value to deduct — it will be subtracted from the balance.
+            </p>
+            <SubmitButton pendingText="Adding…">Add charge</SubmitButton>
+          </form>
+        </div>
+
+        {/* Charges list */}
+        {fees.charges.filter((c) => c.status === "active").length > 0 ? (
+          <div className="mt-5 border-t border-border pt-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Charges</p>
+              {fees.charges.filter((c) => c.status === "void").length > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  {fees.charges.filter((c) => c.status === "void").length} voided
+                </span>
+              ) : null}
+            </div>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {fees.charges
+                .filter((c) => c.status === "active")
+                .map((c) => (
+                  <li
+                    key={c.charge_id}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium capitalize text-foreground">
+                        {c.kind}
+                        {c.period ? ` · ${c.period}` : ""}
+                      </p>
+                      {c.note ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">{c.note}</p>
+                      ) : (
+                        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{c.created}</p>
+                      )}
+                    </div>
+                    <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-foreground">
+                      {rupees(Math.abs(Number(c.amount)))}
+                      {Number(c.amount) < 0 ? " off" : ""}
+                    </span>
+                    <form action={voidChargeAction}>
+                      <input type="hidden" name="chargeId" value={c.charge_id} />
+                      <input type="hidden" name="back" value={back} />
+                      <button className="h-7 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-2 text-xs font-semibold text-danger transition-colors hover:bg-danger/10">
+                        Void
+                      </button>
+                    </form>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* Payments list */}
+        {fees.payments.filter((p) => p.status === "active").length > 0 ? (
+          <div className="mt-5 border-t border-border pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payments</p>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {fees.payments
+                .filter((p) => p.status === "active")
+                .map((p) => (
+                  <li
+                    key={p.payment_id}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium capitalize text-foreground">
+                        {p.method} · {p.date}
+                      </p>
+                      {p.note ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">{p.note}</p>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-success">
+                      {rupees(Number(p.amount))}
+                    </span>
+                    <form action={voidPaymentAction}>
+                      <input type="hidden" name="paymentId" value={p.payment_id} />
+                      <input type="hidden" name="back" value={back} />
+                      <button className="h-7 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-2 text-xs font-semibold text-danger transition-colors hover:bg-danger/10">
+                        Void
+                      </button>
+                    </form>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
 
       {/* Active toggle */}
       <form action={toggleStudentActive} className="mt-4 rounded-2xl border border-border bg-surface p-4">

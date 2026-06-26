@@ -4,7 +4,60 @@
 export type AttendanceStatus = "present" | "absent" | "late";
 
 /** Kinds accepted by the /api/export route (shared by the export buttons). */
-export type ExportKind = "attendance" | "defaulters" | "batches" | "student";
+export type ExportKind = "attendance" | "defaulters" | "batches" | "student" | "fees";
+
+// ===== Fees =====
+
+export type ChargeKind = "monthly" | "admission" | "exam" | "other" | "discount";
+export type FeeMethod = "cash" | "upi" | "card" | "bank" | "cheque" | "other";
+
+/** One fee charge against a student. Columns A..I (positional). */
+export interface FeeChargeRow {
+  charge_id: string;  // FC0001
+  student_id: string;
+  batch_id: string;   // "" for one-off charges (admission/exam/other)
+  period: string;     // YYYY-MM for monthly; "" for one-time
+  kind: ChargeKind;
+  amount: string;     // signed int string; charges>0; discount<0
+  note: string;
+  status: string;     // "active" | "void"
+  created: string;    // YYYY-MM-DD = effectiveToday() at write
+}
+
+/** One payment from a student. Columns A..H (positional). */
+export interface PaymentRow {
+  payment_id: string; // PMT0001
+  student_id: string;
+  amount: string;     // positive int string
+  date: string;       // YYYY-MM-DD (payment date, cash-basis)
+  method: FeeMethod;
+  note: string;
+  timestamp: string;  // centerTimestamp() (audit)
+  status: string;     // "active" | "void"
+}
+
+export const FEE_CHARGES_HEADER = [
+  "charge_id",
+  "student_id",
+  "batch_id",
+  "period",
+  "kind",
+  "amount",
+  "note",
+  "status",
+  "created",
+] as const;
+
+export const PAYMENTS_HEADER = [
+  "payment_id",
+  "student_id",
+  "amount",
+  "date",
+  "method",
+  "note",
+  "timestamp",
+  "status",
+] as const;
 
 export interface Teacher {
   teacher_id: string;
