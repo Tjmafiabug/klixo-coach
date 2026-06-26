@@ -39,6 +39,7 @@ credentials.json
 *-credentials.json
 service-account*.json
 *.serviceaccount.json
+klixo-coach-*.json
 
 # vercel
 .vercel

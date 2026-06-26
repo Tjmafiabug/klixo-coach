@@ -8,22 +8,45 @@ import { google } from "googleapis";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
-let cached: ReturnType<typeof google.sheets> | null = null;
+/**
+ * Identity of the centre this request is serving: which Sheet to read/write and
+ * which service account to authenticate as.
+ *
+ * SINGLE SOURCE OF TRUTH for centre identity. Today it resolves the one centre
+ * from env vars. To go multi-tenant later (one app, many centres), change ONLY
+ * this function to resolve the centre per-request — every Sheet call already
+ * routes through here, so nothing downstream needs to change.
+ */
+export interface CenterContext {
+  sheetId: string;
+  serviceAccountJson: string;
+}
+
+export function currentCenter(): CenterContext {
+  const sheetId = process.env.SHEET_ID;
+  if (!sheetId) throw new Error("SHEET_ID is not set");
+  const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!serviceAccountJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set");
+  return { sheetId, serviceAccountJson };
+}
+
+/** Sheets client cached per service account, so a future multi-tenant request
+ *  never reuses another centre's authenticated client. */
+const clientCache = new Map<string, ReturnType<typeof google.sheets>>();
 
 function client() {
-  if (cached) return cached;
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set");
-  const credentials = JSON.parse(raw);
+  const { serviceAccountJson } = currentCenter();
+  const hit = clientCache.get(serviceAccountJson);
+  if (hit) return hit;
+  const credentials = JSON.parse(serviceAccountJson);
   const auth = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
-  cached = google.sheets({ version: "v4", auth });
-  return cached;
+  const c = google.sheets({ version: "v4", auth });
+  clientCache.set(serviceAccountJson, c);
+  return c;
 }
 
 export function sheetId(): string {
-  const id = process.env.SHEET_ID;
-  if (!id) throw new Error("SHEET_ID is not set");
-  return id;
+  return currentCenter().sheetId;
 }
 
 /** Read a tab and return rows as objects keyed by the header row. */

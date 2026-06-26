@@ -139,6 +139,13 @@ Recommended order (see BUILD.md for full specs + acceptance):
 - **F/G:** exams/report-cards, parent view, roles/permissions; then one-click
   provisioning, CSV import, billing, admin console.
 
+**Google integration + multi-tenant (Model A):** architecture, hard rules, and the
+go-to-market migration checklist live in `docs/google-integration.md`. Key build-time
+rules: the service account must never CREATE a Google file (storageQuotaExceeded) — all
+file creation goes through owner OAuth into the owner's own Drive; OAuth app must be set
+to "In production" with the `drive.file` scope. Centre identity is centralised behind
+`currentCenter()` in `src/lib/sheets.ts` (the multi-tenant chokepoint).
+
 ### Known small items (low priority, noted)
 - Recurring session ids could approach the adhoc `9000+` range after ~years of daily
   generation (namespace, not urgent).
