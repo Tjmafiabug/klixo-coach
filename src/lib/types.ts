@@ -36,28 +36,6 @@ export interface PaymentRow {
   status: string;     // "active" | "void"
 }
 
-export const FEE_CHARGES_HEADER = [
-  "charge_id",
-  "student_id",
-  "batch_id",
-  "period",
-  "kind",
-  "amount",
-  "note",
-  "status",
-  "created",
-] as const;
-
-export const PAYMENTS_HEADER = [
-  "payment_id",
-  "student_id",
-  "amount",
-  "date",
-  "method",
-  "note",
-  "timestamp",
-  "status",
-] as const;
 
 export interface Teacher {
   teacher_id: string;
@@ -175,15 +153,3 @@ export interface BatchProgressRow {
   done_date: string; // YYYY-MM-DD when done, else ""
 }
 
-export const ATTENDANCE_HEADER = [
-  "log_id",
-  "session_id",
-  "date",
-  "batch_id",
-  "student_id",
-  "status",
-  "marked_by",
-  "method",
-  "timestamp",
-  "reason",
-] as const;

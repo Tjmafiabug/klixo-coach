@@ -11,10 +11,9 @@ export function ExportButton({
   label: string;
   params?: Record<string, string>;
 }) {
-  const qs = new URLSearchParams({ kind, ...(params ?? {}) }).toString();
   return (
     <a
-      href={`/api/export?${qs}`}
+      href={`/api/export?${new URLSearchParams({ kind, ...(params ?? {}) })}`}
       download
       className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted-foreground transition-[color,background-color,transform] hover:bg-muted hover:text-foreground active:scale-[0.98]"
     >
