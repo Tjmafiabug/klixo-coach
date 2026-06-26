@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getBatchDetail, getFormOptions, effectiveToday, getCourseForBatch } from "@/lib/data";
+import { getBatchDetail, getFormOptions, effectiveToday } from "@/lib/data";
 import { saveBatch, toggleBatchActive, addEnrollment, endEnrollmentAction } from "@/lib/actions";
 import { Banner, fieldClass, ActiveChip } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -35,15 +35,14 @@ export default async function EditBatchPage({
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
-  const [detail, options, today, course, sp] = await Promise.all([
+  const [detail, options, today, sp] = await Promise.all([
     getBatchDetail(id),
     getFormOptions(),
     effectiveToday(),
-    getCourseForBatch(id),
     searchParams,
   ]);
   if (!detail) notFound();
-  const { batch, teacherName, enrollments, candidates } = detail;
+  const { batch, teacherName, enrollments, candidates, course } = detail;
   const active = batch.active === "TRUE";
   const back = `/manage/batches/${id}`;
   const err = errorText(sp.error);

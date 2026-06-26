@@ -1497,15 +1497,18 @@ export interface BatchDetail {
   }[];
   /** active students NOT currently enrolled here (candidates to add). */
   candidates: { id: string; name: string }[];
+  /** the syllabus this batch maps to (by subject + level), or null if none. */
+  course: Course | null;
 }
 
 export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
-  const [batches, teachers, rooms, students, enrolls] = await Promise.all([
+  const [batches, teachers, rooms, students, enrolls, courses] = await Promise.all([
     readTab<Batch>("Batches"),
     readTab<Teacher>("Teachers"),
     readTab<Room>("Rooms"),
     readTab<Student>("Students"),
     readTab<Enrollment>("Enrollments"),
+    readTab<Course>("Courses"),
   ]);
   const batch = batches.find((b) => b.batch_id === id);
   if (!batch) return null;
@@ -1532,12 +1535,18 @@ export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
     .filter((s) => s.status === "active" && !activeHere.has(s.student_id))
     .map((s) => ({ id: s.student_id, name: s.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const key = (s: string) => s.trim().toLowerCase();
+  const course =
+    courses.find(
+      (c) => key(c.subject) === key(batch.subject) && key(c.level) === key(batch.level),
+    ) ?? null;
   return {
     batch,
     teacherName: teachers.find((t) => t.teacher_id === batch.teacher_id)?.name ?? batch.teacher_id,
     roomName: rooms.find((r) => r.room_id === batch.room_id)?.name ?? batch.room_id,
     enrollments,
     candidates,
+    course,
   };
 }
 
@@ -1886,23 +1895,6 @@ export async function getCourseDetail(id: string): Promise<CourseDetail | null> 
     .filter((ch) => ch.course_id === id)
     .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
   return { course, chapters: own };
-}
-
-/** The course a batch maps to, by matching subject + level (case-insensitive).
- *  null when no syllabus exists for that subject/class yet. */
-export async function getCourseForBatch(batchId: string): Promise<Course | null> {
-  const [batches, courses] = await Promise.all([
-    readTab<Batch>("Batches"),
-    readTab<Course>("Courses"),
-  ]);
-  const batch = batches.find((b) => b.batch_id === batchId);
-  if (!batch) return null;
-  const key = (s: string) => s.trim().toLowerCase();
-  return (
-    courses.find(
-      (c) => key(c.subject) === key(batch.subject) && key(c.level) === key(batch.level),
-    ) ?? null
-  );
 }
 
 // ============================================================================
