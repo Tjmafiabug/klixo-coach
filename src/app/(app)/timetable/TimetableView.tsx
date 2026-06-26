@@ -57,6 +57,14 @@ export function TimetableView({
     return sessions;
   }, [sessions, scope]);
 
+  // An empty-slot click books an extra class into the active scope.
+  const [type, id] = scope.split(":");
+  const prefill =
+    type === "batch" ? { batch: id }
+    : type === "teacher" ? { teacher: id }
+    : type === "room" ? { room: id }
+    : undefined;
+
   return (
     <div>
       <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -94,7 +102,7 @@ export function TimetableView({
       {scope === "all" ? (
         <AgendaGrid sessions={shown} dates={dates} hueOf={hueOf} today={today} />
       ) : (
-        <CalendarGrid sessions={shown} dates={dates} hueOf={hueOf} today={today} />
+        <CalendarGrid sessions={shown} dates={dates} hueOf={hueOf} today={today} prefill={prefill} />
       )}
     </div>
   );

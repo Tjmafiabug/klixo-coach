@@ -1,18 +1,35 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { SessionView, WeekDay } from "@/lib/data";
 
 /* Date-aware week grid. Columns are the seven dates of the selected week, time
    is the vertical axis (1px per minute). Each real Session is placed on its
    date; overlapping classes pack side-by-side. Clicking a class opens its
-   attendance page. Used for the scoped views (one batch/teacher/room). */
+   attendance page; clicking an empty slot (today or later) opens the
+   "add extra class" form prefilled with that date/time and the active scope.
+   Used for the scoped views (one batch/teacher/room). */
 
 const PPM = 1; // pixels per minute
 const SNAP = 60; // axis snaps to whole hours
+const BOOK_SNAP = 30; // click-to-book rounds to half hours
+const DEFAULT_LEN = 90; // default extra-class length, minutes
 
 const toMin = (t: string) => {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + (m || 0);
 };
+
+const toHHMM = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/** Scope carried into the new extra-class form when an empty slot is clicked. */
+export interface BookPrefill {
+  batch?: string;
+  teacher?: string;
+  room?: string;
+}
 
 interface Ev {
   session: SessionView;
@@ -63,12 +80,16 @@ export function CalendarGrid({
   dates,
   hueOf,
   today,
+  prefill,
 }: {
   sessions: SessionView[];
   dates: WeekDay[];
   hueOf: (batchId: string) => number;
   today: string;
+  prefill?: BookPrefill;
 }) {
+  const router = useRouter();
+
   if (sessions.length === 0) {
     return (
       <div className="mt-4 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-16 text-center">
@@ -106,6 +127,20 @@ export function CalendarGrid({
         .map((s) => ({ session: s, s: toMin(s.start), e: toMin(s.end) })),
     ),
   }));
+
+  // Click an empty slot → add an extra class on that date, prefilled with the
+  // clicked time and the active scope (batch/teacher/room).
+  function book(iso: string, e: React.MouseEvent<HTMLDivElement>) {
+    const offsetY = e.clientY - e.currentTarget.getBoundingClientRect().top;
+    const snapped = Math.round((rangeStart + offsetY / PPM) / BOOK_SNAP) * BOOK_SNAP;
+    const start = Math.max(rangeStart, Math.min(snapped, rangeEnd - BOOK_SNAP));
+    const end = Math.min(start + DEFAULT_LEN, rangeEnd);
+    const qs = new URLSearchParams({ date: iso, start: toHHMM(start), end: toHHMM(end) });
+    if (prefill?.batch) qs.set("batch", prefill.batch);
+    if (prefill?.teacher) qs.set("teacher", prefill.teacher);
+    if (prefill?.room) qs.set("room", prefill.room);
+    router.push(`/new-session?${qs}`);
+  }
 
   return (
     <div className="mt-4 max-h-[70vh] overflow-auto scroll-slim rounded-2xl border border-border bg-surface shadow-[var(--shadow-card)]">
@@ -156,6 +191,15 @@ export function CalendarGrid({
             className={`relative border-l border-border ${d.iso === today ? "bg-accent-subtle/30" : ""}`}
             style={{ height }}
           >
+            {/* click-to-book layer (back of stack); only future/today is bookable */}
+            {d.iso >= today ? (
+              <div
+                onClick={(e) => book(d.iso, e)}
+                title={`Add an extra class on ${d.weekday} ${d.dayNum}`}
+                className="absolute inset-0 cursor-copy transition-colors hover:bg-accent/5"
+              />
+            ) : null}
+
             {hours.slice(0, -1).map((h) => (
               <div
                 key={h}

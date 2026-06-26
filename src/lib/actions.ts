@@ -301,6 +301,9 @@ export async function addExtraClass(formData: FormData): Promise<void> {
   const end = String(formData.get("end") ?? "").trim();
   const roomId = String(formData.get("roomId") ?? "").trim();
   const teacherId = String(formData.get("teacherId") ?? "").trim();
+  // Where to land after a successful add — only an internal /timetable path is
+  // honoured (came from the calendar); anything else falls back to /today.
+  const returnTo = String(formData.get("returnTo") ?? "").trim();
   if (!date || !batchId || !start || !end || !roomId || !teacherId) {
     redirect("/new-session?error=missing");
   }
@@ -313,6 +316,7 @@ export async function addExtraClass(formData: FormData): Promise<void> {
     redirect(`/new-session?error=clash&with=${clash.blocking.join(",")}`);
   }
   await createExtraClass({ date, batchId, start, end, roomId, teacherId });
+  if (returnTo.startsWith("/timetable")) redirect(returnTo);
   redirect(`/today?added=1${clash.warnings.length ? "&warn=student" : ""}`);
 }
 

@@ -51,7 +51,17 @@ export default async function TimetablePage({
       <PageHeader
         title="Timetable"
         subtitle="Weekly class calendar"
-        actions={<PrimaryLink href="/timetable/new">+ Add rule</PrimaryLink>}
+        actions={
+          <>
+            <Link
+              href="/new-session"
+              className="inline-flex h-9 items-center rounded-xl border border-border bg-surface px-3.5 text-sm font-semibold transition-colors hover:bg-muted"
+            >
+              + Extra class
+            </Link>
+            <PrimaryLink href="/timetable/new">+ Add rule</PrimaryLink>
+          </>
+        }
       />
 
       {notice ? (

@@ -24,14 +24,27 @@ function Submit() {
 export function NewSessionForm({
   options,
   today,
+  initial,
 }: {
   options: FormOptions;
   today: string;
+  /** Defaults from clicking an empty calendar slot. */
+  initial?: {
+    date?: string;
+    start?: string;
+    end?: string;
+    batchId?: string;
+    roomId?: string;
+    teacherId?: string;
+    returnTo?: string;
+  };
 }) {
   const first = options.batches[0];
-  const [batchId, setBatchId] = useState(first?.id ?? "");
-  const [teacherId, setTeacherId] = useState(first?.teacherId ?? "");
-  const [roomId, setRoomId] = useState(first?.roomId ?? "");
+  // A clicked batch carries its room/teacher; a clicked room/teacher overrides.
+  const initBatch = options.batches.find((b) => b.id === initial?.batchId) ?? first;
+  const [batchId, setBatchId] = useState(initBatch?.id ?? "");
+  const [teacherId, setTeacherId] = useState(initial?.teacherId ?? initBatch?.teacherId ?? "");
+  const [roomId, setRoomId] = useState(initial?.roomId ?? initBatch?.roomId ?? "");
 
   function onBatch(id: string) {
     setBatchId(id);
@@ -47,6 +60,9 @@ export function NewSessionForm({
       action={addExtraClass}
       className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]"
     >
+      {initial?.returnTo ? (
+        <input type="hidden" name="returnTo" value={initial.returnTo} />
+      ) : null}
       <label className="block">
         <span className="text-sm font-medium">Batch</span>
         <select
@@ -65,17 +81,17 @@ export function NewSessionForm({
 
       <label className="mt-3 block">
         <span className="text-sm font-medium">Date</span>
-        <input type="date" name="date" defaultValue={today} className={field} />
+        <input type="date" name="date" defaultValue={initial?.date ?? today} className={field} />
       </label>
 
       <div className="mt-3 grid grid-cols-2 gap-3">
         <label className="block">
           <span className="text-sm font-medium">Start</span>
-          <input type="time" name="start" defaultValue="11:00" className={field} />
+          <input type="time" name="start" defaultValue={initial?.start ?? "11:00"} className={field} />
         </label>
         <label className="block">
           <span className="text-sm font-medium">End</span>
-          <input type="time" name="end" defaultValue="12:00" className={field} />
+          <input type="time" name="end" defaultValue={initial?.end ?? "12:00"} className={field} />
         </label>
       </div>
 
