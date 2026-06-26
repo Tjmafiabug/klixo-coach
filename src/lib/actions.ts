@@ -540,7 +540,9 @@ export async function saveSettings(formData: FormData): Promise<void> {
   // term dates are optional, but if given must be valid and ordered
   if (termStart && !isDate(termStart)) redirect("/manage/settings?error=term");
   if (termEnd && !isDate(termEnd)) redirect("/manage/settings?error=term");
-  if (termStart && termEnd && termEnd < termStart) redirect("/manage/settings?error=term");
+  // require end strictly after start — a zero-length term has no pace to track
+  // (and computeProgressSummary would treat end===start as "no term" anyway)
+  if (termStart && termEnd && termEnd <= termStart) redirect("/manage/settings?error=term");
 
   await updateCenterConfig({
     center_name: centerName,

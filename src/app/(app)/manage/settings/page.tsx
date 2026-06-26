@@ -14,7 +14,7 @@ function errorText(e?: string) {
   if (e === "missing") return "Centre name is required.";
   if (e === "threshold") return "Attendance threshold must be a whole number 0–100.";
   if (e === "buffer") return "Room changeover buffer must be a whole number, 0–180 minutes.";
-  if (e === "term") return "Term end must be a valid date on or after the start.";
+  if (e === "term") return "Term end must be a valid date after the term start.";
   return null;
 }
 

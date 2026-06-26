@@ -1505,7 +1505,9 @@ export interface BatchDetail {
 }
 
 export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
-  const [batches, teachers, rooms, students, enrolls, courses, chapters, progressRows, cfg, today] =
+  // one Config read (cfgMap) serves both `today` and the term bounds — avoids
+  // the double read that getCenterConfig() + effectiveToday() would incur
+  const [batches, teachers, rooms, students, enrolls, courses, chapters, progressRows, cfgMap] =
     await Promise.all([
       readTab<Batch>("Batches"),
       readTab<Teacher>("Teachers"),
@@ -1515,8 +1517,7 @@ export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
       readTab<Course>("Courses"),
       readTab<Chapter>("Chapters"),
       readTab<BatchProgressRow>("BatchProgress"),
-      getCenterConfig(),
-      effectiveToday(),
+      config(),
     ]);
   const batch = batches.find((b) => b.batch_id === id);
   if (!batch) return null;
@@ -1543,21 +1544,12 @@ export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
     .filter((s) => s.status === "active" && !activeHere.has(s.student_id))
     .map((s) => ({ id: s.student_id, name: s.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const key = (s: string) => s.trim().toLowerCase();
-  // only an ACTIVE course maps to the batch — deactivating a course hides its
-  // syllabus from batch pages (it stays in the sheet so reactivation restores it)
-  const course =
-    courses.find(
-      (c) =>
-        c.active === "TRUE" &&
-        key(c.subject) === key(batch.subject) &&
-        key(c.level) === key(batch.level),
-    ) ?? null;
-  const progress = await getBatchProgressSummary(
+  const course = findCourseForBatch(courses, batch);
+  const progress = getBatchProgressSummary(
     batch,
     { chapters, progress: progressRows, course },
-    cfg,
-    today,
+    { start: cfgMap.get("term_start") ?? "", end: cfgMap.get("term_end") ?? "" },
+    todayFromCfg(cfgMap),
   );
   return {
     batch,
@@ -2159,25 +2151,17 @@ export interface BatchProgressView {
 export async function getBatchProgress(
   batchId: string,
 ): Promise<BatchProgressView | null> {
-  const [batches, courses, chapters, progress, cfg, today] = await Promise.all([
+  const [batches, courses, chapters, progress, cfgMap] = await Promise.all([
     readTab<Batch>("Batches"),
     readTab<Course>("Courses"),
     readTab<Chapter>("Chapters"),
     readTab<BatchProgressRow>("BatchProgress"),
-    getCenterConfig(),
-    effectiveToday(),
+    config(),
   ]);
   const batch = batches.find((b) => b.batch_id === batchId);
   if (!batch) return null;
-
-  const key = (s: string) => s.trim().toLowerCase();
-  const course =
-    courses.find(
-      (c) =>
-        c.active === "TRUE" &&
-        key(c.subject) === key(batch.subject) &&
-        key(c.level) === key(batch.level),
-    ) ?? null;
+  const today = todayFromCfg(cfgMap);
+  const course = findCourseForBatch(courses, batch);
 
   const statusOf = progressMap(progress, batchId);
   const doneDateOf = new Map(
@@ -2196,25 +2180,43 @@ export async function getBatchProgress(
         }))
     : [];
 
-  const term = { start: cfg.term_start, end: cfg.term_end };
+  const term = {
+    start: cfgMap.get("term_start") ?? "",
+    end: cfgMap.get("term_end") ?? "",
+  };
   const summary = computeProgressSummary(own.map((c) => c.status), term, today);
   return { batch, course, chapters: own, summary, term };
 }
 
+/** The active course a batch maps to, by case-insensitive subject + level. The
+ *  single source of this join — keeps the `active === "TRUE"` filter consistent
+ *  across getBatchDetail / getBatchProgress (used to drift apart). */
+export function findCourseForBatch(courses: Course[], batch: Batch): Course | null {
+  const key = (s: string) => s.trim().toLowerCase();
+  return (
+    courses.find(
+      (c) =>
+        c.active === "TRUE" &&
+        key(c.subject) === key(batch.subject) &&
+        key(c.level) === key(batch.level),
+    ) ?? null
+  );
+}
+
 /** Compact summary only (for the batch-detail card): folds the same inputs but
- *  skips building the per-chapter list. Returns null when no course maps. */
-export async function getBatchProgressSummary(
+ *  skips building the per-chapter list. Pure/sync. Null when no course maps. */
+function getBatchProgressSummary(
   batch: Batch,
   pre: { chapters: Chapter[]; progress: BatchProgressRow[]; course: Course | null },
-  cfg: CenterConfig,
+  term: { start: string; end: string },
   today: string,
-): Promise<ProgressSummary | null> {
+): ProgressSummary | null {
   if (!pre.course) return null;
   const statusOf = progressMap(pre.progress, batch.batch_id);
   const statuses = pre.chapters
     .filter((ch) => ch.course_id === pre.course!.course_id)
     .map((ch) => statusOf.get(ch.chapter_id) ?? "pending");
-  return computeProgressSummary(statuses, { start: cfg.term_start, end: cfg.term_end }, today);
+  return computeProgressSummary(statuses, term, today);
 }
 
 /**
