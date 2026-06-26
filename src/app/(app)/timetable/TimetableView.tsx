@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import type { TimetableRuleView } from "@/lib/data";
 import { CalendarGrid } from "./CalendarGrid";
+import { AgendaGrid } from "./AgendaGrid";
 
-/* Scope filter over the weekly calendar — the readable answer to "everything at
-   once is a cramped mess" (cf. Edmingle's Select Trainer/Batch). One dropdown:
-   All, or scope to a single batch / teacher / room so parallel classes collapse
-   to one readable track. The grid itself already trims the time axis to class
-   hours, so there's no empty-night-hours waste. */
+/* Scope filter over the weekly schedule. Two layouts, each fitting its job:
+   - "All" → agenda (sorted chips per day): readable at any density, no empty
+     time wasted. Empty space in an all-view is noise, so we don't show a grid.
+   - Scoped to one batch/teacher/room → time-grid: now sparse, so the gaps mean
+     "this room/teacher is free here" and you can click to book. */
 
 const field =
   "h-10 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 cursor-pointer";
@@ -31,6 +32,14 @@ export function TimetableView({ rules }: { rules: TimetableRuleView[] }) {
     }),
     [rules],
   );
+
+  // Stable, well-separated colour per batch (golden-angle), keyed off ALL rules
+  // so a batch keeps the same hue in both the agenda and the scoped grid.
+  const hueOf = useMemo(() => {
+    const ids = [...new Set(rules.map((r) => r.batch_id))];
+    const m = new Map(ids.map((id, i) => [id, Math.round((i * 137.508) % 360)]));
+    return (id: string) => m.get(id) ?? 0;
+  }, [rules]);
 
   const shown = useMemo(() => {
     const [type, id] = scope.split(":");
@@ -82,7 +91,11 @@ export function TimetableView({ rules }: { rules: TimetableRuleView[] }) {
         </span>
       </div>
 
-      <CalendarGrid rules={shown} prefill={prefill} />
+      {scope === "all" ? (
+        <AgendaGrid rules={shown} hueOf={hueOf} />
+      ) : (
+        <CalendarGrid rules={shown} prefill={prefill} hueOf={hueOf} />
+      )}
     </div>
   );
 }

@@ -77,15 +77,17 @@ function packDay(events: { rule: TimetableRuleView; s: number; e: number }[]): B
 export function CalendarGrid({
   rules,
   prefill,
+  hueOf,
 }: {
   rules: TimetableRuleView[];
   prefill?: BookPrefill;
+  hueOf: (batchId: string) => number;
 }) {
   const router = useRouter();
 
   if (rules.length === 0) {
     return (
-      <div className="mt-6 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-16 text-center">
+      <div className="mt-4 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-16 text-center">
         <p className="font-semibold text-foreground">No classes scheduled yet</p>
         <p className="mt-1 text-sm text-muted-foreground">
           Add a recurring rule to see it on the weekly calendar.
@@ -93,11 +95,6 @@ export function CalendarGrid({
       </div>
     );
   }
-
-  // Stable, well-separated colour per batch (golden-angle hue rotation).
-  const batchIds = Array.from(new Set(rules.map((r) => r.batch_id)));
-  const hueOf = (id: string) =>
-    Math.round((batchIds.indexOf(id) * 137.508) % 360);
 
   // Full week, Mon→Sun.
   const activeDays = DAY_ORDER;
@@ -145,25 +142,25 @@ export function CalendarGrid({
   }
 
   return (
-    <div className="mt-5 overflow-x-auto scroll-slim rounded-2xl border border-border bg-surface shadow-[var(--shadow-card)]">
+    <div className="mt-4 max-h-[70vh] overflow-auto scroll-slim rounded-2xl border border-border bg-surface shadow-[var(--shadow-card)]">
       <div
         className="grid min-w-[760px]"
         style={{
           gridTemplateColumns: `56px repeat(${activeDays.length}, minmax(100px, 1fr))`,
         }}
       >
-        {/* Header row */}
-        <div className="sticky left-0 z-20 border-b border-border bg-surface" />
+        {/* Header row — sticky to the top so day names stay visible while scrolling */}
+        <div className="sticky left-0 top-0 z-30 border-b border-border bg-surface" />
         {activeDays.map((d) => (
           <div
             key={d}
-            className="border-b border-l border-border bg-surface px-3 py-2.5 text-center"
+            className="sticky top-0 z-20 border-b border-l border-border bg-surface px-3 py-2.5 text-center"
           >
             <span className="label-mono text-muted-foreground">{d}</span>
           </div>
         ))}
 
-        {/* Time gutter */}
+        {/* Time gutter — sticky to the left so hour labels stay visible */}
         <div
           className="sticky left-0 z-10 bg-surface"
           style={{ height }}
