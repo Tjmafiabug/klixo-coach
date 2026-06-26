@@ -1,24 +1,42 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getCourseDetail } from "@/lib/data";
+import { saveChapter, moveChapterAction } from "@/lib/actions";
 import { PageHeader } from "@/components/page";
+import { Banner, fieldClass, textareaClass, ActiveChip } from "@/components/ui";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Reveal } from "@/components/motion";
 
 export const dynamic = "force-dynamic";
 
+function errorText(e?: string) {
+  if (e === "missing") return "A chapter needs a title.";
+  if (e === "url") return "The resource link must start with http:// or https://.";
+  return null;
+}
+
 export default async function CourseDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; deleted?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
 
   const { id } = await params;
-  const detail = await getCourseDetail(id);
+  const [detail, sp] = await Promise.all([getCourseDetail(id), searchParams]);
   if (!detail) notFound();
   const { course, chapters } = detail;
+  const active = course.active === "TRUE";
+  const err = errorText(sp.error);
+
+  // small icon-button style for the per-chapter move/delete controls
+  const iconBtn =
+    "grid h-8 w-8 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
@@ -26,8 +44,26 @@ export default async function CourseDetailPage({
         backHref="/manage/curriculum"
         backLabel="Curriculum"
         title={course.name}
-        subtitle={`${course.subject} · ${course.level} · ${chapters.length} chapters`}
+        subtitle={`${course.subject} · ${course.level} · ${chapters.length} chapter${
+          chapters.length === 1 ? "" : "s"
+        }`}
       />
+
+      <div className="mt-3 flex items-center gap-3">
+        {!active ? <ActiveChip active={active} /> : null}
+        <Link
+          href={`/manage/curriculum/${id}/edit`}
+          className="text-sm font-semibold text-brand hover:underline"
+        >
+          Edit course
+        </Link>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {err ? <Banner tone="danger">{err}</Banner> : null}
+        {sp.saved ? <Banner tone="success">Saved.</Banner> : null}
+        {sp.deleted ? <Banner tone="success">Chapter deleted.</Banner> : null}
+      </div>
 
       {course.description ? (
         <Reveal>
@@ -39,7 +75,7 @@ export default async function CourseDetailPage({
 
       {chapters.length === 0 ? (
         <p className="mt-6 rounded-2xl border border-border bg-surface p-6 text-sm text-muted-foreground">
-          No chapters added yet.
+          No chapters yet. Add the first one below.
         </p>
       ) : (
         <ol className="mt-6 space-y-3">
@@ -53,9 +89,7 @@ export default async function CourseDetailPage({
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-foreground">{ch.title}</p>
                     {ch.topics ? (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {ch.topics}
-                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">{ch.topics}</p>
                     ) : null}
                     {ch.resource_url ? (
                       <a
@@ -68,12 +102,93 @@ export default async function CourseDetailPage({
                       </a>
                     ) : null}
                   </div>
+
+                  {/* reorder + edit + delete controls */}
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <form action={moveChapterAction}>
+                      <input type="hidden" name="courseId" value={course.course_id} />
+                      <input type="hidden" name="chapterId" value={ch.chapter_id} />
+                      <input type="hidden" name="dir" value="up" />
+                      <button
+                        type="submit"
+                        disabled={i === 0}
+                        aria-label="Move up"
+                        className={iconBtn}
+                      >
+                        ↑
+                      </button>
+                    </form>
+                    <form action={moveChapterAction}>
+                      <input type="hidden" name="courseId" value={course.course_id} />
+                      <input type="hidden" name="chapterId" value={ch.chapter_id} />
+                      <input type="hidden" name="dir" value="down" />
+                      <button
+                        type="submit"
+                        disabled={i === chapters.length - 1}
+                        aria-label="Move down"
+                        className={iconBtn}
+                      >
+                        ↓
+                      </button>
+                    </form>
+                    <Link
+                      href={`/manage/curriculum/${id}/chapters/${ch.chapter_id}`}
+                      className={iconBtn}
+                      aria-label="Edit chapter"
+                    >
+                      ✎
+                    </Link>
+                  </div>
                 </div>
               </li>
             </Reveal>
           ))}
         </ol>
       )}
+
+      {/* Add chapter */}
+      <form
+        action={saveChapter}
+        className="mt-5 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]"
+      >
+        <p className="text-sm font-semibold text-foreground">Add chapter</p>
+        <input type="hidden" name="courseId" value={course.course_id} />
+        <label className="mt-3 block">
+          <span className="text-sm font-medium">Title</span>
+          <input
+            name="title"
+            placeholder="Real Numbers"
+            className={fieldClass}
+            aria-invalid={sp.error === "missing" || undefined}
+          />
+        </label>
+        <label className="mt-3 block">
+          <span className="text-sm font-medium">
+            Topics <span className="text-muted-foreground">(optional)</span>
+          </span>
+          <textarea
+            name="topics"
+            rows={2}
+            placeholder="Euclid's division lemma, fundamental theorem of arithmetic…"
+            className={textareaClass}
+          />
+        </label>
+        <label className="mt-3 block">
+          <span className="text-sm font-medium">
+            Resource link <span className="text-muted-foreground">(optional)</span>
+          </span>
+          <input
+            name="resourceUrl"
+            inputMode="url"
+            placeholder="https://ncert.nic.in/…"
+            className={fieldClass}
+            aria-invalid={sp.error === "url" || undefined}
+          />
+        </label>
+        <div className="mt-4">
+          <SubmitButton pendingText="Adding…">+ Add chapter</SubmitButton>
+        </div>
+      </form>
     </div>
   );
 }

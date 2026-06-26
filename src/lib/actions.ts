@@ -44,6 +44,14 @@ import {
   getEnrollment,
   updateCenterConfig,
   refsExist,
+  // P2 — curriculum CRUD
+  createCourse,
+  updateCourse,
+  setCourseActive,
+  createChapter,
+  updateChapter,
+  deleteChapter,
+  moveChapter,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
@@ -311,6 +319,7 @@ const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isPhone = (s: string) => /^\d{6,15}$/.test(s);
 const isPin = (s: string) => /^\d{4,6}$/.test(s);
 const isInt = (s: string) => /^\d+$/.test(s);
+const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s);
 
 /** Only allow redirecting back to an internal /manage path (no open redirect). */
 function safeBack(v: FormDataEntryValue | null, fallback: string): string {
@@ -535,4 +544,72 @@ export async function saveSettings(formData: FormData): Promise<void> {
     room_changeover_buffer_min: buffer,
   });
   redirect("/manage/settings?saved=1");
+}
+
+// ---------------- P2 Curriculum (courses + chapters) ----------------
+
+export async function saveCourse(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("courseId") ?? "").trim();
+  const subject = String(formData.get("subject") ?? "").trim();
+  const level = String(formData.get("level") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const back = id ? `/manage/curriculum/${id}/edit` : "/manage/curriculum/new";
+  if (!subject || !level || !name) redirect(`${back}?error=missing`);
+
+  const payload = { subject, level, name, description };
+  const target = id || (await createCourse(payload));
+  if (id) await updateCourse(id, payload);
+  redirect(`/manage/curriculum/${target}?saved=1`);
+}
+
+export async function toggleCourseActive(formData: FormData): Promise<void> {
+  await requireOwner();
+  const id = String(formData.get("courseId") ?? "").trim();
+  const active = String(formData.get("active") ?? "") === "true";
+  if (!id) redirect("/manage/curriculum");
+  await setCourseActive(id, active);
+  redirect(`/manage/curriculum/${id}?saved=1`);
+}
+
+export async function saveChapter(formData: FormData): Promise<void> {
+  await requireOwner();
+  const courseId = String(formData.get("courseId") ?? "").trim();
+  const chapterId = String(formData.get("chapterId") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const topics = String(formData.get("topics") ?? "").trim();
+  const resourceUrl = String(formData.get("resourceUrl") ?? "").trim();
+  if (!courseId) redirect("/manage/curriculum");
+  // an edit form lives on its own page; the add form lives on the course detail
+  const back = chapterId
+    ? `/manage/curriculum/${courseId}/chapters/${chapterId}`
+    : `/manage/curriculum/${courseId}`;
+  if (!title) redirect(`${back}?error=missing`);
+  if (resourceUrl && !isHttpUrl(resourceUrl)) redirect(`${back}?error=url`);
+
+  if (chapterId)
+    await updateChapter(chapterId, { title, topics, resource_url: resourceUrl });
+  else
+    await createChapter({ course_id: courseId, title, topics, resource_url: resourceUrl });
+  redirect(`/manage/curriculum/${courseId}?saved=1`);
+}
+
+export async function deleteChapterAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const chapterId = String(formData.get("chapterId") ?? "").trim();
+  const courseId = String(formData.get("courseId") ?? "").trim();
+  if (!courseId) redirect("/manage/curriculum");
+  if (chapterId) await deleteChapter(chapterId);
+  redirect(`/manage/curriculum/${courseId}?deleted=1`);
+}
+
+export async function moveChapterAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const chapterId = String(formData.get("chapterId") ?? "").trim();
+  const courseId = String(formData.get("courseId") ?? "").trim();
+  const dir = String(formData.get("dir") ?? "") === "up" ? "up" : "down";
+  if (!courseId) redirect("/manage/curriculum");
+  if (chapterId) await moveChapter(chapterId, dir);
+  redirect(`/manage/curriculum/${courseId}`);
 }

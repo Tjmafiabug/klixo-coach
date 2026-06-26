@@ -1897,6 +1897,137 @@ export async function getCourseDetail(id: string): Promise<CourseDetail | null> 
   return { course, chapters: own };
 }
 
+// ---- P2: course CRUD (soft-deactivate, never hard-delete — batches reference
+// courses by subject+level, so a delete would orphan that mapping). Columns:
+// A course_id, B subject, C level, D name, E description, F active. ----
+
+export async function getCourse(id: string): Promise<Course | null> {
+  const courses = await readTab<Course>("Courses");
+  return courses.find((c) => c.course_id === id) ?? null;
+}
+
+export async function createCourse(input: {
+  subject: string;
+  level: string;
+  name: string;
+  description: string;
+}): Promise<string> {
+  const courses = await readTab<Course>("Courses");
+  const id = nextId(courses.map((c) => c.course_id), "C", 3);
+  await appendRows("Courses", [
+    [id, input.subject, input.level, input.name, input.description, "TRUE"],
+  ]);
+  return id;
+}
+
+/** Update editable fields; `active` is preserved from the saved row. */
+export async function updateCourse(
+  id: string,
+  input: { subject: string; level: string; name: string; description: string },
+): Promise<void> {
+  const courses = await readTab<Course>("Courses");
+  const idx = courses.findIndex((c) => c.course_id === id);
+  if (idx < 0) return;
+  const cur = courses[idx];
+  await updateValues(`Courses!A${idx + 2}:F${idx + 2}`, [
+    [id, input.subject, input.level, input.name, input.description, cur.active],
+  ]);
+}
+
+export async function setCourseActive(id: string, active: boolean): Promise<void> {
+  const courses = await readTab<Course>("Courses");
+  const idx = courses.findIndex((c) => c.course_id === id);
+  if (idx >= 0)
+    await updateValues(`Courses!F${idx + 2}`, [[active ? "TRUE" : "FALSE"]]);
+}
+
+// ---- P2: chapter CRUD + reorder. Columns: A chapter_id, B course_id,
+// C order, D title, E topics, F resource_url. ----
+
+/** Append a chapter to the end of its course's ordering (max order + 1). */
+export async function createChapter(input: {
+  course_id: string;
+  title: string;
+  topics: string;
+  resource_url: string;
+}): Promise<string> {
+  const chapters = await readTab<Chapter>("Chapters");
+  const id = nextId(chapters.map((c) => c.chapter_id), "CH", 3);
+  const maxOrder = chapters
+    .filter((c) => c.course_id === input.course_id)
+    .reduce((m, c) => Math.max(m, Number(c.order) || 0), 0);
+  await appendRows("Chapters", [
+    [
+      id,
+      input.course_id,
+      String(maxOrder + 1),
+      input.title,
+      input.topics,
+      input.resource_url,
+    ],
+  ]);
+  return id;
+}
+
+/** Update title/topics/resource; course_id + order are preserved (reordering
+ *  is a separate op). */
+export async function updateChapter(
+  id: string,
+  input: { title: string; topics: string; resource_url: string },
+): Promise<void> {
+  const chapters = await readTab<Chapter>("Chapters");
+  const idx = chapters.findIndex((c) => c.chapter_id === id);
+  if (idx < 0) return;
+  const cur = chapters[idx];
+  await updateValues(`Chapters!A${idx + 2}:F${idx + 2}`, [
+    [id, cur.course_id, cur.order, input.title, input.topics, input.resource_url],
+  ]);
+}
+
+/** Delete a chapter, then renumber its course's survivors 1..n (no gaps). */
+export async function deleteChapter(id: string): Promise<void> {
+  const chapters = await readTab<Chapter>("Chapters");
+  const target = chapters.find((c) => c.chapter_id === id);
+  if (!target) return;
+  const idx = chapters.findIndex((c) => c.chapter_id === id);
+  await deleteRows("Chapters", [idx + 2]);
+  // re-read (row numbers shift after the delete) and resequence the siblings
+  const remaining = await readTab<Chapter>("Chapters");
+  const updates = remaining
+    .map((c, i) => ({ ...c, row: i + 2 }))
+    .filter((c) => c.course_id === target.course_id)
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .map((c, i) => ({ row: c.row, was: c.order, now: String(i + 1) }))
+    .filter((u) => u.was !== u.now)
+    .map((u) => ({ range: `Chapters!C${u.row}`, values: [[u.now]] }));
+  await batchUpdateValues(updates);
+}
+
+/**
+ * Move a chapter one slot up/down within its course. Swaps positions among the
+ * sorted siblings, then renumbers them 1..n and writes only the rows whose order
+ * actually changed (one batch request). Renumbering also self-heals any gaps or
+ * duplicate order values left by manual sheet edits. No-op at the list edge.
+ */
+export async function moveChapter(id: string, dir: "up" | "down"): Promise<void> {
+  const chapters = await readTab<Chapter>("Chapters");
+  const target = chapters.find((c) => c.chapter_id === id);
+  if (!target) return;
+  const sibs = chapters
+    .map((c, i) => ({ id: c.chapter_id, order: c.order, row: i + 2 }))
+    .filter((c) => chapters[c.row - 2].course_id === target.course_id)
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  const pos = sibs.findIndex((c) => c.id === id);
+  const swap = dir === "up" ? pos - 1 : pos + 1;
+  if (pos < 0 || swap < 0 || swap >= sibs.length) return; // already at the edge
+  [sibs[pos], sibs[swap]] = [sibs[swap], sibs[pos]];
+  const updates = sibs
+    .map((c, i) => ({ row: c.row, was: c.order, now: String(i + 1) }))
+    .filter((u) => u.was !== u.now)
+    .map((u) => ({ range: `Chapters!C${u.row}`, values: [[u.now]] }));
+  await batchUpdateValues(updates);
+}
+
 // ============================================================================
 // Milestone E — reports / CSV exports (read-only, owner)
 // ============================================================================
