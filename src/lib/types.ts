@@ -90,6 +90,28 @@ export interface AttendanceRow {
   reason: string;
 }
 
+/** A syllabus, one per subject + level (e.g. "Class 10 Mathematics"). Batches
+ *  resolve to a course by matching their subject + level. */
+export interface Course {
+  course_id: string;
+  subject: string;
+  level: string; // e.g. "Class 10" — mirrors Batch.level
+  name: string;
+  description: string;
+  active: string; // "TRUE" | "FALSE"
+}
+
+/** An ordered chapter within a course; `topics` is a free-text list of
+ *  sub-topics, `resource_url` an optional NCERT/video link. */
+export interface Chapter {
+  chapter_id: string;
+  course_id: string;
+  order: string; // numeric string, 1-based
+  title: string;
+  topics: string;
+  resource_url: string;
+}
+
 export const ATTENDANCE_HEADER = [
   "log_id",
   "session_id",

@@ -35,6 +35,14 @@ function BatchesIcon({ className }: IconProps) {
     </svg>
   );
 }
+function CurriculumIcon({ className }: IconProps) {
+  return (
+    <svg {...svg(className)}>
+      <path d="M12 6.5C10.5 5 8 4.5 4 4.5V18c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2V4.5c-4 0-6.5.5-8 2Z" />
+      <path d="M12 6.5V20" />
+    </svg>
+  );
+}
 function TeachersIcon({ className }: IconProps) {
   return (
     <svg {...svg(className)}>
@@ -89,6 +97,7 @@ export default async function ManagePage() {
   const cards = [
     { href: "/manage/students", title: "Students", sub: `${c.studentsActive} active · ${c.studentsTotal} total`, icon: UsersIcon },
     { href: "/manage/batches", title: "Batches", sub: `${c.batchesActive} active · ${c.batchesTotal} total`, icon: BatchesIcon },
+    { href: "/manage/curriculum", title: "Curriculum", sub: "Syllabus & chapters by class", icon: CurriculumIcon },
     { href: "/manage/teachers", title: "Teachers", sub: `${c.teachersActive} active staff`, icon: TeachersIcon },
     { href: "/timetable", title: "Timetable", sub: `${c.rules} recurring rules`, icon: ClockIcon },
     { href: "/manage/rooms", title: "Rooms", sub: `${c.rooms} rooms`, icon: RoomsIcon },

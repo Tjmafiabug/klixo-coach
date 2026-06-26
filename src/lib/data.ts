@@ -17,6 +17,8 @@ import type {
   AttendanceRow,
   AttendanceStatus,
   TimetableRule,
+  Course,
+  Chapter,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -1819,6 +1821,88 @@ export async function updateCenterConfig(
     else appends.push([key, v]);
   }
   await Promise.all([batchUpdateValues(updates), appendRows("Config", appends)]);
+}
+
+// ============================================================================
+// Curriculum — courses (a syllabus per subject + level) and their chapters
+// ============================================================================
+
+/** Sort key for a class level like "Class 10" → 10 (non-numeric → last). */
+function levelRank(level: string): number {
+  const n = parseInt(level.replace(/\D+/g, ""), 10);
+  return Number.isFinite(n) ? n : 999;
+}
+
+export interface CourseView {
+  course_id: string;
+  subject: string;
+  level: string;
+  name: string;
+  description: string;
+  active: boolean;
+  chapters: number;
+}
+
+/** All courses with their chapter counts, ordered by level then subject. */
+export async function listCourses(): Promise<CourseView[]> {
+  const [courses, chapters] = await Promise.all([
+    readTab<Course>("Courses"),
+    readTab<Chapter>("Chapters"),
+  ]);
+  const count = new Map<string, number>();
+  for (const ch of chapters)
+    count.set(ch.course_id, (count.get(ch.course_id) ?? 0) + 1);
+  return courses
+    .map((c) => ({
+      course_id: c.course_id,
+      subject: c.subject,
+      level: c.level,
+      name: c.name,
+      description: c.description,
+      active: c.active === "TRUE",
+      chapters: count.get(c.course_id) ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.active) - Number(a.active) ||
+        levelRank(a.level) - levelRank(b.level) ||
+        a.subject.localeCompare(b.subject),
+    );
+}
+
+export interface CourseDetail {
+  course: Course;
+  chapters: Chapter[]; // ordered by `order`
+}
+
+export async function getCourseDetail(id: string): Promise<CourseDetail | null> {
+  const [courses, chapters] = await Promise.all([
+    readTab<Course>("Courses"),
+    readTab<Chapter>("Chapters"),
+  ]);
+  const course = courses.find((c) => c.course_id === id);
+  if (!course) return null;
+  const own = chapters
+    .filter((ch) => ch.course_id === id)
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  return { course, chapters: own };
+}
+
+/** The course a batch maps to, by matching subject + level (case-insensitive).
+ *  null when no syllabus exists for that subject/class yet. */
+export async function getCourseForBatch(batchId: string): Promise<Course | null> {
+  const [batches, courses] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Course>("Courses"),
+  ]);
+  const batch = batches.find((b) => b.batch_id === batchId);
+  if (!batch) return null;
+  const key = (s: string) => s.trim().toLowerCase();
+  return (
+    courses.find(
+      (c) => key(c.subject) === key(batch.subject) && key(c.level) === key(batch.level),
+    ) ?? null
+  );
 }
 
 // ============================================================================

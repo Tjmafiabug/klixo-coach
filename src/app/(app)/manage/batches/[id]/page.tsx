@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getBatchDetail, getFormOptions, effectiveToday } from "@/lib/data";
+import { getBatchDetail, getFormOptions, effectiveToday, getCourseForBatch } from "@/lib/data";
 import { saveBatch, toggleBatchActive, addEnrollment, endEnrollmentAction } from "@/lib/actions";
 import { Banner, fieldClass, ActiveChip } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ExportButton } from "@/components/ExportButton";
+import { RowChevron } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +35,11 @@ export default async function EditBatchPage({
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
-  const [detail, options, today, sp] = await Promise.all([
+  const [detail, options, today, course, sp] = await Promise.all([
     getBatchDetail(id),
     getFormOptions(),
     effectiveToday(),
+    getCourseForBatch(id),
     searchParams,
   ]);
   if (!detail) notFound();
@@ -191,6 +193,29 @@ export default async function EditBatchPage({
         ) : (
           <p className="mt-4 border-t border-border pt-4 text-sm text-muted-foreground">
             All active students are already enrolled here.
+          </p>
+        )}
+      </div>
+
+      {/* Curriculum */}
+      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+        <p className="text-sm font-semibold text-foreground">Curriculum</p>
+        {course ? (
+          <Link
+            href={`/manage/curriculum/${course.course_id}`}
+            className="group mt-2 flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5 transition-colors hover:border-brand/30"
+          >
+            <span className="min-w-0">
+              <span className="block font-medium text-foreground">{course.name}</span>
+              <span className="block text-xs text-muted-foreground">
+                View syllabus &amp; chapters
+              </span>
+            </span>
+            <RowChevron />
+          </Link>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            No syllabus mapped for {batch.subject} · {batch.level} yet.
           </p>
         )}
       </div>
