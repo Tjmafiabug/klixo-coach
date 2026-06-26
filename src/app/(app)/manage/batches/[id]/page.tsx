@@ -116,6 +116,23 @@ export default async function EditBatchPage({
             <input name="level" defaultValue={batch.level} className={fieldClass} />
           </label>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-sm font-medium">
+              Start date <span className="text-muted-foreground">(optional)</span>
+            </span>
+            <input type="date" name="startDate" defaultValue={batch.start_date || ""} className={fieldClass} />
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium">
+              Expected end <span className="text-muted-foreground">(optional)</span>
+            </span>
+            <input type="date" name="expectedEndDate" defaultValue={batch.expected_end_date || ""} className={fieldClass} aria-invalid={sp.error === "range" || undefined} />
+          </label>
+        </div>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          After the expected end date, recurring classes stop appearing on the calendar.
+        </p>
         <div className="mt-4">
           <SubmitButton>Save changes</SubmitButton>
         </div>

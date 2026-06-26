@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 function errorText(e?: string) {
   if (e === "missing") return "Enter a name, subject, teacher and room.";
   if (e === "fee") return "Fee must be a whole number.";
+  if (e === "range") return "Expected end date can't be before the start date.";
   return null;
 }
 
@@ -76,6 +77,23 @@ export default async function NewBatchPage({
             <input name="level" placeholder="Class 10" className={fieldClass} />
           </label>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-sm font-medium">
+              Start date <span className="text-muted-foreground">(optional)</span>
+            </span>
+            <input type="date" name="startDate" className={fieldClass} />
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium">
+              Expected end <span className="text-muted-foreground">(optional)</span>
+            </span>
+            <input type="date" name="expectedEndDate" className={fieldClass} aria-invalid={sp.error === "range" || undefined} />
+          </label>
+        </div>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          After the expected end date, recurring classes stop appearing on the calendar.
+        </p>
         <div className="mt-4">
           <SubmitButton pendingText="Adding…">Add batch</SubmitButton>
         </div>

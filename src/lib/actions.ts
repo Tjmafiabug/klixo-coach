@@ -482,17 +482,25 @@ export async function saveBatch(formData: FormData): Promise<void> {
   const roomId = String(formData.get("roomId") ?? "").trim();
   const fee = String(formData.get("fee") ?? "").trim();
   const level = String(formData.get("level") ?? "").trim();
+  const startDate = String(formData.get("startDate") ?? "").trim();
+  const expectedEndDate = String(formData.get("expectedEndDate") ?? "").trim();
   const back = id ? `/manage/batches/${id}` : "/manage/batches/new";
 
   if (!name || !subject || !teacherId || !roomId) redirect(`${back}?error=missing`);
   if (fee && !isInt(fee)) redirect(`${back}?error=fee`);
+  if (startDate && expectedEndDate && expectedEndDate < startDate) {
+    redirect(`${back}?error=range`);
+  }
   // N7: teacher/room must exist. A batch may keep an already-deactivated teacher
   // (the edit form surfaces it), so don't require the teacher to be active here.
   if (!(await refsExist({ teacherId, roomId, teacherMustBeActive: false }))) {
     redirect(`${back}?error=missing`);
   }
 
-  const payload = { name, subject, teacher_id: teacherId, room_id: roomId, fee, level };
+  const payload = {
+    name, subject, teacher_id: teacherId, room_id: roomId, fee, level,
+    start_date: startDate, expected_end_date: expectedEndDate,
+  };
   if (id) await updateBatch(id, payload);
   else await createBatch(payload);
   redirect("/manage/batches?saved=1");

@@ -66,6 +66,8 @@ export interface Batch {
   fee: string;
   level: string;
   active: string;
+  start_date: string; // YYYY-MM-DD, "" = open. Sheet col I (added via provision-batch-dates)
+  expected_end_date: string; // YYYY-MM-DD, "" = open-ended (no generation cap). Sheet col J
 }
 
 export interface Enrollment {

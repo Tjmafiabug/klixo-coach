@@ -543,22 +543,27 @@ export async function generateSessions(): Promise<{
   const today = await effectiveToday();
   const end = addDays(today, HORIZON_DAYS);
 
-  const [rules, sessions, holidaysTab, attendance] = await Promise.all([
+  const [rules, sessions, holidaysTab, attendance, batches] = await Promise.all([
     readTab<TimetableRule>("Timetable"),
     readTab<Session>("Sessions"),
     readTab<{ date: string; name: string }>("Holidays"),
     readTab<AttendanceRow>("Attendance"),
+    readTab<Batch>("Batches"),
   ]);
   const holidays = new Set(holidaysTab.map((h) => h.date));
   const hasAttendance = new Set(attendance.map((a) => a.session_id));
+  // Batch expected end date caps recurring generation (empty/missing = open-ended).
+  const batchEnd = new Map(batches.map((b) => [b.batch_id, b.expected_end_date ?? ""]));
 
   // what the rules want in the window
   const desired = new Set<string>();
   for (const r of rules) {
     const days = r.day_of_week.split(",").map((x) => x.trim());
+    const endDate = batchEnd.get(r.batch_id) ?? "";
     for (let d = today; d <= end; d = addDays(d, 1)) {
       if (holidays.has(d)) continue;
       if (!days.includes(dowOf(d))) continue;
+      if (endDate && d > endDate) break; // batch has ended — no more sessions
       if (!(r.effective_from <= d && (r.effective_to === "" || r.effective_to >= d)))
         continue;
       desired.add(`${r.slot_id}|${d}`);
@@ -1575,11 +1580,16 @@ export async function createBatch(input: {
   room_id: string;
   fee: string;
   level: string;
+  start_date: string;
+  expected_end_date: string;
 }): Promise<string> {
   const batches = await readTab<Batch>("Batches");
   const id = nextId(batches.map((b) => b.batch_id), "B", 3);
   await appendRows("Batches", [
-    [id, input.name, input.subject, input.teacher_id, input.room_id, input.fee, input.level, "TRUE"],
+    [
+      id, input.name, input.subject, input.teacher_id, input.room_id, input.fee,
+      input.level, "TRUE", input.start_date, input.expected_end_date,
+    ],
   ]);
   return id;
 }
@@ -1593,14 +1603,19 @@ export async function updateBatch(
     room_id: string;
     fee: string;
     level: string;
+    start_date: string;
+    expected_end_date: string;
   },
 ): Promise<void> {
   const batches = await readTab<Batch>("Batches");
   const idx = batches.findIndex((b) => b.batch_id === id);
   if (idx < 0) return;
   const cur = batches[idx];
-  await updateValues(`Batches!A${idx + 2}:H${idx + 2}`, [
-    [id, input.name, input.subject, input.teacher_id, input.room_id, input.fee, input.level, cur.active],
+  await updateValues(`Batches!A${idx + 2}:J${idx + 2}`, [
+    [
+      id, input.name, input.subject, input.teacher_id, input.room_id, input.fee,
+      input.level, cur.active, input.start_date, input.expected_end_date,
+    ],
   ]);
 }
 
