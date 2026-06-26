@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getTimetableView } from "@/lib/data";
 import { Reveal } from "@/components/motion";
 import { PageHeader, PrimaryLink } from "@/components/page";
-import { CalendarGrid } from "./CalendarGrid";
+import { TimetableView } from "./TimetableView";
 
 export const dynamic = "force-dynamic";
 

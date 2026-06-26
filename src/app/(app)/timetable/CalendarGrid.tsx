@@ -1,20 +1,36 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { TimetableRuleView } from "@/lib/data";
 
 /* Weekly calendar grid for recurring timetable rules.
    Days are columns, time is the vertical axis (1px per minute). Each rule paints
    a block on every day it runs; classes that overlap within a day are packed
-   side-by-side (Google-Calendar style). Server component — no client JS. */
+   side-by-side (Google-Calendar style). Empty space is bookable: clicking it
+   opens the new-rule form prefilled with that day/time (and the active scope). */
 
 const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const PPM = 1; // pixels per minute
 const SNAP = 60; // axis snaps to whole hours
+const BOOK_SNAP = 30; // click-to-book rounds to half hours
+const DEFAULT_LEN = 90; // default new-class length, minutes
 
 const toMin = (t: string) => {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + (m || 0);
 };
+
+const toHHMM = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/** Prefill carried into the new-rule form when an empty slot is clicked. */
+export interface BookPrefill {
+  batch?: string;
+  teacher?: string;
+  room?: string;
+}
 
 interface Block {
   rule: TimetableRuleView;
@@ -58,7 +74,15 @@ function packDay(events: { rule: TimetableRuleView; s: number; e: number }[]): B
   return out;
 }
 
-export function CalendarGrid({ rules }: { rules: TimetableRuleView[] }) {
+export function CalendarGrid({
+  rules,
+  prefill,
+}: {
+  rules: TimetableRuleView[];
+  prefill?: BookPrefill;
+}) {
+  const router = useRouter();
+
   if (rules.length === 0) {
     return (
       <div className="mt-6 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-16 text-center">
@@ -85,8 +109,14 @@ export function CalendarGrid({ rules }: { rules: TimetableRuleView[] }) {
     minM = Math.min(minM, toMin(r.start));
     maxM = Math.max(maxM, toMin(r.end));
   }
-  const rangeStart = Math.floor(minM / SNAP) * SNAP;
-  const rangeEnd = Math.ceil(maxM / SNAP) * SNAP;
+  // Operating-day window, NOT trimmed to the busy band — the empty hours are
+  // bookable capacity (open room/teacher time you can schedule into). Defaults
+  // to 08:00–21:00, expanded to fit any class outside it.
+  // ponytail: fixed window; make DAY_START/DAY_END config if a centre's hours differ.
+  const DAY_START = 8 * 60;
+  const DAY_END = 21 * 60;
+  const rangeStart = Math.min(Math.floor(minM / SNAP) * SNAP, DAY_START);
+  const rangeEnd = Math.max(Math.ceil(maxM / SNAP) * SNAP, DAY_END);
   const height = (rangeEnd - rangeStart) * PPM;
   const hours: number[] = [];
   for (let h = rangeStart; h <= rangeEnd; h += SNAP) hours.push(h);
@@ -98,6 +128,21 @@ export function CalendarGrid({ rules }: { rules: TimetableRuleView[] }) {
       .map((r) => ({ rule: r, s: toMin(r.start), e: toMin(r.end) }));
     return { day, blocks: packDay(events) };
   });
+
+  // Click an empty slot → new-rule form, prefilled with that day/time + scope.
+  function book(day: string, e: React.MouseEvent<HTMLDivElement>) {
+    const offsetY = e.clientY - e.currentTarget.getBoundingClientRect().top;
+    const raw = rangeStart + offsetY / PPM;
+    // Snap to the half hour, clamped so there's always room for a real slot.
+    const snapped = Math.round(raw / BOOK_SNAP) * BOOK_SNAP;
+    const start = Math.max(rangeStart, Math.min(snapped, rangeEnd - BOOK_SNAP));
+    const end = Math.min(start + DEFAULT_LEN, rangeEnd);
+    const qs = new URLSearchParams({ day, start: toHHMM(start), end: toHHMM(end) });
+    if (prefill?.batch) qs.set("batch", prefill.batch);
+    if (prefill?.teacher) qs.set("teacher", prefill.teacher);
+    if (prefill?.room) qs.set("room", prefill.room);
+    router.push(`/timetable/new?${qs}`);
+  }
 
   return (
     <div className="mt-5 overflow-x-auto scroll-slim rounded-2xl border border-border bg-surface shadow-[var(--shadow-card)]">
@@ -141,11 +186,18 @@ export function CalendarGrid({ rules }: { rules: TimetableRuleView[] }) {
             className="relative border-l border-border"
             style={{ height }}
           >
-            {/* hour gridlines */}
+            {/* click-to-book layer (back of stack); blocks paint above it */}
+            <div
+              onClick={(e) => book(day, e)}
+              title={`Add a class on ${day}`}
+              className="absolute inset-0 cursor-copy transition-colors hover:bg-accent/5"
+            />
+
+            {/* hour gridlines — non-interactive so empty clicks reach the layer */}
             {hours.slice(0, -1).map((h) => (
               <div
                 key={h}
-                className="absolute inset-x-0 border-t border-border/60"
+                className="pointer-events-none absolute inset-x-0 border-t border-border/60"
                 style={{ top: (h - rangeStart) * PPM }}
               />
             ))}

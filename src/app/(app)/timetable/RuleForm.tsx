@@ -26,6 +26,7 @@ export function RuleForm({
   options,
   today,
   rule,
+  initial,
 }: {
   options: FormOptions;
   today: string;
@@ -40,13 +41,24 @@ export function RuleForm({
     effective_from: string;
     effective_to: string;
   } | null;
+  /** Defaults for a new rule, e.g. from clicking an empty calendar slot. */
+  initial?: {
+    day?: string;
+    start?: string;
+    end?: string;
+    batchId?: string;
+    roomId?: string;
+    teacherId?: string;
+  };
 }) {
   const editing = !!rule;
   const first = options.batches[0];
-  const [batchId, setBatchId] = useState(rule?.batch_id ?? first?.id ?? "");
-  const [roomId, setRoomId] = useState(rule?.room_id ?? first?.roomId ?? "");
-  const [teacherId, setTeacherId] = useState(rule?.teacher_id ?? first?.teacherId ?? "");
-  const initialDays = new Set((rule?.day_of_week ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+  // A clicked batch carries its room/teacher; a clicked room/teacher overrides.
+  const initBatch = options.batches.find((b) => b.id === initial?.batchId) ?? first;
+  const [batchId, setBatchId] = useState(rule?.batch_id ?? initBatch?.id ?? "");
+  const [roomId, setRoomId] = useState(rule?.room_id ?? initial?.roomId ?? initBatch?.roomId ?? "");
+  const [teacherId, setTeacherId] = useState(rule?.teacher_id ?? initial?.teacherId ?? initBatch?.teacherId ?? "");
+  const initialDays = new Set((rule?.day_of_week ?? initial?.day ?? "").split(",").map((x) => x.trim()).filter(Boolean));
   const [days, setDays] = useState<Set<string>>(initialDays);
 
   function onBatch(id: string) {
@@ -103,11 +115,11 @@ export function RuleForm({
       <div className="mt-3 grid grid-cols-2 gap-3">
         <label className="block">
           <span className="text-sm font-medium">Start</span>
-          <input type="time" name="start" defaultValue={rule?.start ?? "16:00"} className={field} />
+          <input type="time" name="start" defaultValue={rule?.start ?? initial?.start ?? "16:00"} className={field} />
         </label>
         <label className="block">
           <span className="text-sm font-medium">End</span>
-          <input type="time" name="end" defaultValue={rule?.end ?? "17:30"} className={field} />
+          <input type="time" name="end" defaultValue={rule?.end ?? initial?.end ?? "17:30"} className={field} />
         </label>
       </div>
 
