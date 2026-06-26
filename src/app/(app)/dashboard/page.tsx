@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getOwnerDashboard } from "@/lib/data";
-import { PctBadge, StatusPill } from "@/components/ui";
+import { getOwnerDashboard, getCurriculumRollup } from "@/lib/data";
+import { PctBadge, StatusPill, OnTrackChip } from "@/components/ui";
 import { ExportButton } from "@/components/ExportButton";
 import { Reveal, CountUp } from "@/components/motion";
 import { AttendanceDonut } from "@/components/charts/AttendanceDonut";
@@ -17,7 +17,10 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
 
-  const { stats, health, integrity } = await getOwnerDashboard();
+  const [{ stats, health, integrity }, rollup] = await Promise.all([
+    getOwnerDashboard(),
+    getCurriculumRollup(),
+  ]);
   const blocking = health.clashes.filter((c) => c.blocking).length;
   const healthy = health.clashes.length === 0;
 
@@ -159,6 +162,59 @@ export default async function DashboardPage() {
           </Card>
         </Reveal>
       </div>
+
+      {/* ---- Curriculum progress (per-batch pacing rollup) ---- */}
+      <Reveal delay={0.05} className="mt-4 block">
+        <Card
+          title="Curriculum progress"
+          subtitle={
+            rollup.tracked === 0
+              ? "Map a syllabus to a batch to track pacing"
+              : rollup.termSet
+                ? `${rollup.behind} behind · ${rollup.onTrackCount} on track`
+                : `${rollup.tracked} batch${rollup.tracked === 1 ? "" : "es"} tracked · set term dates in Settings to pace`
+          }
+        >
+          {rollup.batches.length === 0 ? (
+            <Empty>No active batches.</Empty>
+          ) : (
+            <ul className="-mx-1 max-h-[26rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+              {rollup.batches.map((b) => (
+                <li key={b.batch_id} className="py-2.5">
+                  <Link
+                    href={`/manage/batches/${b.batch_id}/progress`}
+                    className="group block"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-foreground group-hover:text-brand">
+                        {b.name}
+                      </p>
+                      <OnTrackChip onTrack={b.onTrack} />
+                    </div>
+                    {b.hasCourse && b.total > 0 ? (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-brand"
+                            style={{ width: `${Math.round(b.pct * 100)}%` }}
+                          />
+                        </div>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {b.done}/{b.total}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {b.hasCourse ? "No chapters yet" : "No syllabus mapped"}
+                      </p>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </Reveal>
 
       {/* ---- Manual-mark audit ---- */}
       <Reveal delay={0.05} className="mt-4 block">

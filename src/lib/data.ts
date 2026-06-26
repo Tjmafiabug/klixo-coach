@@ -2242,6 +2242,84 @@ export async function setChapterProgress(
   }
 }
 
+export interface BatchRollupRow {
+  batch_id: string;
+  name: string;
+  hasCourse: boolean;
+  done: number;
+  total: number;
+  pct: number;
+  onTrack: boolean | null;
+}
+
+export interface CurriculumRollup {
+  batches: BatchRollupRow[]; // behind first, then lowest %, then name
+  behind: number; // onTrack === false
+  onTrackCount: number; // onTrack === true
+  tracked: number; // mapped to a course that has chapters
+  termSet: boolean;
+}
+
+/**
+ * Curriculum pacing across every active batch — one Sheets pass, computed with
+ * the same helpers as the batch page so the dashboard rollup and the per-batch
+ * view always agree. Rows are ordered worst-first (behind → un-verdicted → on
+ * track) so the dashboard surfaces problems at the top.
+ */
+export async function getCurriculumRollup(): Promise<CurriculumRollup> {
+  const [batches, courses, chapters, progress, cfgMap] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Course>("Courses"),
+    readTab<Chapter>("Chapters"),
+    readTab<BatchProgressRow>("BatchProgress"),
+    config(),
+  ]);
+  const today = todayFromCfg(cfgMap);
+  const term = {
+    start: cfgMap.get("term_start") ?? "",
+    end: cfgMap.get("term_end") ?? "",
+  };
+  const termSet =
+    /^\d{4}-\d{2}-\d{2}$/.test(term.start) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(term.end) &&
+    term.end > term.start;
+
+  const rank = (r: BatchRollupRow) =>
+    r.onTrack === false ? 0 : r.onTrack === null ? 1 : 2;
+
+  const rows: BatchRollupRow[] = batches
+    .filter((b) => b.active === "TRUE")
+    .map((b) => {
+      const course = findCourseForBatch(courses, b);
+      if (!course) {
+        return { batch_id: b.batch_id, name: b.name, hasCourse: false, done: 0, total: 0, pct: 0, onTrack: null };
+      }
+      const statusOf = progressMap(progress, b.batch_id);
+      const statuses = chapters
+        .filter((ch) => ch.course_id === course.course_id)
+        .map((ch) => statusOf.get(ch.chapter_id) ?? "pending");
+      const s = computeProgressSummary(statuses, term, today);
+      return {
+        batch_id: b.batch_id,
+        name: b.name,
+        hasCourse: true,
+        done: s.done,
+        total: s.total,
+        pct: s.pct,
+        onTrack: s.onTrack,
+      };
+    })
+    .sort((a, b) => rank(a) - rank(b) || a.pct - b.pct || a.name.localeCompare(b.name));
+
+  return {
+    batches: rows,
+    behind: rows.filter((r) => r.onTrack === false).length,
+    onTrackCount: rows.filter((r) => r.onTrack === true).length,
+    tracked: rows.filter((r) => r.hasCourse && r.total > 0).length,
+    termSet,
+  };
+}
+
 // ============================================================================
 // Milestone E — reports / CSV exports (read-only, owner)
 // ============================================================================
