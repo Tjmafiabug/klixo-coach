@@ -1,15 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { TimetableRuleView } from "@/lib/data";
+import type { SessionView, WeekDay } from "@/lib/data";
 import { CalendarGrid } from "./CalendarGrid";
 import { AgendaGrid } from "./AgendaGrid";
 
-/* Scope filter over the weekly schedule. Two layouts, each fitting its job:
-   - "All" → agenda (sorted chips per day): readable at any density, no empty
-     time wasted. Empty space in an all-view is noise, so we don't show a grid.
-   - Scoped to one batch/teacher/room → time-grid: now sparse, so the gaps mean
-     "this room/teacher is free here" and you can click to book. */
+/* Scope filter over the week's sessions. Two layouts, each fitting its job:
+   - "All" → agenda (sorted chips per day): readable at any density, no wasted
+     empty time.
+   - Scoped to one batch/teacher/room → time-grid: sparse, so gaps read as
+     "this room/teacher is free here". */
 
 const field =
   "h-10 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 cursor-pointer";
@@ -20,42 +20,42 @@ function uniq(pairs: [string, string][]): { id: string; name: string }[] {
   return [...m].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function TimetableView({ rules }: { rules: TimetableRuleView[] }) {
+export function TimetableView({
+  sessions,
+  dates,
+  today,
+}: {
+  sessions: SessionView[];
+  dates: WeekDay[];
+  today: string;
+}) {
   // "all" | "batch:<id>" | "teacher:<id>" | "room:<id>"
   const [scope, setScope] = useState("all");
 
   const opts = useMemo(
     () => ({
-      batches: uniq(rules.map((r) => [r.batch_id, r.batchName])),
-      teachers: uniq(rules.map((r) => [r.teacher_id, r.teacherName])),
-      rooms: uniq(rules.map((r) => [r.room_id, r.roomName])),
+      batches: uniq(sessions.map((s) => [s.batch_id, s.batchName])),
+      teachers: uniq(sessions.map((s) => [s.teacher_id, s.teacherName])),
+      rooms: uniq(sessions.map((s) => [s.room_id, s.roomName])),
     }),
-    [rules],
+    [sessions],
   );
 
-  // Stable, well-separated colour per batch (golden-angle), keyed off ALL rules
-  // so a batch keeps the same hue in both the agenda and the scoped grid.
+  // Stable, well-separated colour per batch (golden-angle), keyed off ALL the
+  // week's sessions so a batch keeps the same hue in both layouts.
   const hueOf = useMemo(() => {
-    const ids = [...new Set(rules.map((r) => r.batch_id))];
+    const ids = [...new Set(sessions.map((s) => s.batch_id))];
     const m = new Map(ids.map((id, i) => [id, Math.round((i * 137.508) % 360)]));
     return (id: string) => m.get(id) ?? 0;
-  }, [rules]);
+  }, [sessions]);
 
   const shown = useMemo(() => {
     const [type, id] = scope.split(":");
-    if (type === "batch") return rules.filter((r) => r.batch_id === id);
-    if (type === "teacher") return rules.filter((r) => r.teacher_id === id);
-    if (type === "room") return rules.filter((r) => r.room_id === id);
-    return rules;
-  }, [rules, scope]);
-
-  // Clicking an empty slot books into the active scope (batch/teacher/room).
-  const [type, id] = scope.split(":");
-  const prefill =
-    type === "batch" ? { batch: id }
-    : type === "teacher" ? { teacher: id }
-    : type === "room" ? { room: id }
-    : undefined;
+    if (type === "batch") return sessions.filter((s) => s.batch_id === id);
+    if (type === "teacher") return sessions.filter((s) => s.teacher_id === id);
+    if (type === "room") return sessions.filter((s) => s.room_id === id);
+    return sessions;
+  }, [sessions, scope]);
 
   return (
     <div>
@@ -87,14 +87,14 @@ export function TimetableView({ rules }: { rules: TimetableRuleView[] }) {
           </optgroup>
         </select>
         <span className="text-sm text-muted-foreground tabular-nums">
-          {shown.length} slot{shown.length === 1 ? "" : "s"}
+          {shown.length} class{shown.length === 1 ? "" : "es"}
         </span>
       </div>
 
       {scope === "all" ? (
-        <AgendaGrid rules={shown} hueOf={hueOf} />
+        <AgendaGrid sessions={shown} dates={dates} hueOf={hueOf} today={today} />
       ) : (
-        <CalendarGrid rules={shown} prefill={prefill} hueOf={hueOf} />
+        <CalendarGrid sessions={shown} dates={dates} hueOf={hueOf} today={today} />
       )}
     </div>
   );

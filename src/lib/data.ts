@@ -394,9 +394,85 @@ function dowOf(dateStr: string): string {
   return WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 }
 
-function addDays(dateStr: string, n: number): string {
+export function addDays(dateStr: string, n: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** Monday (YYYY-MM-DD) of the week containing `iso`. */
+export function weekStartOf(iso: string): string {
+  return addDays(iso, -WEEKDAYS.indexOf(dowOf(iso)));
+}
+
+export interface WeekDay {
+  weekday: string; // Mon..Sun
+  iso: string; // YYYY-MM-DD
+  dayNum: number; // 1..31
+}
+
+/** The seven dates of the week beginning at `weekStart` (a Monday), Mon→Sun. */
+export function weekDays(weekStart: string): WeekDay[] {
+  return WEEKDAYS.map((weekday, i) => {
+    const iso = addDays(weekStart, i);
+    return { weekday, iso, dayNum: Number(iso.slice(8, 10)) };
+  });
+}
+
+export interface SessionView {
+  session_id: string;
+  date: string;
+  weekday: string;
+  batch_id: string;
+  batchName: string;
+  room_id: string;
+  roomName: string;
+  teacher_id: string;
+  teacherName: string;
+  start: string;
+  end: string;
+  status: string; // scheduled | extra
+  source: string; // recurring | adhoc
+}
+
+/** Active sessions (scheduled + extra) for the week [weekStart, weekStart+6],
+ *  date-resolved — this is what the calendar renders (holidays show as gaps,
+ *  one-off extras show inline). ISO dates compare lexicographically. */
+export async function getWeekSessions(weekStart: string): Promise<SessionView[]> {
+  const weekEnd = addDays(weekStart, 6);
+  const [sessions, batches, rooms, teachers] = await Promise.all([
+    readTab<Session>("Sessions"),
+    readTab<Batch>("Batches"),
+    readTab<Room>("Rooms"),
+    readTab<Teacher>("Teachers"),
+  ]);
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const rName = new Map(rooms.map((r) => [r.room_id, r.name]));
+  const tName = new Map(teachers.map((t) => [t.teacher_id, t.name]));
+  return sessions
+    .filter(
+      (s) =>
+        s.date >= weekStart &&
+        s.date <= weekEnd &&
+        (s.status === "scheduled" || s.status === "extra"),
+    )
+    .map((s) => ({
+      session_id: s.session_id,
+      date: s.date,
+      weekday: dowOf(s.date),
+      batch_id: s.batch_id,
+      batchName: bName.get(s.batch_id) ?? s.batch_id,
+      room_id: s.room_id,
+      roomName: rName.get(s.room_id) ?? s.room_id,
+      teacher_id: s.teacher_id,
+      teacherName: tName.get(s.teacher_id) ?? s.teacher_id,
+      start: s.start,
+      end: s.end,
+      status: s.status,
+      source: s.source,
+    }))
+    .sort((a, b) => a.start.localeCompare(b.start));
 }
 
 export async function getRules(): Promise<TimetableRule[]> {
