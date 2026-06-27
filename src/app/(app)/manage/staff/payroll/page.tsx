@@ -31,9 +31,8 @@ export default async function PayrollPage({
       <div className="mt-4 flex justify-center">
         <MonthNav
           label={board.label}
-          prev={board.prev}
-          next={board.next}
-          hrefFor={(m) => `/manage/staff/payroll?month=${m}`}
+          prevHref={`/manage/staff/payroll?month=${board.prev}`}
+          nextHref={`/manage/staff/payroll?month=${board.next}`}
         />
       </div>
 

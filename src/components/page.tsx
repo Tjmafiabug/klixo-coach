@@ -116,30 +116,29 @@ export function SecondaryLink({
   );
 }
 
-/** Prev / label / next stepper for a period (day or month). `prev`/`next` are the
- *  param values; `hrefFor` builds the link for a given value. */
+/** Prev / label / next stepper for a period (day or month). Takes ready-built
+ *  hrefs — strings only, so it's safe to render from a Server Component (a
+ *  function prop would break RSC serialization on client navigation). */
 export function MonthNav({
   label,
-  prev,
-  next,
-  hrefFor,
+  prevHref,
+  nextHref,
 }: {
   label: string;
-  prev: string;
-  next: string;
-  hrefFor: (value: string) => string;
+  prevHref: string;
+  nextHref: string;
 }) {
   const btn =
     "flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
   return (
     <div className="flex items-center gap-2">
-      <Link href={hrefFor(prev)} className={btn} aria-label="Previous">
+      <Link href={prevHref} className={btn} aria-label="Previous">
         ←
       </Link>
       <span className="min-w-[9rem] text-center text-sm font-semibold tabular-nums text-foreground">
         {label}
       </span>
-      <Link href={hrefFor(next)} className={btn} aria-label="Next">
+      <Link href={nextHref} className={btn} aria-label="Next">
         →
       </Link>
     </div>
