@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getTeacher, otherActiveOwners } from "@/lib/data";
+import { getTeacher, otherActiveOwners, getTeacherBatches } from "@/lib/data";
 import { saveTeacher, resetTeacherPin, toggleTeacherActive } from "@/lib/actions";
 import { Banner, fieldClass, ActiveChip } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -27,9 +27,10 @@ export default async function EditTeacherPage({
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
-  const [teacher, others, sp] = await Promise.all([
+  const [teacher, others, batches, sp] = await Promise.all([
     getTeacher(id),
     otherActiveOwners(id),
+    getTeacherBatches(id),
     searchParams,
   ]);
   if (!teacher) notFound();
@@ -51,6 +52,37 @@ export default async function EditTeacherPage({
       <div className="mt-3 space-y-3">
         {err ? <Banner tone="danger">{err}</Banner> : null}
         {sp.pinset ? <Banner tone="success">PIN updated.</Banner> : null}
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+        <p className="text-sm font-semibold text-foreground">
+          Batches{" "}
+          <span className="font-normal text-muted-foreground">({batches.length})</span>
+        </p>
+        {batches.length === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">No batches assigned.</p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-1.5">
+            {batches.map((b) => (
+              <li key={b.batch_id}>
+                <Link
+                  href={`/manage/batches/${b.batch_id}`}
+                  className="group flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2 transition-colors hover:bg-muted"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground group-hover:text-brand">
+                      {b.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {[b.subject, b.level].filter(Boolean).join(" · ") || "—"}
+                    </p>
+                  </div>
+                  {!b.active ? <ActiveChip active={false} /> : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <form

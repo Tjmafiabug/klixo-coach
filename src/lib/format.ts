@@ -33,3 +33,23 @@ export function waLink(phone: string): string | null {
   if (!d) return null;
   return `https://wa.me/${d.length === 10 ? `91${d}` : d}`;
 }
+
+export interface Page<T> {
+  slice: T[];
+  page: number; // clamped 1-based current page
+  pages: number;
+  total: number;
+  start: number; // 0-based index of the first item on this page
+  size: number;
+}
+
+/** Slice an already-loaded array to one page. Clamps `page` into [1, pages] so a
+ *  junk/out-of-range ?page never errors. Render-only — the whole list is already
+ *  in memory (the Sheet tab is read in full), so this bounds the DOM, not reads. */
+export function paginate<T>(items: T[], page: number, size = 24): Page<T> {
+  const total = items.length;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const cur = Math.min(Math.max(1, page || 1), pages);
+  const start = (cur - 1) * size;
+  return { slice: items.slice(start, start + size), page: cur, pages, total, start, size };
+}

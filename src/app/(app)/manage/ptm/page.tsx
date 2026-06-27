@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getPtmBoard } from "@/lib/data";
-import { shortDate, waLink } from "@/lib/format";
+import { shortDate, waLink, paginate } from "@/lib/format";
+import { Pager } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,21 @@ const MODE_LABEL: Record<string, string> = {
   video: "Video call",
 };
 
-export default async function PtmPage() {
+const RECENT_PREVIEW = 8;
+
+export default async function PtmPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
-  const { upcoming, recent, due, intervalDays } = await getPtmBoard();
+  const [{ upcoming, recent, due, intervalDays }, sp] = await Promise.all([
+    getPtmBoard(),
+    searchParams,
+  ]);
+  const duePage = paginate(due, Number(sp.page), 12);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6">
@@ -38,7 +49,7 @@ export default async function PtmPage() {
             <p className="mt-3 text-sm text-muted-foreground">Everyone&apos;s been met recently — nothing flagged.</p>
           ) : (
             <ul className="mt-3 divide-y divide-border">
-              {due.map((d) => {
+              {duePage.slice.map((d) => {
                 const wa = waLink(d.parentPhone);
                 return (
                   <li key={d.id} className="flex items-center justify-between gap-3 py-2.5">
@@ -75,6 +86,14 @@ export default async function PtmPage() {
               })}
             </ul>
           )}
+          <Pager
+            page={duePage.page}
+            pages={duePage.pages}
+            total={duePage.total}
+            start={duePage.start}
+            size={duePage.size}
+            baseHref="/manage/ptm"
+          />
         </section>
 
         {/* Upcoming */}
@@ -124,7 +143,7 @@ export default async function PtmPage() {
             <p className="mt-3 text-sm text-muted-foreground">No meetings logged yet.</p>
           ) : (
             <ul className="mt-3 flex flex-col gap-1.5">
-              {recent.map((r) => (
+              {recent.slice(0, RECENT_PREVIEW).map((r) => (
                 <li key={r.ptm_id} className="rounded-xl border border-border px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
                     <Link

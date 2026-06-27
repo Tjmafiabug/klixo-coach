@@ -98,6 +98,82 @@ export function PrimaryLink({
   );
 }
 
+/** Native GET search box → navigates to `${action}?q=…` with no client JS.
+ *  Submitting drops other params (e.g. page), so a new search resets to page 1. */
+export function SearchBox({
+  action,
+  placeholder,
+  defaultValue,
+}: {
+  action: string;
+  placeholder: string;
+  defaultValue?: string;
+}) {
+  return (
+    <form action={action} method="get" className="w-full sm:w-64" role="search">
+      <input
+        type="search"
+        name="q"
+        defaultValue={defaultValue}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+      />
+    </form>
+  );
+}
+
+/** Server-rendered prev/next pager. `params` (e.g. q, period) are preserved in
+ *  the page links. Renders nothing when there's only one page. */
+export function Pager({
+  page,
+  pages,
+  total,
+  start,
+  size,
+  baseHref,
+  params = {},
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  start: number;
+  size: number;
+  baseHref: string;
+  params?: Record<string, string | undefined>;
+}) {
+  if (pages <= 1) return null;
+  const link = (p: number) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
+    qs.set("page", String(p));
+    return `${baseHref}?${qs.toString()}`;
+  };
+  const cls =
+    "rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors active:scale-[0.98]";
+  return (
+    <nav className="mt-6 flex items-center justify-between gap-3" aria-label="Pagination">
+      {page > 1 ? (
+        <Link href={link(page - 1)} className={`${cls} text-foreground hover:bg-muted`}>
+          ‹ Prev
+        </Link>
+      ) : (
+        <span className={`${cls} cursor-not-allowed text-muted-foreground/40`}>‹ Prev</span>
+      )}
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {start + 1}–{Math.min(start + size, total)} of {total}
+      </span>
+      {page < pages ? (
+        <Link href={link(page + 1)} className={`${cls} text-foreground hover:bg-muted`}>
+          Next ›
+        </Link>
+      ) : (
+        <span className={`${cls} cursor-not-allowed text-muted-foreground/40`}>Next ›</span>
+      )}
+    </nav>
+  );
+}
+
 /** Chevron affordance for clickable list rows. */
 export function RowChevron() {
   return (

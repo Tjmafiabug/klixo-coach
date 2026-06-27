@@ -1493,6 +1493,8 @@ export interface TeacherView {
   hasPin: boolean;
   /** active batches this teacher is assigned to (block deactivation). */
   batchCount: number;
+  /** names of those active batches, sorted — shown on the card. */
+  batchNames: string[];
 }
 
 export async function listTeachers(): Promise<TeacherView[]> {
@@ -1500,21 +1502,28 @@ export async function listTeachers(): Promise<TeacherView[]> {
     readTab<Teacher>("Teachers"),
     readTab<Batch>("Batches"),
   ]);
-  const bCount = new Map<string, number>();
+  const bNames = new Map<string, string[]>();
   for (const b of batches)
-    if (b.active === "TRUE")
-      bCount.set(b.teacher_id, (bCount.get(b.teacher_id) ?? 0) + 1);
+    if (b.active === "TRUE") {
+      const arr = bNames.get(b.teacher_id) ?? [];
+      arr.push(b.name);
+      bNames.set(b.teacher_id, arr);
+    }
   return teachers
-    .map((t) => ({
-      teacher_id: t.teacher_id,
-      name: t.name,
-      phone: t.phone,
-      role: t.role === "owner" ? ("owner" as const) : ("teacher" as const),
-      subjects: t.subjects,
-      active: t.active === "TRUE",
-      hasPin: !!t.pin_hash && !t.pin_hash.startsWith("<"),
-      batchCount: bCount.get(t.teacher_id) ?? 0,
-    }))
+    .map((t) => {
+      const names = (bNames.get(t.teacher_id) ?? []).sort((a, b) => a.localeCompare(b));
+      return {
+        teacher_id: t.teacher_id,
+        name: t.name,
+        phone: t.phone,
+        role: t.role === "owner" ? ("owner" as const) : ("teacher" as const),
+        subjects: t.subjects,
+        active: t.active === "TRUE",
+        hasPin: !!t.pin_hash && !t.pin_hash.startsWith("<"),
+        batchCount: names.length,
+        batchNames: names,
+      };
+    })
     .sort(
       (a, b) =>
         Number(b.active) - Number(a.active) || a.name.localeCompare(b.name),
@@ -1524,6 +1533,30 @@ export async function listTeachers(): Promise<TeacherView[]> {
 export async function getTeacher(id: string): Promise<Teacher | null> {
   const teachers = await readTab<Teacher>("Teachers");
   return teachers.find((t) => t.teacher_id === id) ?? null;
+}
+
+export interface TeacherBatch {
+  batch_id: string;
+  name: string;
+  subject: string;
+  level: string;
+  active: boolean;
+}
+
+/** Batches assigned to a teacher (active first, then by name) — for the teacher
+ *  profile page. Reads Batches only (1 read). */
+export async function getTeacherBatches(teacherId: string): Promise<TeacherBatch[]> {
+  const batches = await readTab<Batch>("Batches");
+  return batches
+    .filter((b) => b.teacher_id === teacherId)
+    .map((b) => ({
+      batch_id: b.batch_id,
+      name: b.name,
+      subject: b.subject,
+      level: b.level,
+      active: b.active === "TRUE",
+    }))
+    .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
 }
 
 /** Is `phone` already used by another teacher? (login keys on phone — keep unique.) */
@@ -3717,9 +3750,11 @@ export interface PtmBoard {
  *  meeting gap, low attendance, an absence streak, or fees due. flags = number
  *  of distinct signals; worst (most flags, then longest gap) first. Students who
  *  already have an upcoming scheduled meeting are excluded (don't nag the booked).
- *  Exported for the throwaway self-check. */
+ *  "never met" only fires once a student has been enrolled longer than the
+ *  interval — a brand-new joiner isn't overdue for a meeting, so the launch list
+ *  isn't every student. Exported for the throwaway self-check. */
 export function rankPtmDue(input: {
-  students: { id: string; name: string; parentPhone: string }[];
+  students: { id: string; name: string; parentPhone: string; joinDate: string }[];
   lastMetById: Map<string, string>;
   defaulterPctById: Map<string, number>; // fraction 0..1, only below-threshold students
   streakById: Map<string, number>;
@@ -3737,8 +3772,13 @@ export function rankPtmDue(input: {
 
     let meetingFlag = false;
     if (lastMet === "") {
-      meetingFlag = true;
-      reasons.push("never met");
+      // never met — but only "overdue" once they've been around longer than the
+      // cadence; a fresh joiner shouldn't flag (blank join_date → treat as old).
+      const tenure = s.joinDate ? daysBetween(s.joinDate, input.today) : Number.MAX_SAFE_INTEGER;
+      if (tenure > input.intervalDays) {
+        meetingFlag = true;
+        reasons.push("never met");
+      }
     } else if (gapDays !== null && gapDays > input.intervalDays) {
       meetingFlag = true;
       reasons.push(`no meeting in ${gapDays}d`);
@@ -3761,13 +3801,12 @@ export function rankPtmDue(input: {
     if (flags === 0) continue;
     due.push({ id: s.id, name: s.name, parentPhone: s.parentPhone, reasons, flags, lastMet, gapDays });
   }
-  return due
-    .sort((a, b) => {
-      const gapA = a.gapDays === null ? Number.MAX_SAFE_INTEGER : a.gapDays;
-      const gapB = b.gapDays === null ? Number.MAX_SAFE_INTEGER : b.gapDays;
-      return b.flags - a.flags || gapB - gapA || a.name.localeCompare(b.name);
-    })
-    .slice(0, 50);
+  // worst first; full list (the hub paginates the render).
+  return due.sort((a, b) => {
+    const gapA = a.gapDays === null ? Number.MAX_SAFE_INTEGER : a.gapDays;
+    const gapB = b.gapDays === null ? Number.MAX_SAFE_INTEGER : b.gapDays;
+    return b.flags - a.flags || gapB - gapA || a.name.localeCompare(b.name);
+  });
 }
 
 /** PTM hub data: upcoming (scheduled, soonest first — overdue floats up), recent
@@ -3843,7 +3882,7 @@ export async function getPtmBoard(): Promise<PtmBoard> {
   const due = rankPtmDue({
     students: students
       .filter((s) => s.status === "active")
-      .map((s) => ({ id: s.student_id, name: s.name, parentPhone: s.parent_phone })),
+      .map((s) => ({ id: s.student_id, name: s.name, parentPhone: s.parent_phone, joinDate: s.join_date })),
     lastMetById,
     defaulterPctById,
     streakById,

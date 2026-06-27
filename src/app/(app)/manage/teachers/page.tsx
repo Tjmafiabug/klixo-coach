@@ -50,9 +50,11 @@ export default async function TeachersPage({
                     {!t.active ? <ActiveChip active={false} /> : null}
                   </div>
                   <p className="mt-0.5 truncate text-sm text-muted-foreground tabular-nums">
-                    {t.phone} · {t.subjects || "—"} · {t.batchCount} batch
-                    {t.batchCount === 1 ? "" : "es"}
+                    {t.phone} · {t.subjects || "—"}
                     {t.hasPin ? "" : " · no PIN"}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {t.batchNames.length > 0 ? t.batchNames.join(", ") : "No batches"}
                   </p>
                 </div>
                 <RowChevron />
