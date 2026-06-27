@@ -1012,12 +1012,7 @@ function ruleRow(slotId: string, r: RuleInput): string[] {
 
 export async function createRule(r: RuleInput): Promise<string> {
   const rules = await readTab<TimetableRule>("Timetable");
-  let max = 0;
-  for (const x of rules) {
-    const n = parseInt(x.slot_id.replace(/\D/g, ""), 10);
-    if (!Number.isNaN(n) && n > max) max = n;
-  }
-  const slotId = `TT${String(max + 1).padStart(3, "0")}`;
+  const slotId = nextId(rules.map((x) => x.slot_id), "TT", 3);
   await appendRows("Timetable", [ruleRow(slotId, r)]);
   await generateSessions(); // create its future sessions
   return slotId;
@@ -3647,39 +3642,6 @@ export function monthOverlaps(e: Enrollment, period: string): boolean {
   );
 }
 
-// ---------------- Fees: positional row builders ----------------
-
-/** Build the positional string array for one FeeChargeRow (A..I column order).
- *  Exported so write helpers in the UI layer can reuse the same column order. */
-export function feeChargeRow(c: FeeChargeRow): string[] {
-  return [
-    c.charge_id,
-    c.student_id,
-    c.batch_id,
-    c.period,
-    c.kind,
-    c.amount,
-    c.note,
-    c.status,
-    c.created,
-  ];
-}
-
-/** Build the positional string array for one PaymentRow (A..H column order).
- *  Exported so write helpers in the UI layer can reuse the same column order. */
-export function paymentRow(p: PaymentRow): string[] {
-  return [
-    p.payment_id,
-    p.student_id,
-    p.amount,
-    p.date,
-    p.method,
-    p.note,
-    p.timestamp,
-    p.status,
-  ];
-}
-
 // ---------------- Fees: per-student aggregation helpers ----------------
 
 /** outstanding = Σ active-charge.amount(signed) − Σ active-payment.amount.
@@ -4424,7 +4386,7 @@ export async function getPtmBoard(): Promise<PtmBoard> {
       safeReadTab<FeeChargeRow>("FeeCharges"),
       safeReadTab<PaymentRow>("Payments"),
     ]);
-  const today = cfg.get("demo_today")?.trim() || centerToday();
+  const today = todayFromCfg(cfg);
   const stats = await getOwnerStats({ attendance, students, batches, teachers, cfg });
 
   const nameById = new Map(students.map((s) => [s.student_id, s.name]));

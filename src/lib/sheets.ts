@@ -1,4 +1,4 @@
-import { google } from "googleapis";
+import { sheets as sheetsApi, auth as googleAuth } from "@googleapis/sheets";
 
 /**
  * Google Sheets is the invisible backend (one Sheet per centre).
@@ -32,15 +32,15 @@ export function currentCenter(): CenterContext {
 
 /** Sheets client cached per service account, so a future multi-tenant request
  *  never reuses another centre's authenticated client. */
-const clientCache = new Map<string, ReturnType<typeof google.sheets>>();
+const clientCache = new Map<string, ReturnType<typeof sheetsApi>>();
 
 function client() {
   const { serviceAccountJson } = currentCenter();
   const hit = clientCache.get(serviceAccountJson);
   if (hit) return hit;
   const credentials = JSON.parse(serviceAccountJson);
-  const auth = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
-  const c = google.sheets({ version: "v4", auth });
+  const auth = new googleAuth.GoogleAuth({ credentials, scopes: SCOPES });
+  const c = sheetsApi({ version: "v4", auth });
   clientCache.set(serviceAccountJson, c);
   return c;
 }

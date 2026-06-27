@@ -353,7 +353,6 @@ const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isPhone = (s: string) => /^\d{6,15}$/.test(s);
 const isPin = (s: string) => /^\d{4,6}$/.test(s);
 const isInt = (s: string) => /^\d+$/.test(s);
-const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s);
 
 /** Only allow redirecting back to an internal /manage path (no open redirect). */
 function safeBack(v: FormDataEntryValue | null, fallback: string): string {
@@ -774,7 +773,7 @@ export async function saveChapter(formData: FormData): Promise<void> {
     ? `/manage/curriculum/${courseId}/chapters/${chapterId}`
     : `/manage/curriculum/${courseId}`;
   if (!title) redirect(`${back}?error=missing`);
-  if (resourceUrl && !isHttpUrl(resourceUrl)) redirect(`${back}?error=url`);
+  if (resourceUrl && !/^https?:\/\/\S+$/i.test(resourceUrl)) redirect(`${back}?error=url`);
 
   if (chapterId)
     await updateChapter(chapterId, { title, topics, resource_url: resourceUrl });
