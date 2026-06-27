@@ -31,6 +31,9 @@ import type {
   StaffAttendanceStatus,
   StaffTaskRow,
   StaffTaskStatus,
+  SalaryAdjustmentRow,
+  SalaryAdjustmentKind,
+  SalaryPaymentRow,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -1754,10 +1757,10 @@ export async function getStaffAttendanceBoard(dateArg: string): Promise<StaffAtt
         saved: saved && isStaffAttendanceStatus(saved) ? saved : null,
       };
     })
-    .sort(
-      (a, b) =>
-        a.staff_type.localeCompare(b.staff_type) || a.name.localeCompare(b.name),
-    );
+    .sort((a, b) => {
+      if (a.staff_type !== b.staff_type) return a.staff_type === "teaching" ? -1 : 1; // teaching first
+      return a.name.localeCompare(b.name);
+    });
 
   const summary: Record<StaffAttendanceStatus | "unmarked", number> = {
     present: 0,
@@ -1843,8 +1846,7 @@ export async function getStaffAttendanceSummary(
   monthArg?: string,
 ): Promise<StaffAttendanceSummary> {
   const today = await effectiveToday();
-  const month =
-    monthArg && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthArg) ? monthArg : today.slice(0, 7);
+  const month = validMonth(monthArg ?? "", today);
   const att = await safeReadTab<StaffAttendanceRow>("StaffAttendance");
   const byDate = new Map<string, StaffAttendanceRow>();
   for (const a of att)
@@ -2006,7 +2008,212 @@ export async function getStaffOpenTasks(staffId: string): Promise<StaffTaskRow[]
       (t) =>
         t.staff_id === staffId && (!isStaffTaskStatus(t.status) || t.status === "open"),
     )
-    .sort((a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999"));
+    .sort((a, b) => (a.due_date || "9999-99-99").localeCompare(b.due_date || "9999-99-99"));
+}
+
+// ---------------- C4d Payroll (salary adjustments + payments) ----------------
+
+const intOf = (v: string): number => {
+  // tolerate thousands separators / stray spaces in legacy cells ("20,000" → 20000);
+  // keep a leading minus for signed adjustment amounts
+  const n = parseInt(String(v).replace(/[,\s]/g, ""), 10);
+  return Number.isNaN(n) ? 0 : n;
+};
+
+/** Latest mark wins is N/A here; payroll just sums active rows for a period. */
+export interface PayrollRow {
+  staff_id: string;
+  name: string;
+  staff_type: "teaching" | "non_teaching";
+  base: number; // Staff.monthly_salary
+  adjustments: number; // net signed (active)
+  paid: number; // Σ active payments
+  due: number; // base + adjustments − paid
+  status: "due" | "settled" | "credit";
+}
+
+export interface PayrollBoard {
+  month: string;
+  label: string;
+  prev: string;
+  next: string;
+  rows: PayrollRow[];
+  totals: { base: number; adjustments: number; paid: number; due: number };
+}
+
+const validMonth = (m: string, today: string) =>
+  /^\d{4}-(0[1-9]|1[0-2])$/.test(m) ? m : today.slice(0, 7);
+
+/** Payroll board for a month: every active staffer's base/adjustments/paid/due,
+ *  most-owed first, plus totals. 4 reads (Config, Staff, 2 ledgers via safeReadTab). */
+export async function getPayrollBoard(monthArg: string): Promise<PayrollBoard> {
+  const today = await effectiveToday();
+  const month = validMonth(monthArg, today);
+  const mr = monthRange(month);
+  const [staff, adjs, pays] = await Promise.all([
+    readTab<Staff>("Staff"),
+    safeReadTab<SalaryAdjustmentRow>("SalaryAdjustments"),
+    safeReadTab<SalaryPaymentRow>("SalaryPayments"),
+  ]);
+
+  const adjByStaff = new Map<string, number>();
+  for (const a of adjs)
+    if (a.period === month && a.status === "active")
+      adjByStaff.set(a.staff_id, (adjByStaff.get(a.staff_id) ?? 0) + intOf(a.amount));
+  const paidByStaff = new Map<string, number>();
+  for (const p of pays)
+    if (p.period === month && p.status === "active")
+      paidByStaff.set(p.staff_id, (paidByStaff.get(p.staff_id) ?? 0) + intOf(p.amount));
+
+  const rows: PayrollRow[] = staff
+    .filter((s) => s.active === "TRUE")
+    .map((s) => {
+      const base = intOf(s.monthly_salary);
+      const adjustments = adjByStaff.get(s.teacher_id) ?? 0;
+      const paid = paidByStaff.get(s.teacher_id) ?? 0;
+      const due = base + adjustments - paid;
+      return {
+        staff_id: s.teacher_id,
+        name: s.name,
+        staff_type: staffTypeOf(s),
+        base,
+        adjustments,
+        paid,
+        due,
+        status: ledgerStatus(due),
+      };
+    })
+    .sort((a, b) => b.due - a.due || a.name.localeCompare(b.name));
+
+  const totals = rows.reduce(
+    (t, r) => ({
+      base: t.base + r.base,
+      adjustments: t.adjustments + r.adjustments,
+      paid: t.paid + r.paid,
+      due: t.due + Math.max(0, r.due), // credits don't offset what's owed
+    }),
+    { base: 0, adjustments: 0, paid: 0, due: 0 },
+  );
+
+  return { month, label: mr.label, prev: mr.prev, next: mr.next, rows, totals };
+}
+
+export interface StaffPayrollDetail {
+  staff: { id: string; name: string; staff_type: "teaching" | "non_teaching" };
+  month: string;
+  label: string;
+  prev: string;
+  next: string;
+  base: number;
+  adjustments: SalaryAdjustmentRow[]; // active first, newest-created first
+  payments: SalaryPaymentRow[]; // active first, newest-timestamp first
+  adjTotal: number;
+  paid: number;
+  due: number;
+  status: "due" | "settled" | "credit";
+}
+
+/** One staffer's payroll ledger for a month — for the detail page. 4 reads. */
+export async function getStaffPayroll(
+  staffId: string,
+  monthArg: string,
+): Promise<StaffPayrollDetail | null> {
+  const today = await effectiveToday();
+  const month = validMonth(monthArg, today);
+  const mr = monthRange(month);
+  const [staffList, adjs, pays] = await Promise.all([
+    readTab<Staff>("Staff"),
+    safeReadTab<SalaryAdjustmentRow>("SalaryAdjustments"),
+    safeReadTab<SalaryPaymentRow>("SalaryPayments"),
+  ]);
+  const s = staffList.find((x) => x.teacher_id === staffId);
+  if (!s) return null;
+
+  const rank = (st: string) => (st === "active" ? 0 : 1);
+  const adjustments = adjs
+    .filter((a) => a.staff_id === staffId && a.period === month)
+    .sort((a, b) => rank(a.status) - rank(b.status) || b.created.localeCompare(a.created));
+  const payments = pays
+    .filter((p) => p.staff_id === staffId && p.period === month)
+    .sort((a, b) => rank(a.status) - rank(b.status) || b.timestamp.localeCompare(a.timestamp));
+
+  const base = intOf(s.monthly_salary);
+  const adjTotal = adjustments
+    .filter((a) => a.status === "active")
+    .reduce((t, a) => t + intOf(a.amount), 0);
+  const paid = payments
+    .filter((p) => p.status === "active")
+    .reduce((t, p) => t + intOf(p.amount), 0);
+  const due = base + adjTotal - paid;
+
+  return {
+    staff: { id: s.teacher_id, name: s.name, staff_type: staffTypeOf(s) },
+    month,
+    label: mr.label,
+    prev: mr.prev,
+    next: mr.next,
+    base,
+    adjustments,
+    payments,
+    adjTotal,
+    paid,
+    due,
+    status: ledgerStatus(due),
+  };
+}
+
+export async function addSalaryAdjustment(input: {
+  staffId: string;
+  period: string;
+  kind: SalaryAdjustmentKind;
+  amount: number; // positive int from form
+  note: string;
+}): Promise<void> {
+  const signed =
+    input.kind === "deduction" ? -Math.abs(input.amount) : Math.abs(input.amount);
+  const adjs = await safeReadTab<SalaryAdjustmentRow>("SalaryAdjustments");
+  const id = nextId(adjs.map((a) => a.adj_id), "SADJ", 4);
+  const created = await effectiveToday();
+  await appendRows("SalaryAdjustments", [
+    [id, input.staffId, input.period, input.kind, String(signed), input.note, "active", created],
+  ]);
+}
+
+export async function voidSalaryAdjustment(adjId: string): Promise<void> {
+  const adjs = await safeReadTab<SalaryAdjustmentRow>("SalaryAdjustments");
+  const idx = adjs.findIndex((a) => a.adj_id === adjId);
+  if (idx >= 0) await updateValues(`SalaryAdjustments!G${idx + 2}`, [["void"]]);
+}
+
+export async function recordSalaryPayment(input: {
+  staffId: string;
+  period: string;
+  amount: number;
+  date: string;
+  method: FeeMethod;
+  note: string;
+}): Promise<void> {
+  const pays = await safeReadTab<SalaryPaymentRow>("SalaryPayments");
+  const id = nextId(pays.map((p) => p.pay_id), "SPAY", 4);
+  await appendRows("SalaryPayments", [
+    [
+      id,
+      input.staffId,
+      input.period,
+      String(input.amount),
+      input.date,
+      input.method,
+      input.note,
+      centerTimestamp(),
+      "active",
+    ],
+  ]);
+}
+
+export async function voidSalaryPayment(payId: string): Promise<void> {
+  const pays = await safeReadTab<SalaryPaymentRow>("SalaryPayments");
+  const idx = pays.findIndex((p) => p.pay_id === payId);
+  if (idx >= 0) await updateValues(`SalaryPayments!I${idx + 2}`, [["void"]]);
 }
 
 // ---------------- C1 Students ----------------

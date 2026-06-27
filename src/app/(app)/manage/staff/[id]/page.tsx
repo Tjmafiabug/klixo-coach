@@ -29,7 +29,7 @@ export default async function EditStaffPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; pinset?: string }>;
+  searchParams: Promise<{ error?: string; pinset?: string; type?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
@@ -44,7 +44,10 @@ export default async function EditStaffPage({
     searchParams,
   ]);
   if (!staff) notFound();
-  const teaching = staffTypeOf(staff) === "teaching";
+  // ?type lets the owner switch a record's type; defaults to the saved type
+  const teaching =
+    sp.type === "teaching" ? true : sp.type === "non_teaching" ? false : staffTypeOf(staff) === "teaching";
+  const typeChanged = teaching !== (staffTypeOf(staff) === "teaching");
   const active = staff.active === "TRUE";
   const isLastOwner = staff.role === "owner" && others === 0;
   const err = errorText(sp.error);
@@ -70,6 +73,33 @@ export default async function EditStaffPage({
       <div className="mt-3 space-y-3">
         {err ? <Banner tone="danger">{err}</Banner> : null}
         {sp.pinset ? <Banner tone="success">PIN updated.</Banner> : null}
+      </div>
+
+      {/* type toggle — switch teaching/non-teaching, then Save changes to apply */}
+      <div className="mt-3">
+        <div className="flex gap-2">
+          {(["teaching", "non_teaching"] as const).map((t) => {
+            const on = teaching === (t === "teaching");
+            return (
+              <Link
+                key={t}
+                href={`/manage/staff/${id}?type=${t}`}
+                className={`flex-1 rounded-lg border px-3 py-2 text-center text-sm font-semibold transition-colors ${
+                  on
+                    ? "border-brand/30 bg-brand/10 text-brand"
+                    : "border-border bg-surface text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {t === "teaching" ? "Teaching" : "Non-teaching"}
+              </Link>
+            );
+          })}
+        </div>
+        {typeChanged ? (
+          <p className="mt-1 text-xs text-warning">
+            Switching type — fields below changed. <strong>Save changes</strong> to apply.
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">

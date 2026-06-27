@@ -26,6 +26,11 @@ export function shortDate(iso: string): string {
   });
 }
 
+/** First letters of the first two words, uppercased — for initials/avatar badges. */
+export function initials(name: string): string {
+  return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+}
+
 /** ISO date "YYYY-MM-DD" → "Sat, 26 Jun" (UTC, locale-stable). */
 export function dayLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);

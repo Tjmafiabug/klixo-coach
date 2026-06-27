@@ -36,6 +36,10 @@ import {
   createStaffTask,
   setStaffTaskStatus,
   isStaffTaskStatus,
+  recordSalaryPayment,
+  addSalaryAdjustment,
+  voidSalaryPayment,
+  voidSalaryAdjustment,
   createStudent,
   updateStudent,
   setStudentActive,
@@ -416,11 +420,9 @@ export async function saveStaff(formData: FormData): Promise<void> {
       ? "owner"
       : "teacher"
     : "";
-  const subjects = teaching ? String(formData.get("subjects") ?? "").trim() : "";
-  const designation = teaching ? "" : String(formData.get("designation") ?? "").trim();
-  const department = teaching ? "" : String(formData.get("department") ?? "").trim();
   const join_date = String(formData.get("join_date") ?? "").trim();
-  const monthly_salary = String(formData.get("monthly_salary") ?? "").trim();
+  // salary is whole rupees — strip separators/junk so "20,000" stores as "20000"
+  const monthly_salary = String(formData.get("monthly_salary") ?? "").replace(/[^\d]/g, "");
   const notes = String(formData.get("notes") ?? "").trim();
   const pin = String(formData.get("pin") ?? "").trim();
   const back = id ? `/manage/staff/${id}` : `/manage/staff/new?type=${staff_type}`;
@@ -431,6 +433,18 @@ export async function saveStaff(formData: FormData): Promise<void> {
   if (teaching && !isPhone(phone)) redirect(`${back}?error=missing`);
   if (phone && !isPhone(phone)) redirect(`${back}?error=missing`);
   if (await staffPhoneTaken(phone, id || undefined)) redirect(`${back}?error=phone`);
+
+  // Preserve the inactive type's columns on edit so an unrelated save never wipes
+  // data the type-specific form doesn't render (teaching keeps any stored
+  // designation/department; non-teaching keeps subjects).
+  const cur = id ? await getStaff(id) : null;
+  const subjects = teaching ? String(formData.get("subjects") ?? "").trim() : cur?.subjects ?? "";
+  const designation = !teaching
+    ? String(formData.get("designation") ?? "").trim()
+    : cur?.designation ?? "";
+  const department = !teaching
+    ? String(formData.get("department") ?? "").trim()
+    : cur?.department ?? "";
 
   const input: StaffInput = {
     name,
@@ -447,7 +461,6 @@ export async function saveStaff(formData: FormData): Promise<void> {
 
   if (id) {
     // demoting/retyping the last active owner would lock the centre out
-    const cur = await getStaff(id);
     if (cur?.role === "owner" && role !== "owner" && (await otherActiveOwners(id)) === 0) {
       redirect(`${back}?error=lastowner`);
     }
@@ -518,6 +531,47 @@ export async function updateStaffTaskStatus(formData: FormData): Promise<void> {
   // return to the filtered view the action was triggered from
   const back = String(formData.get("back") ?? "").trim();
   redirect(back.startsWith("/manage/staff/tasks") ? back : "/manage/staff/tasks");
+}
+
+export async function paySalary(formData: FormData): Promise<void> {
+  await requireOwner();
+  const staffId = String(formData.get("staffId") ?? "").trim();
+  const period = String(formData.get("period") ?? "").trim();
+  const amountRaw = String(formData.get("amount") ?? "").trim();
+  const methodRaw = String(formData.get("method") ?? "cash");
+  const method = isFeeMethod(methodRaw) ? methodRaw : "cash";
+  const note = String(formData.get("note") ?? "").trim();
+  if (!staffId || !isPeriod(period)) redirect("/manage/staff/payroll");
+  const back = `/manage/staff/payroll/${staffId}?month=${period}`;
+  // whole-rupee integer only (rejects "500.50", "500abc", "" — matches fees)
+  if (!isInt(amountRaw) || Number(amountRaw) <= 0) redirect(`${back}&error=amount`);
+  const date = await effectiveToday();
+  await recordSalaryPayment({ staffId, period, amount: Number(amountRaw), date, method, note });
+  redirect(`${back}&saved=1`);
+}
+
+export async function adjustSalary(formData: FormData): Promise<void> {
+  await requireOwner();
+  const staffId = String(formData.get("staffId") ?? "").trim();
+  const period = String(formData.get("period") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "bonus") === "deduction" ? "deduction" : "bonus";
+  const amountRaw = String(formData.get("amount") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  if (!staffId || !isPeriod(period)) redirect("/manage/staff/payroll");
+  const back = `/manage/staff/payroll/${staffId}?month=${period}`;
+  if (!isInt(amountRaw) || Number(amountRaw) <= 0) redirect(`${back}&error=amount`);
+  await addSalaryAdjustment({ staffId, period, kind, amount: Number(amountRaw), note });
+  redirect(`${back}&saved=1`);
+}
+
+export async function voidSalaryItem(formData: FormData): Promise<void> {
+  await requireOwner();
+  const kind = String(formData.get("kind") ?? "");
+  const id = String(formData.get("id") ?? "").trim();
+  const back = String(formData.get("back") ?? "").trim();
+  if (id && kind === "payment") await voidSalaryPayment(id);
+  else if (id && kind === "adjustment") await voidSalaryAdjustment(id);
+  redirect(back.startsWith("/manage/staff/payroll") ? back : "/manage/staff/payroll");
 }
 
 // ---------------- C1 Students ----------------

@@ -83,16 +83,16 @@ async function firstHref(page, listPath, re) {
   if (batch) await shot(page, batch, "batch-detail");
   await shot(page, "/manage/batches/new", "batch-new");
 
-  await shot(page, "/manage/teachers", "teachers-list");
-  const teachers = await (async () => {
-    await page.goto(`${BASE}/manage/teachers`, { waitUntil: "domcontentloaded" });
+  await shot(page, "/manage/staff", "staff-list");
+  const staff = await (async () => {
+    await page.goto(`${BASE}/manage/staff`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("a");
     const hrefs = await page.$$eval("a", (as) => as.map((a) => a.getAttribute("href")));
-    return hrefs.filter((h) => h && /^\/manage\/teachers\/T/.test(h));
+    return hrefs.filter((h) => h && /^\/manage\/staff\/[TS]\d/.test(h));
   })();
-  const teach = teachers.find((h) => !h.endsWith("/T001")) ?? teachers[0];
-  if (teach) await shot(page, teach, "teacher-edit");
-  await shot(page, "/manage/teachers/new", "teacher-new");
+  const member = staff.find((h) => !h.endsWith("/T001")) ?? staff[0];
+  if (member) await shot(page, member, "staff-edit");
+  await shot(page, "/manage/staff/new", "staff-new");
 
   await shot(page, "/manage/rooms", "rooms-list");
   const room = await firstHref(page, "/manage/rooms", /^\/manage\/rooms\/R/);

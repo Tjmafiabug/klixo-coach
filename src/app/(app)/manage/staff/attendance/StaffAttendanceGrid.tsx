@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { saveStaffAttendance } from "@/lib/actions";
+import { initials } from "@/lib/format";
 import type { StaffAttendanceStatus } from "@/lib/types";
 import type { StaffDayMark } from "@/lib/data";
 
@@ -23,9 +24,6 @@ const OPTIONS: { value: Status; label: string; active: string }[] = [
   { value: "leave", label: "L", active: "bg-brand text-brand-foreground border-brand" },
   { value: "half_day", label: "½", active: "bg-warning text-white border-warning" },
 ];
-
-const initials = (name: string) =>
-  name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 // any change from the saved state is a write — including clearing a saved mark
 // back to unmarked (sent as "" so the server blanks that day's row)

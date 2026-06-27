@@ -14,22 +14,28 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: "v4", auth });
 const spreadsheetId = process.env.SHEET_ID;
 
-// --- Teachers: hash the demo PIN into pin_hash (column D) ---
-const t = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Teachers" });
+// --- Staff: hash the demo PIN into pin_hash (col D) for LOGIN staff only ---
+const t = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Staff" });
 const rows = t.data.values ?? [];
 const header = rows[0];
 const pinCol = header.indexOf("pin_hash");
+const roleCol = header.indexOf("role");
 const body = rows.slice(1);
 const hash = bcrypt.hashSync(DEMO_PIN, 10);
-const pinValues = body.map(() => [hash]);
+// only owner/teacher rows log in; non-teaching staff (role "") keep their cell as-is
+const pinValues = body.map((r) => {
+  const role = r[roleCol];
+  return [role === "owner" || role === "teacher" ? hash : r[pinCol] ?? ""];
+});
 const colLetter = String.fromCharCode(65 + pinCol); // D
 await sheets.spreadsheets.values.update({
   spreadsheetId,
-  range: `Teachers!${colLetter}2:${colLetter}${body.length + 1}`,
+  range: `Staff!${colLetter}2:${colLetter}${body.length + 1}`,
   valueInputOption: "RAW",
   requestBody: { values: pinValues },
 });
-console.log(`Set PIN ${DEMO_PIN} for ${body.length} teachers (col ${colLetter}).`);
+const seeded = pinValues.filter((v) => v[0] === hash).length;
+console.log(`Set PIN ${DEMO_PIN} for ${seeded} login staff (col ${colLetter}).`);
 
 // --- Config: ensure demo_today ---
 const c = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Config" });

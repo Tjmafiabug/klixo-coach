@@ -220,3 +220,36 @@ export interface StaffTaskRow {
   created_by: string; // I  owner teacher_id
 }
 
+// ===== Payroll (two-tab ledger: SalaryAdjustments + SalaryPayments) =====
+// Monthly "due" = Staff.monthly_salary (base) + Σ active adjustments − Σ active
+// payments, all scoped to a period (YYYY-MM). Mirrors the Fees ledger.
+
+export type SalaryAdjustmentKind = "bonus" | "deduction";
+
+/** A one-off salary adjustment for a staffer in a month. Amount is signed
+ *  (bonus > 0, deduction < 0). Append-only; status active|void. Cols A..H. */
+export interface SalaryAdjustmentRow {
+  adj_id: string;   // A  SADJ0001
+  staff_id: string; // B
+  period: string;   // C  YYYY-MM
+  kind: string;     // D  bonus | deduction
+  amount: string;   // E  signed int
+  note: string;     // F
+  status: string;   // G  active | void
+  created: string;  // H  YYYY-MM-DD
+}
+
+/** A salary payment to a staffer for a month. Append-only; status active|void.
+ *  `method` reuses FeeMethod. Cols A..I. */
+export interface SalaryPaymentRow {
+  pay_id: string;    // A  SPAY0001
+  staff_id: string;  // B
+  period: string;    // C  YYYY-MM
+  amount: string;    // D  positive int
+  date: string;      // E  YYYY-MM-DD
+  method: string;    // F  cash|upi|card|bank|cheque|other
+  note: string;      // G
+  timestamp: string; // H  centerTimestamp() (audit)
+  status: string;    // I  active | void
+}
+

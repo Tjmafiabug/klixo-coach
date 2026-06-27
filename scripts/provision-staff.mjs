@@ -127,4 +127,31 @@ await sheets.spreadsheets.values.update({
 });
 console.log(`Header written to StaffTasks: [${STAFF_TASKS_HEADER.join(", ")}]`);
 
+// --- Phase 4: payroll tabs (SalaryAdjustments + SalaryPayments) ---
+const PAYROLL_TABS = [
+  { name: "SalaryAdjustments", header: ["adj_id", "staff_id", "period", "kind", "amount", "note", "status", "created"] },
+  { name: "SalaryPayments", header: ["pay_id", "staff_id", "period", "amount", "date", "method", "note", "timestamp", "status"] },
+];
+const metaPay = await sheets.spreadsheets.get({ spreadsheetId });
+const payTitles = new Set((metaPay.data.sheets ?? []).map((s) => s.properties?.title ?? ""));
+for (const { name, header } of PAYROLL_TABS) {
+  if (!payTitles.has(name)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: name } } }] },
+    });
+    console.log(`Created tab: ${name}`);
+  } else {
+    console.log(`Tab already exists: ${name}`);
+  }
+  const colEnd = String.fromCharCode(64 + header.length); // A.. for header width
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${name}'!A1:${colEnd}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [header] },
+  });
+  console.log(`Header written to ${name}: [${header.join(", ")}]`);
+}
+
 console.log("provision-staff done.");

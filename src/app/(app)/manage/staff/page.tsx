@@ -5,7 +5,7 @@ import { listStaff } from "@/lib/data";
 import { paginate } from "@/lib/format";
 import { Avatar, RoleChip, ActiveChip, Banner } from "@/components/ui";
 import { Reveal } from "@/components/motion";
-import { PageHeader, PrimaryLink, RowChevron, SearchBox, Pager } from "@/components/page";
+import { PageHeader, PrimaryLink, SecondaryLink, RowChevron, SearchBox, Pager } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -57,18 +57,9 @@ export default async function StaffPage({
         actions={
           <>
             <SearchBox action="/manage/staff" placeholder="Search staff…" defaultValue={q} />
-            <Link
-              href="/manage/staff/attendance"
-              className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-            >
-              Attendance
-            </Link>
-            <Link
-              href="/manage/staff/tasks"
-              className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-            >
-              Tasks
-            </Link>
+            <SecondaryLink href="/manage/staff/attendance">Attendance</SecondaryLink>
+            <SecondaryLink href="/manage/staff/tasks">Tasks</SecondaryLink>
+            <SecondaryLink href="/manage/staff/payroll">Payroll</SecondaryLink>
             <PrimaryLink href="/manage/staff/new">+ Add staff</PrimaryLink>
           </>
         }

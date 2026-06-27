@@ -98,6 +98,54 @@ export function PrimaryLink({
   );
 }
 
+/** Secondary (outline) action link — the muted sibling of PrimaryLink. */
+export function SecondaryLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+    >
+      {children}
+    </Link>
+  );
+}
+
+/** Prev / label / next stepper for a period (day or month). `prev`/`next` are the
+ *  param values; `hrefFor` builds the link for a given value. */
+export function MonthNav({
+  label,
+  prev,
+  next,
+  hrefFor,
+}: {
+  label: string;
+  prev: string;
+  next: string;
+  hrefFor: (value: string) => string;
+}) {
+  const btn =
+    "flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
+  return (
+    <div className="flex items-center gap-2">
+      <Link href={hrefFor(prev)} className={btn} aria-label="Previous">
+        ←
+      </Link>
+      <span className="min-w-[9rem] text-center text-sm font-semibold tabular-nums text-foreground">
+        {label}
+      </span>
+      <Link href={hrefFor(next)} className={btn} aria-label="Next">
+        →
+      </Link>
+    </div>
+  );
+}
+
 /** Native GET search box → navigates to `${action}?q=…` with no client JS.
  *  Submitting drops other params (e.g. page), so a new search resets to page 1. */
 export function SearchBox({
