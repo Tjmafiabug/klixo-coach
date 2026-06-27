@@ -7,6 +7,7 @@ import {
   getCenterConfig,
   effectiveToday,
   getStudentFees,
+  getStudentPtm,
 } from "@/lib/data";
 import {
   saveStudent,
@@ -17,8 +18,12 @@ import {
   addChargeAction,
   voidChargeAction,
   voidPaymentAction,
+  schedulePtmAction,
+  logPtmAction,
+  completePtmAction,
+  setPtmStatusAction,
 } from "@/lib/actions";
-import { Banner, fieldClass, ActiveChip, PctBadge, StatusPill, LedgerStatusPill } from "@/components/ui";
+import { Banner, fieldClass, textareaClass, ActiveChip, PctBadge, StatusPill, LedgerStatusPill } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ExportButton } from "@/components/ExportButton";
 import { rupees } from "@/lib/format";
@@ -30,8 +35,15 @@ function errorText(e?: string) {
   if (e === "phone") return "Phone numbers must be 6–15 digits.";
   if (e === "dup") return "Already enrolled in that batch.";
   if (e === "range") return "End date can't be before the start date.";
+  if (e === "date") return "Enter a valid date.";
   return null;
 }
+
+const PTM_MODE_LABEL: Record<string, string> = {
+  in_person: "In person",
+  call: "Phone call",
+  video: "Video call",
+};
 
 export default async function StudentProfilePage({
   params,
@@ -48,19 +60,23 @@ export default async function StudentProfilePage({
     charged?: string;
     voided?: string;
     pvoided?: string;
+    scheduled?: string;
+    logged?: string;
+    updated?: string;
   }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
-  const [profile, candidates, cfg, today, sp, fees] = await Promise.all([
+  const [profile, candidates, cfg, today, sp, fees, ptm] = await Promise.all([
     getStudentProfile(id),
     batchesForStudent(id),
     getCenterConfig(),
     effectiveToday(),
     searchParams,
     getStudentFees(id),
+    getStudentPtm(id),
   ]);
   if (!profile) notFound();
   const { student, enrollments, history, attended, total, pct } = profile;
@@ -68,6 +84,14 @@ export default async function StudentProfilePage({
   const threshold = parseInt(cfg.attendance_threshold, 10) || 75;
   const back = `/manage/students/${id}`;
   const err = errorText(sp.error);
+  const scheduledPtm = ptm.filter((p) => p.status === "scheduled");
+  const pastPtm = ptm.filter((p) => p.status === "done" || p.status === "no_show");
+  const ptmContext = [
+    total > 0 ? `${Math.round(pct * 100)}% attd` : null,
+    fees.outstanding > 0 ? `${rupees(fees.outstanding)} due` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6">
@@ -463,6 +487,177 @@ export default async function StudentProfilePage({
       </div>
       </div>
 
+      {/* ---- Parent meetings (PTM) ---- */}
+      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">Parent meetings</p>
+          {ptmContext ? (
+            <span className="text-xs text-muted-foreground tabular-nums">{ptmContext}</span>
+          ) : null}
+        </div>
+
+        <div className="mt-3 space-y-2">
+          {sp.scheduled ? <Banner tone="success">Meeting scheduled.</Banner> : null}
+          {sp.logged ? <Banner tone="success">Meeting logged.</Banner> : null}
+          {sp.updated ? <Banner tone="success">Meeting updated.</Banner> : null}
+        </div>
+
+        {/* Upcoming (scheduled) */}
+        {scheduledPtm.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upcoming</p>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {scheduledPtm.map((p) => (
+                <li key={p.ptm_id} className="rounded-xl border border-border px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground tabular-nums">
+                      {p.date} · {PTM_MODE_LABEL[p.mode] ?? p.mode}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <form action={setPtmStatusAction}>
+                        <input type="hidden" name="ptmId" value={p.ptm_id} />
+                        <input type="hidden" name="status" value="no_show" />
+                        <input type="hidden" name="back" value={back} />
+                        <button className="h-7 cursor-pointer rounded-lg border border-border px-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted">
+                          No-show
+                        </button>
+                      </form>
+                      <form action={setPtmStatusAction}>
+                        <input type="hidden" name="ptmId" value={p.ptm_id} />
+                        <input type="hidden" name="status" value="cancelled" />
+                        <input type="hidden" name="back" value={back} />
+                        <button className="h-7 cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-2 text-xs font-semibold text-danger transition-colors hover:bg-danger/10">
+                          Cancel
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                  {p.summary ? <p className="mt-1 text-xs text-muted-foreground">{p.summary}</p> : null}
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs font-semibold text-brand">Mark done…</summary>
+                    <form action={completePtmAction} className="mt-2 space-y-2">
+                      <input type="hidden" name="ptmId" value={p.ptm_id} />
+                      <input type="hidden" name="back" value={back} />
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="text-xs font-medium">Date</span>
+                          <input type="date" name="date" defaultValue={p.date} className={fieldClass} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-medium">Mode</span>
+                          <ModeSelect defaultValue={p.mode} />
+                        </label>
+                      </div>
+                      <label className="block">
+                        <span className="text-xs font-medium">Met with</span>
+                        <MetWithSelect />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium">Summary</span>
+                        <textarea name="summary" rows={2} className={textareaClass} placeholder="What was discussed, any actions…" />
+                      </label>
+                      <SubmitButton pendingText="Saving…">Mark done</SubmitButton>
+                    </form>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* Log + Schedule */}
+        <div className="mt-2 grid items-start gap-x-5 lg:grid-cols-2">
+          <div className="mt-5 border-t border-border pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Log a meeting</p>
+            <form action={logPtmAction} className="mt-3 space-y-3">
+              <input type="hidden" name="studentId" value={student.student_id} />
+              <input type="hidden" name="back" value={back} />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-sm font-medium">Date</span>
+                  <input type="date" name="date" defaultValue={today} className={fieldClass} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium">Mode</span>
+                  <ModeSelect />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-sm font-medium">Met with</span>
+                <MetWithSelect />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium">
+                  Summary <span className="text-muted-foreground">(optional)</span>
+                </span>
+                <textarea name="summary" rows={2} className={textareaClass} placeholder="What was discussed, any actions…" />
+              </label>
+              <SubmitButton pendingText="Logging…">Log meeting</SubmitButton>
+            </form>
+          </div>
+
+          <div className="mt-5 border-t border-border pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Schedule a meeting</p>
+            <form action={schedulePtmAction} className="mt-3 space-y-3">
+              <input type="hidden" name="studentId" value={student.student_id} />
+              <input type="hidden" name="back" value={back} />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-sm font-medium">Date</span>
+                  <input type="date" name="date" defaultValue={today} className={fieldClass} />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium">Mode</span>
+                  <ModeSelect />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-sm font-medium">
+                  Note <span className="text-muted-foreground">(optional)</span>
+                </span>
+                <input name="summary" className={fieldClass} placeholder="e.g. discuss term results" />
+              </label>
+              <SubmitButton pendingText="Scheduling…">Schedule</SubmitButton>
+            </form>
+          </div>
+        </div>
+
+        {/* History */}
+        {pastPtm.length > 0 ? (
+          <div className="mt-5 border-t border-border pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">History</p>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {pastPtm.map((p) => (
+                <li key={p.ptm_id} className="rounded-xl border border-border px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground tabular-nums">
+                      {p.date} · {PTM_MODE_LABEL[p.mode] ?? p.mode}
+                      {p.met_with ? <span className="text-muted-foreground"> · {p.met_with}</span> : null}
+                    </p>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {p.status === "no_show" ? (
+                        <span className="rounded-full bg-danger-subtle px-2 py-0.5 text-xs font-semibold text-danger">
+                          No-show
+                        </span>
+                      ) : null}
+                      <form action={setPtmStatusAction}>
+                        <input type="hidden" name="ptmId" value={p.ptm_id} />
+                        <input type="hidden" name="status" value="void" />
+                        <input type="hidden" name="back" value={back} />
+                        <button className="h-7 cursor-pointer rounded-lg border border-border px-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-danger-subtle hover:text-danger">
+                          Void
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                  {p.summary ? <p className="mt-1 text-sm text-muted-foreground">{p.summary}</p> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+
       {/* Active toggle */}
       <form action={toggleStudentActive} className="mt-4 rounded-2xl border border-border bg-surface p-4">
         <input type="hidden" name="studentId" value={student.student_id} />
@@ -486,5 +681,27 @@ export default async function StudentProfilePage({
         </button>
       </form>
     </main>
+  );
+}
+
+function ModeSelect({ defaultValue }: { defaultValue?: string }) {
+  return (
+    <select name="mode" defaultValue={defaultValue ?? "in_person"} className={`${fieldClass} cursor-pointer`}>
+      <option value="in_person">In person</option>
+      <option value="call">Phone call</option>
+      <option value="video">Video call</option>
+    </select>
+  );
+}
+
+function MetWithSelect() {
+  return (
+    <select name="metWith" defaultValue="Mother" className={`${fieldClass} cursor-pointer`}>
+      <option>Mother</option>
+      <option>Father</option>
+      <option>Guardian</option>
+      <option>Both parents</option>
+      <option>Other</option>
+    </select>
   );
 }

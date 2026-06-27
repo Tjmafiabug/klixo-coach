@@ -25,3 +25,11 @@ export function shortDate(iso: string): string {
     timeZone: "UTC",
   });
 }
+
+/** A wa.me link for a phone (bare 10-digit numbers get the +91 India prefix).
+ *  Returns null when there are no digits, so callers can hide the action. */
+export function waLink(phone: string): string | null {
+  const d = phone.replace(/\D/g, "");
+  if (!d) return null;
+  return `https://wa.me/${d.length === 10 ? `91${d}` : d}`;
+}

@@ -24,6 +24,9 @@ import type {
   PaymentRow,
   ChargeKind,
   FeeMethod,
+  PtmRow,
+  PtmMode,
+  PtmStatus,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -3565,4 +3568,290 @@ export async function voidPayment(paymentId: string): Promise<void> {
   const idx = payments.findIndex((p) => p.payment_id === paymentId);
   if (idx < 0) return;
   await updateValues(`Payments!H${idx + 2}`, [["void"]]);
+}
+
+// ============================================================================
+// PTM — parent–teacher meetings. Append-only ledger (like Fees); a scheduled
+// row is completed in place. Reads degrade to empty via safeReadTab so a
+// missing tab never 500s. The "to meet" list reuses getOwnerStats' attendance
+// signals rather than re-deriving them.
+// ============================================================================
+
+// ponytail: 90-day PTM cadence hardcoded; lift to Config when a centre asks for
+// per-centre cadence (wire exactly like absence_followup_streak).
+const PTM_INTERVAL_DAYS = 90;
+
+const PTM_MODES: readonly PtmMode[] = ["in_person", "call", "video"];
+const PTM_STATUSES: readonly PtmStatus[] = ["scheduled", "done", "no_show", "cancelled", "void"];
+export function isPtmMode(s: string): s is PtmMode {
+  return (PTM_MODES as readonly string[]).includes(s);
+}
+export function isPtmStatus(s: string): s is PtmStatus {
+  return (PTM_STATUSES as readonly string[]).includes(s);
+}
+
+/** Positional string array for one PtmRow (A..I column order). */
+export function ptmRow(p: PtmRow): string[] {
+  return [
+    p.ptm_id,
+    p.student_id,
+    p.date,
+    p.mode,
+    p.met_with,
+    p.teacher_id,
+    p.summary,
+    p.status,
+    p.timestamp,
+  ];
+}
+
+/** Append a PTM row. Covers both scheduling (status "scheduled") and logging a
+ *  meeting that already happened (status "done"). */
+export async function appendPtm(input: {
+  studentId: string;
+  date: string;
+  mode: PtmMode;
+  metWith: string;
+  teacherId: string;
+  summary: string;
+  status: PtmStatus;
+}): Promise<void> {
+  const ptms = await safeReadTab<PtmRow>("PTM");
+  const id = nextId(ptms.map((p) => p.ptm_id), "PTM", 4);
+  await appendRows("PTM", [
+    ptmRow({
+      ptm_id: id,
+      student_id: input.studentId,
+      date: input.date,
+      mode: input.mode,
+      met_with: input.metWith,
+      teacher_id: input.teacherId,
+      summary: input.summary,
+      status: input.status,
+      timestamp: centerTimestamp(),
+    }),
+  ]);
+}
+
+/** Complete a scheduled meeting in place: fresh-read → match by ptm_id → merge
+ *  the captured fields → write the whole row. Immutable cells (id, student,
+ *  teacher, timestamp) are preserved from the existing row. No-op unless the row
+ *  is currently "scheduled" (so a cancelled row can't be resurrected). */
+export async function completePtm(input: {
+  ptmId: string;
+  date: string;
+  mode: PtmMode;
+  metWith: string;
+  summary: string;
+}): Promise<void> {
+  const ptms = await safeReadTab<PtmRow>("PTM");
+  const idx = ptms.findIndex((p) => p.ptm_id === input.ptmId);
+  if (idx < 0 || ptms[idx].status !== "scheduled") return;
+  const merged: PtmRow = {
+    ...ptms[idx],
+    date: input.date,
+    mode: input.mode,
+    met_with: input.metWith,
+    summary: input.summary,
+    status: "done",
+  };
+  await updateValues(`PTM!A${idx + 2}:I${idx + 2}`, [ptmRow(merged)]);
+}
+
+/** Set a PTM's status by ID (no_show / cancelled / void). Single-cell update,
+ *  matched by ptm_id so a concurrent append can't shift the wrong row. */
+export async function setPtmStatus(ptmId: string, status: PtmStatus): Promise<void> {
+  const ptms = await safeReadTab<PtmRow>("PTM");
+  const idx = ptms.findIndex((p) => p.ptm_id === ptmId);
+  if (idx < 0) return;
+  await updateValues(`PTM!H${idx + 2}`, [[status]]);
+}
+
+/** A student's meeting history (newest first), void rows excluded. The UI splits
+ *  scheduled (upcoming, actionable) from done/no_show (history). */
+export async function getStudentPtm(studentId: string): Promise<PtmRow[]> {
+  const ptms = await safeReadTab<PtmRow>("PTM");
+  return ptms
+    .filter((p) => p.student_id === studentId && p.status !== "void")
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp));
+}
+
+export interface PtmUpcoming {
+  ptm_id: string;
+  studentId: string;
+  studentName: string;
+  parentPhone: string;
+  date: string;
+  mode: string;
+}
+
+export interface PtmRecent {
+  ptm_id: string;
+  studentId: string;
+  studentName: string;
+  date: string;
+  mode: string;
+  met_with: string;
+  summary: string;
+  status: string;
+}
+
+export interface PtmDue {
+  id: string;
+  name: string;
+  parentPhone: string;
+  reasons: string[];
+  flags: number;
+  lastMet: string; // YYYY-MM-DD, "" if never met
+  gapDays: number | null; // null = never met
+}
+
+export interface PtmBoard {
+  upcoming: PtmUpcoming[];
+  recent: PtmRecent[];
+  due: PtmDue[];
+  intervalDays: number;
+}
+
+/** Pure risk-rank: an active student is "to meet" if any signal fires — overdue
+ *  meeting gap, low attendance, an absence streak, or fees due. flags = number
+ *  of distinct signals; worst (most flags, then longest gap) first. Students who
+ *  already have an upcoming scheduled meeting are excluded (don't nag the booked).
+ *  Exported for the throwaway self-check. */
+export function rankPtmDue(input: {
+  students: { id: string; name: string; parentPhone: string }[];
+  lastMetById: Map<string, string>;
+  defaulterPctById: Map<string, number>; // fraction 0..1, only below-threshold students
+  streakById: Map<string, number>;
+  outstandingById: Map<string, number>; // only students with outstanding > 0
+  scheduledStudentIds: Set<string>;
+  today: string;
+  intervalDays: number;
+}): PtmDue[] {
+  const due: PtmDue[] = [];
+  for (const s of input.students) {
+    if (input.scheduledStudentIds.has(s.id)) continue;
+    const lastMet = input.lastMetById.get(s.id) ?? "";
+    const gapDays = lastMet ? daysBetween(lastMet, input.today) : null;
+    const reasons: string[] = [];
+
+    let meetingFlag = false;
+    if (lastMet === "") {
+      meetingFlag = true;
+      reasons.push("never met");
+    } else if (gapDays !== null && gapDays > input.intervalDays) {
+      meetingFlag = true;
+      reasons.push(`no meeting in ${gapDays}d`);
+    }
+
+    const pct = input.defaulterPctById.get(s.id);
+    if (pct !== undefined) reasons.push(`${Math.round(pct * 100)}% attendance`);
+
+    const streak = input.streakById.get(s.id);
+    if (streak !== undefined) reasons.push(`absent ×${streak}`);
+
+    const out = input.outstandingById.get(s.id);
+    if (out !== undefined) reasons.push(`₹${out.toLocaleString("en-IN")} due`);
+
+    const flags =
+      (meetingFlag ? 1 : 0) +
+      (pct !== undefined ? 1 : 0) +
+      (streak !== undefined ? 1 : 0) +
+      (out !== undefined ? 1 : 0);
+    if (flags === 0) continue;
+    due.push({ id: s.id, name: s.name, parentPhone: s.parentPhone, reasons, flags, lastMet, gapDays });
+  }
+  return due
+    .sort((a, b) => {
+      const gapA = a.gapDays === null ? Number.MAX_SAFE_INTEGER : a.gapDays;
+      const gapB = b.gapDays === null ? Number.MAX_SAFE_INTEGER : b.gapDays;
+      return b.flags - a.flags || gapB - gapA || a.name.localeCompare(b.name);
+    })
+    .slice(0, 50);
+}
+
+/** PTM hub data: upcoming (scheduled, soonest first — overdue floats up), recent
+ *  history, and the risk-ranked "to meet" list. Attendance signals are reused
+ *  from getOwnerStats; fees from the ledger. 8 reads, one-time per hub load
+ *  (same tier as the owner dashboard) — not on any hot path. */
+export async function getPtmBoard(): Promise<PtmBoard> {
+  const [ptms, attendance, students, batches, teachers, cfg, charges, payments] =
+    await Promise.all([
+      safeReadTab<PtmRow>("PTM"),
+      readTab<AttendanceRow>("Attendance"),
+      readTab<Student>("Students"),
+      readTab<Batch>("Batches"),
+      readTab<Teacher>("Teachers"),
+      config(),
+      safeReadTab<FeeChargeRow>("FeeCharges"),
+      safeReadTab<PaymentRow>("Payments"),
+    ]);
+  const today = cfg.get("demo_today")?.trim() || centerToday();
+  const stats = await getOwnerStats({ attendance, students, batches, teachers, cfg });
+
+  const nameById = new Map(students.map((s) => [s.student_id, s.name]));
+  const phoneById = new Map(students.map((s) => [s.student_id, s.parent_phone]));
+  const live = ptms.filter((p) => p.status !== "void");
+
+  const upcoming: PtmUpcoming[] = live
+    .filter((p) => p.status === "scheduled")
+    .sort((a, b) => a.date.localeCompare(b.date) || a.timestamp.localeCompare(b.timestamp))
+    .map((p) => ({
+      ptm_id: p.ptm_id,
+      studentId: p.student_id,
+      studentName: nameById.get(p.student_id) ?? p.student_id,
+      parentPhone: phoneById.get(p.student_id) ?? "",
+      date: p.date,
+      mode: p.mode,
+    }));
+
+  const recent: PtmRecent[] = live
+    .filter((p) => p.status === "done" || p.status === "no_show")
+    .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp))
+    .slice(0, 100)
+    .map((p) => ({
+      ptm_id: p.ptm_id,
+      studentId: p.student_id,
+      studentName: nameById.get(p.student_id) ?? p.student_id,
+      date: p.date,
+      mode: p.mode,
+      met_with: p.met_with,
+      summary: p.summary,
+      status: p.status,
+    }));
+
+  // last completed meeting per student
+  const lastMetById = new Map<string, string>();
+  for (const p of live) {
+    if (p.status !== "done") continue;
+    const cur = lastMetById.get(p.student_id);
+    if (!cur || p.date > cur) lastMetById.set(p.student_id, p.date);
+  }
+
+  const defaulterPctById = new Map(stats.defaulters.map((d) => [d.id, d.pct]));
+  const streakById = new Map(stats.followups.map((f) => [f.id, f.streak]));
+  // ponytail: O(students·ledger) outstanding scan — fine at centre scale
+  const outstandingById = new Map<string, number>();
+  for (const s of students) {
+    const out = studentOutstanding(
+      charges.filter((c) => c.student_id === s.student_id),
+      payments.filter((p) => p.student_id === s.student_id),
+    );
+    if (out > 0) outstandingById.set(s.student_id, out);
+  }
+
+  const due = rankPtmDue({
+    students: students
+      .filter((s) => s.status === "active")
+      .map((s) => ({ id: s.student_id, name: s.name, parentPhone: s.parent_phone })),
+    lastMetById,
+    defaulterPctById,
+    streakById,
+    outstandingById,
+    scheduledStudentIds: new Set(upcoming.map((u) => u.studentId)),
+    today,
+    intervalDays: PTM_INTERVAL_DAYS,
+  });
+
+  return { upcoming, recent, due, intervalDays: PTM_INTERVAL_DAYS };
 }

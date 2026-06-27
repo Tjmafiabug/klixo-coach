@@ -65,10 +65,16 @@ import {
   currentPeriod,
   isChargeKind,
   isFeeMethod,
+  // PTM module
+  appendPtm,
+  completePtm,
+  setPtmStatus,
+  isPtmMode,
+  isPtmStatus,
 } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
-import type { AttendanceStatus } from "@/lib/types";
+import type { AttendanceStatus, PtmMode, PtmStatus } from "@/lib/types";
 
 const ATTENDANCE_STATUSES: readonly AttendanceStatus[] = ["present", "absent", "late"];
 
@@ -757,4 +763,88 @@ export async function voidPaymentAction(formData: FormData): Promise<void> {
   const back = safeBack(formData.get("back"), "/manage/fees");
   if (paymentId) await voidPayment(paymentId);
   redirect(`${back}?pvoided=1`);
+}
+
+// ============================================================================
+// PTM actions — all owner-only (requireOwner line 1). teacher_id is the acting
+// owner. Redirects stay at the top level, never inside try/catch.
+// ============================================================================
+
+const isMetWith = (s: string) => s.length > 0 && s.length <= 40;
+
+export async function schedulePtmAction(formData: FormData): Promise<void> {
+  const user = await requireOwner();
+  const studentId = String(formData.get("studentId") ?? "").trim();
+  const date = String(formData.get("date") ?? "").trim();
+  const mode = String(formData.get("mode") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/ptm");
+
+  if (!studentId || !isPtmMode(mode)) redirect(`${back}?error=missing`);
+  if (!isDate(date)) redirect(`${back}?error=date`);
+  if (!(await refsExist({ studentId }))) redirect(`${back}?error=missing`);
+
+  await appendPtm({
+    studentId,
+    date,
+    mode: mode as PtmMode,
+    metWith: "",
+    teacherId: user.teacherId,
+    summary: String(formData.get("summary") ?? "").trim(),
+    status: "scheduled",
+  });
+  redirect(`${back}?scheduled=1`);
+}
+
+export async function logPtmAction(formData: FormData): Promise<void> {
+  const user = await requireOwner();
+  const studentId = String(formData.get("studentId") ?? "").trim();
+  const date = String(formData.get("date") ?? "").trim();
+  const mode = String(formData.get("mode") ?? "").trim();
+  const metWith = String(formData.get("metWith") ?? "").trim();
+  const summary = String(formData.get("summary") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/ptm");
+
+  if (!studentId || !isPtmMode(mode) || !isMetWith(metWith)) redirect(`${back}?error=missing`);
+  if (!isDate(date)) redirect(`${back}?error=date`);
+  if (!(await refsExist({ studentId }))) redirect(`${back}?error=missing`);
+
+  await appendPtm({
+    studentId,
+    date,
+    mode: mode as PtmMode,
+    metWith,
+    teacherId: user.teacherId,
+    summary,
+    status: "done",
+  });
+  redirect(`${back}?logged=1`);
+}
+
+export async function completePtmAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const ptmId = String(formData.get("ptmId") ?? "").trim();
+  const date = String(formData.get("date") ?? "").trim();
+  const mode = String(formData.get("mode") ?? "").trim();
+  const metWith = String(formData.get("metWith") ?? "").trim();
+  const summary = String(formData.get("summary") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/ptm");
+
+  if (!ptmId || !isPtmMode(mode) || !isMetWith(metWith)) redirect(`${back}?error=missing`);
+  if (!isDate(date)) redirect(`${back}?error=date`);
+
+  await completePtm({ ptmId, date, mode: mode as PtmMode, metWith, summary });
+  redirect(`${back}?logged=1`);
+}
+
+export async function setPtmStatusAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const ptmId = String(formData.get("ptmId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const back = safeBack(formData.get("back"), "/manage/ptm");
+  // only these transitions are allowed via the status path (never scheduled/done)
+  const allowed: PtmStatus[] = ["no_show", "cancelled", "void"];
+  if (ptmId && isPtmStatus(status) && allowed.includes(status)) {
+    await setPtmStatus(ptmId, status);
+  }
+  redirect(`${back}?updated=1`);
 }

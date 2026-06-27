@@ -155,3 +155,22 @@ export interface BatchProgressRow {
   done_date: string; // YYYY-MM-DD when done, else ""
 }
 
+// ===== PTM (parent–teacher meetings) =====
+
+export type PtmMode = "in_person" | "call" | "video";
+export type PtmStatus = "scheduled" | "done" | "no_show" | "cancelled" | "void";
+
+/** One parent–teacher meeting — scheduled, then completed in place (or logged
+ *  directly as done). Append-only ledger like Fees. Columns A..I (positional). */
+export interface PtmRow {
+  ptm_id: string;     // A  PTM0001
+  student_id: string; // B
+  date: string;       // C  YYYY-MM-DD (scheduled or meeting date)
+  mode: string;       // D  in_person | call | video
+  met_with: string;   // E  Mother | Father | Guardian | Both | Other ("" while scheduled)
+  teacher_id: string; // F  who meets/met (the acting owner)
+  summary: string;    // G  discussion + action notes (free text)
+  status: string;     // H  scheduled | done | no_show | cancelled | void
+  timestamp: string;  // I  centerTimestamp() at create (audit)
+}
+

@@ -40,6 +40,7 @@ const SECTIONS: NavSection[] = [
       { href: "/manage/students", label: "Students", desc: "Roster & enrollments", icon: UsersIcon, match: ["/manage/students"], ownerOnly: true },
       { href: "/manage/batches", label: "Batches", desc: "Classes, fees & curriculum progress", icon: BatchesIcon, match: ["/manage/batches"], ownerOnly: true },
       { href: "/manage/fees", label: "Fees", desc: "Dues, payments & defaulters", icon: FeesIcon, match: ["/manage/fees"], ownerOnly: true },
+      { href: "/manage/ptm", label: "Parent meetings", desc: "Schedule, log & follow up", icon: PtmIcon, match: ["/manage/ptm"], ownerOnly: true },
       { href: "/manage/curriculum", label: "Curriculum", desc: "Syllabus & chapters by class", icon: CurriculumIcon, match: ["/manage/curriculum"], ownerOnly: true },
       { href: "/manage/teachers", label: "Teachers", desc: "Staff & PINs", icon: TeachersIcon, match: ["/manage/teachers"], ownerOnly: true },
       { href: "/manage/rooms", label: "Rooms", desc: "Rooms & capacity", icon: RoomsIcon, match: ["/manage/rooms"], ownerOnly: true },
@@ -437,6 +438,14 @@ function FeesIcon({ className }: IconProps) {
     <svg {...base(className)}>
       <path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
       <path d="M12 8v8M9 11h6M9 13h4" />
+    </svg>
+  );
+}
+function PtmIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M4 5.5h11a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2v-4a2 2 0 0 1 1-1.7" />
+      <path d="M8.5 8.5h6M8.5 11h3.5" />
     </svg>
   );
 }
