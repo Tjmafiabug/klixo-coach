@@ -66,7 +66,7 @@ export function MonthView({
                   return (
                     <div
                       key={s.session_id}
-                      className="truncate rounded px-1 text-[0.6rem] font-medium leading-tight"
+                      className={`truncate rounded px-1 text-[0.6rem] font-medium leading-tight ${s.status === "cancelled" ? "line-through opacity-60" : ""}`}
                       style={{ background: `hsl(${hue} 70% 95%)`, color: `hsl(${hue} 45% 30%)` }}
                     >
                       <span className="tabular-nums opacity-70">{s.start}</span> {s.batchName}

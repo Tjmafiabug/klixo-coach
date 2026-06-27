@@ -213,23 +213,20 @@ export function CalendarGrid({
               const top = (s - rangeStart) * PPM;
               const blockH = Math.max((e - s) * PPM, 30);
               const widthPct = 100 / cols;
-              return (
-                <Link
-                  key={session.session_id}
-                  href={`/mark/${session.session_id}`}
-                  className="group absolute overflow-hidden rounded-lg border border-l-[3px] px-2 py-1 transition-shadow hover:z-10 hover:shadow-[var(--shadow-pop)]"
-                  style={{
-                    top,
-                    height: blockH - 3,
-                    left: `calc(${col * widthPct}% + 3px)`,
-                    width: `calc(${widthPct}% - 6px)`,
-                    background: `hsl(${hue} 70% 96%)`,
-                    borderColor: `hsl(${hue} 55% 78%)`,
-                    borderLeftColor: `hsl(${hue} 60% 50%)`,
-                    color: `hsl(${hue} 45% 26%)`,
-                  }}
-                >
-                  <p className="truncate text-[0.78rem] font-semibold leading-tight">
+              const cancelled = session.status === "cancelled";
+              const style = {
+                top,
+                height: blockH - 3,
+                left: `calc(${col * widthPct}% + 3px)`,
+                width: `calc(${widthPct}% - 6px)`,
+                background: `hsl(${hue} 70% 96%)`,
+                borderColor: `hsl(${hue} 55% 78%)`,
+                borderLeftColor: `hsl(${hue} 60% 50%)`,
+                color: `hsl(${hue} 45% 26%)`,
+              };
+              const inner = (
+                <>
+                  <p className={`truncate text-[0.78rem] font-semibold leading-tight ${cancelled ? "line-through opacity-60" : ""}`}>
                     {session.batchName}
                   </p>
                   <p className="truncate text-[0.68rem] tabular-nums opacity-80">
@@ -244,7 +241,33 @@ export function CalendarGrid({
                     <span className="mt-0.5 inline-block rounded bg-accent-subtle px-1 text-[0.6rem] font-semibold text-accent">
                       extra
                     </span>
+                  ) : cancelled ? (
+                    <span className="mt-0.5 inline-block rounded bg-danger-subtle px-1 text-[0.6rem] font-semibold text-danger">
+                      cancelled
+                    </span>
                   ) : null}
+                </>
+              );
+              const base = "group absolute overflow-hidden rounded-lg border border-l-[3px] px-2 py-1";
+              // Projected (unwritten future) classes aren't markable yet — render
+              // them planned-looking and non-clickable instead of linking to a 404.
+              return session.projected ? (
+                <div
+                  key={session.session_id}
+                  title="Planned — generated closer to the date"
+                  className={`${base} border-dashed opacity-75`}
+                  style={style}
+                >
+                  {inner}
+                </div>
+              ) : (
+                <Link
+                  key={session.session_id}
+                  href={`/mark/${session.session_id}`}
+                  className={`${base} transition-shadow hover:z-10 hover:shadow-[var(--shadow-pop)]`}
+                  style={style}
+                >
+                  {inner}
                 </Link>
               );
             })}

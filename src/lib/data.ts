@@ -437,46 +437,123 @@ export interface SessionView {
   teacherName: string;
   start: string;
   end: string;
-  status: string; // scheduled | extra
+  status: string; // scheduled | extra | cancelled
   source: string; // recurring | adhoc
+  projected?: boolean; // not yet persisted — a future recurring class beyond the generation horizon
 }
 
-/** Active sessions (scheduled + extra) in the inclusive date range [start, end],
- *  date-resolved — this is what the calendar renders (holidays show as gaps,
- *  one-off extras show inline). ISO dates compare lexicographically. */
+export interface RecurringInstance {
+  slot_id: string;
+  batch_id: string;
+  date: string;
+  start: string;
+  end: string;
+  room_id: string;
+  teacher_id: string;
+}
+
+/** Expand timetable rules into the recurring (slot, date) instances they want in
+ *  [start, end] — the single source of truth for which recurring sessions should
+ *  exist. Used by generation (to persist) and by the calendar (to project
+ *  unwritten future weeks). Respects holidays, the rule's effective range, and
+ *  the batch's expected_end_date cap. */
+function expandRecurring(
+  rules: TimetableRule[],
+  holidays: Set<string>,
+  batchEnd: Map<string, string>,
+  start: string,
+  end: string,
+): RecurringInstance[] {
+  const out: RecurringInstance[] = [];
+  for (const r of rules) {
+    const days = r.day_of_week.split(",").map((x) => x.trim());
+    const endDate = batchEnd.get(r.batch_id) ?? "";
+    for (let d = start; d <= end; d = addDays(d, 1)) {
+      if (holidays.has(d)) continue;
+      if (!days.includes(dowOf(d))) continue;
+      if (endDate && d > endDate) break; // batch has ended
+      if (!(r.effective_from <= d && (r.effective_to === "" || r.effective_to >= d))) continue;
+      out.push({
+        slot_id: r.slot_id, batch_id: r.batch_id, date: d,
+        start: r.start, end: r.end, room_id: r.room_id, teacher_id: r.teacher_id,
+      });
+    }
+  }
+  return out;
+}
+
+/** Sessions to render on the calendar for [start, end]: persisted scheduled /
+ *  extra / cancelled rows, PLUS projected recurring classes for any (slot, date)
+ *  not yet written — so future weeks beyond the ~30-day generation horizon still
+ *  show the planned schedule (read-only, no Sheets writes). Holidays show as
+ *  gaps; cancelled are kept (rendered struck-through). */
 export async function getSessionsInRange(start: string, end: string): Promise<SessionView[]> {
-  const [sessions, batches, rooms, teachers] = await Promise.all([
+  const [sessions, batches, rooms, teachers, rules, holidaysTab] = await Promise.all([
     readTab<Session>("Sessions"),
     readTab<Batch>("Batches"),
     readTab<Room>("Rooms"),
     readTab<Teacher>("Teachers"),
+    readTab<TimetableRule>("Timetable"),
+    readTab<{ date: string; name: string }>("Holidays"),
   ]);
   const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
   const rName = new Map(rooms.map((r) => [r.room_id, r.name]));
   const tName = new Map(teachers.map((t) => [t.teacher_id, t.name]));
-  return sessions
-    .filter(
-      (s) =>
-        s.date >= start &&
-        s.date <= end &&
-        (s.status === "scheduled" || s.status === "extra"),
-    )
+  const named = (o: {
+    batch_id: string;
+    room_id: string;
+    teacher_id: string;
+  }) => ({
+    batchName: bName.get(o.batch_id) ?? o.batch_id,
+    roomName: rName.get(o.room_id) ?? o.room_id,
+    teacherName: tName.get(o.teacher_id) ?? o.teacher_id,
+  });
+
+  const inRange = sessions.filter((s) => s.date >= start && s.date <= end);
+  // Persisted recurring (slot|date) keys — any status — so we never double-show a
+  // projected class where a real one (incl. cancelled) already exists.
+  const persistedKeys = new Set(
+    inRange.filter((s) => s.source === "recurring" && s.slot_id).map((s) => `${s.slot_id}|${s.date}`),
+  );
+
+  const persisted: SessionView[] = inRange
+    .filter((s) => s.status === "scheduled" || s.status === "extra" || s.status === "cancelled")
     .map((s) => ({
       session_id: s.session_id,
       date: s.date,
       weekday: dowOf(s.date),
       batch_id: s.batch_id,
-      batchName: bName.get(s.batch_id) ?? s.batch_id,
       room_id: s.room_id,
-      roomName: rName.get(s.room_id) ?? s.room_id,
       teacher_id: s.teacher_id,
-      teacherName: tName.get(s.teacher_id) ?? s.teacher_id,
+      ...named(s),
       start: s.start,
       end: s.end,
       status: s.status,
       source: s.source,
-    }))
-    .sort((a, b) => a.start.localeCompare(b.start));
+    }));
+
+  const holidays = new Set(holidaysTab.map((h) => h.date));
+  const batchEnd = new Map(batches.map((b) => [b.batch_id, b.expected_end_date ?? ""]));
+  const projected: SessionView[] = expandRecurring(rules, holidays, batchEnd, start, end)
+    .filter((inst) => !persistedKeys.has(`${inst.slot_id}|${inst.date}`))
+    .map((inst) => ({
+      session_id: `proj-${inst.slot_id}-${inst.date}`,
+      date: inst.date,
+      weekday: dowOf(inst.date),
+      batch_id: inst.batch_id,
+      room_id: inst.room_id,
+      teacher_id: inst.teacher_id,
+      ...named(inst),
+      start: inst.start,
+      end: inst.end,
+      status: "scheduled",
+      source: "recurring",
+      projected: true,
+    }));
+
+  return [...persisted, ...projected].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start),
+  );
 }
 
 const MONTHS_FULL = [
@@ -559,20 +636,10 @@ export async function generateSessions(): Promise<{
   // Batch expected end date caps recurring generation (empty/missing = open-ended).
   const batchEnd = new Map(batches.map((b) => [b.batch_id, b.expected_end_date ?? ""]));
 
-  // what the rules want in the window
-  const desired = new Set<string>();
-  for (const r of rules) {
-    const days = r.day_of_week.split(",").map((x) => x.trim());
-    const endDate = batchEnd.get(r.batch_id) ?? "";
-    for (let d = today; d <= end; d = addDays(d, 1)) {
-      if (holidays.has(d)) continue;
-      if (!days.includes(dowOf(d))) continue;
-      if (endDate && d > endDate) break; // batch has ended — no more sessions
-      if (!(r.effective_from <= d && (r.effective_to === "" || r.effective_to >= d)))
-        continue;
-      desired.add(`${r.slot_id}|${d}`);
-    }
-  }
+  // what the rules want in the window (shared expansion: holidays, effective
+  // range, batch end-date cap)
+  const instances = expandRecurring(rules, holidays, batchEnd, today, end);
+  const desired = new Set(instances.map((i) => `${i.slot_id}|${i.date}`));
 
   const existing = new Set<string>();
   let max = 0;
@@ -591,18 +658,14 @@ export async function generateSessions(): Promise<{
     }
   });
 
-  // rules expand into row data for missing keys
+  // expand instances into row data for missing keys
   const appends: string[][] = [];
-  const rowFor = new Map<string, TimetableRule>();
-  for (const r of rules) rowFor.set(r.slot_id, r);
-  for (const key of desired) {
-    if (existing.has(key)) continue;
-    const [slot, d] = key.split("|");
-    const r = rowFor.get(slot)!;
+  for (const inst of instances) {
+    if (existing.has(`${inst.slot_id}|${inst.date}`)) continue;
     const id = `SES${String(++max).padStart(4, "0")}`;
     appends.push([
-      id, d, r.batch_id, r.start, r.end, r.room_id, r.teacher_id,
-      "scheduled", "recurring", r.slot_id,
+      id, inst.date, inst.batch_id, inst.start, inst.end, inst.room_id, inst.teacher_id,
+      "scheduled", "recurring", inst.slot_id,
     ]);
   }
 
@@ -1537,6 +1600,7 @@ export interface BatchView {
   level: string;
   active: boolean;
   enrolled: number;
+  expected_end_date: string;
 }
 
 export async function listBatches(): Promise<BatchView[]> {
@@ -1565,6 +1629,7 @@ export async function listBatches(): Promise<BatchView[]> {
       level: b.level,
       active: b.active === "TRUE",
       enrolled: enrolled.get(b.batch_id) ?? 0,
+      expected_end_date: b.expected_end_date ?? "",
     }))
     .sort(
       (a, b) =>

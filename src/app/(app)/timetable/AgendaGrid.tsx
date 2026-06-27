@@ -48,33 +48,55 @@ export function AgendaGrid({
               <ul className="space-y-1.5 p-1.5">
                 {items.map((s) => {
                   const hue = hueOf(s.batch_id);
+                  const cancelled = s.status === "cancelled";
+                  const style = {
+                    background: `hsl(${hue} 70% 96%)`,
+                    borderColor: `hsl(${hue} 55% 78%)`,
+                    borderLeftColor: `hsl(${hue} 60% 50%)`,
+                    color: `hsl(${hue} 45% 26%)`,
+                  };
+                  const inner = (
+                    <>
+                      <p className="tabular-nums text-[0.68rem] font-semibold opacity-80">
+                        {s.start}–{s.end}
+                      </p>
+                      <p className={`truncate text-[0.8rem] font-semibold leading-tight ${cancelled ? "line-through opacity-60" : ""}`}>
+                        {s.batchName}
+                      </p>
+                      <p className="truncate text-[0.68rem] opacity-70">
+                        {s.roomName} · {s.teacherName}
+                      </p>
+                      {s.status === "extra" ? (
+                        <span className="mt-0.5 inline-block rounded bg-accent-subtle px-1 text-[0.6rem] font-semibold text-accent">
+                          extra
+                        </span>
+                      ) : cancelled ? (
+                        <span className="mt-0.5 inline-block rounded bg-danger-subtle px-1 text-[0.6rem] font-semibold text-danger">
+                          cancelled
+                        </span>
+                      ) : null}
+                    </>
+                  );
+                  const base = "block overflow-hidden rounded-lg border border-l-[3px] px-2 py-1.5";
                   return (
                     <li key={s.session_id}>
-                      <Link
-                        href={`/mark/${s.session_id}`}
-                        className="block overflow-hidden rounded-lg border border-l-[3px] px-2 py-1.5 transition-shadow hover:shadow-[var(--shadow-card)]"
-                        style={{
-                          background: `hsl(${hue} 70% 96%)`,
-                          borderColor: `hsl(${hue} 55% 78%)`,
-                          borderLeftColor: `hsl(${hue} 60% 50%)`,
-                          color: `hsl(${hue} 45% 26%)`,
-                        }}
-                      >
-                        <p className="tabular-nums text-[0.68rem] font-semibold opacity-80">
-                          {s.start}–{s.end}
-                        </p>
-                        <p className="truncate text-[0.8rem] font-semibold leading-tight">
-                          {s.batchName}
-                        </p>
-                        <p className="truncate text-[0.68rem] opacity-70">
-                          {s.roomName} · {s.teacherName}
-                        </p>
-                        {s.status === "extra" ? (
-                          <span className="mt-0.5 inline-block rounded bg-accent-subtle px-1 text-[0.6rem] font-semibold text-accent">
-                            extra
-                          </span>
-                        ) : null}
-                      </Link>
+                      {s.projected ? (
+                        <div
+                          title="Planned — generated closer to the date"
+                          className={`${base} border-dashed opacity-75`}
+                          style={style}
+                        >
+                          {inner}
+                        </div>
+                      ) : (
+                        <Link
+                          href={`/mark/${s.session_id}`}
+                          className={`${base} transition-shadow hover:shadow-[var(--shadow-card)]`}
+                          style={style}
+                        >
+                          {inner}
+                        </Link>
+                      )}
                     </li>
                   );
                 })}
