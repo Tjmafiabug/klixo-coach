@@ -550,6 +550,7 @@ export async function saveSettings(formData: FormData): Promise<void> {
   const centerName = String(formData.get("centerName") ?? "").trim();
   const timezone = String(formData.get("timezone") ?? "").trim();
   const threshold = String(formData.get("threshold") ?? "").trim();
+  const followupStreak = String(formData.get("followupStreak") ?? "").trim();
   const weekStart = String(formData.get("weekStart") ?? "").trim();
   const logoUrl = String(formData.get("logoUrl") ?? "").trim();
   const buffer = String(formData.get("buffer") ?? "").trim();
@@ -558,6 +559,8 @@ export async function saveSettings(formData: FormData): Promise<void> {
 
   if (!centerName) redirect("/manage/settings?error=missing");
   if (!isInt(threshold) || Number(threshold) > 100) redirect("/manage/settings?error=threshold");
+  if (!isInt(followupStreak) || Number(followupStreak) < 2 || Number(followupStreak) > 10)
+    redirect("/manage/settings?error=streak");
   if (!isInt(buffer) || Number(buffer) > 180) redirect("/manage/settings?error=buffer");
   // term dates are optional, but if given must be valid and ordered
   if (termStart && !isDate(termStart)) redirect("/manage/settings?error=term");
@@ -572,6 +575,7 @@ export async function saveSettings(formData: FormData): Promise<void> {
     // than persisting "" (which would defeat getCenterConfig's default fallback)
     timezone: timezone || undefined,
     attendance_threshold: threshold,
+    absence_followup_streak: followupStreak,
     week_start: weekStart,
     logo_url: logoUrl,
     room_changeover_buffer_min: buffer,

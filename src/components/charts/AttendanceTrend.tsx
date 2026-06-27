@@ -17,7 +17,7 @@ import { shortDate } from "@/lib/format";
 export function AttendanceTrend({
   data,
 }: {
-  data: { date: string; pct: number | null; present: number; total: number }[];
+  data: { date: string; pct: number | null; attended: number; total: number }[];
 }) {
   const reduce = useReducedMotion();
   const gradId = useId().replace(/:/g, "");
@@ -26,7 +26,7 @@ export function AttendanceTrend({
   const rows = data.map((d) => ({
     label: shortDate(d.date),
     value: d.pct === null ? null : Math.round(d.pct * 100),
-    present: d.present,
+    attended: d.attended,
     total: d.total,
   }));
   const marked = rows.filter(
@@ -83,7 +83,7 @@ export function AttendanceTrend({
             const tip = p as {
               active?: boolean;
               payload?: {
-                payload?: { label: string; value: number; present: number; total: number };
+                payload?: { label: string; value: number; attended: number; total: number };
               }[];
             };
             const row = tip.active ? tip.payload?.[0]?.payload : undefined;
@@ -101,7 +101,7 @@ export function AttendanceTrend({
                 title={row.label}
                 items={[
                   { label: "Attendance", value: `${row.value}%`, color: CHART.accent },
-                  { label: "Present", value: `${row.present}/${row.total}` },
+                  { label: "Attended", value: `${row.attended}/${row.total}` },
                 ]}
               />
             );

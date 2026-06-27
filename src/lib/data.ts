@@ -53,7 +53,7 @@ export interface SessionMeta extends Session {
 export interface TodaySession extends SessionMeta {
   rosterSize: number;
   marked: boolean;
-  presentCount: number;
+  attendedCount: number;
 }
 
 /**
@@ -71,16 +71,46 @@ function enrollmentOnDate(e: Enrollment, date: string): boolean {
   );
 }
 
+// ponytail: attendance policy in one place — "late" counts as attended for every
+// rate. statusBreakdown (the donut) is the only surface that keeps the 3-way split.
+function isAttended(status: AttendanceStatus): boolean {
+  return status === "present" || status === "late";
+}
+
+/** A past session that should have attendance but has none — the /today nudge. */
+export interface BacklogSession {
+  session_id: string;
+  date: string;
+  batchName: string;
+  roomName: string;
+  start: string;
+  rosterSize: number;
+}
+
+export interface DayBoard {
+  /** Markable sessions for the selected `date` (the day's roster list). */
+  sessions: TodaySession[];
+  /** Past, markable, non-empty-roster sessions with ZERO marks, newest first,
+   *  over the last BACKLOG_DAYS — relative to `today`, not the selected date. */
+  backlog: BacklogSession[];
+}
+
+// How far back the "unmarked" nudge looks. Industry attendance systems finalize
+// within ~1–2 weeks; older than this, backfilled marks are guesses. The register
+// grid is the unbounded escape hatch for anything past the window.
+const BACKLOG_DAYS = 14;
+
 /**
- * Sessions on a given date, enriched with roster + marked state.
- * Owner sees all sessions that day; a teacher sees only their own (incl. ones
- * they substitute). Cancelled sessions are excluded from the markable list.
+ * The /today board in one read pass: the selected day's sessions AND the unmarked
+ * backlog. Owner sees all; a teacher sees only their own (incl. substituted).
+ * Reads the same five tabs once — the backlog costs no extra Sheets calls.
  */
-export async function getSessionsOnDate(
+export async function getDayBoard(
   date: string,
+  today: string,
   teacherId: string,
   isOwner: boolean,
-): Promise<TodaySession[]> {
+): Promise<DayBoard> {
   const [sessions, batches, rooms, enrolls, attendance] = await Promise.all([
     readTab<Session>("Sessions"),
     readTab<Batch>("Batches"),
@@ -90,40 +120,75 @@ export async function getSessionsOnDate(
   ]);
   const batchById = new Map(batches.map((b) => [b.batch_id, b]));
   const roomById = new Map(rooms.map((r) => [r.room_id, r]));
+  const mine = (s: Session) => isOwner || s.teacher_id === teacherId;
+  const markable = (s: Session) => s.status === "scheduled" || s.status === "extra";
+  const batchName = (id: string) => batchById.get(id)?.name ?? id;
+  const roomName = (id: string) => roomById.get(id)?.name ?? id;
 
-  // distinct students per batch (a student with overlapping enrollment rows —
-  // e.g. an ended row + a backdated re-enroll — must count once)
+  // distinct students enrolled in `batchId` on `d` (overlapping enrollment rows
+  // — e.g. an ended row + a backdated re-enroll — count once)
+  const rosterOn = (batchId: string, d: string): number => {
+    const set = new Set<string>();
+    for (const e of enrolls) {
+      if (e.batch_id === batchId && enrollmentOnDate(e, d)) set.add(e.student_id);
+    }
+    return set.size;
+  };
+
+  // ---- selected day's sessions ----
   const rosterByBatch = new Map<string, Set<string>>();
   for (const e of enrolls) {
     if (!enrollmentOnDate(e, date)) continue;
     if (!rosterByBatch.has(e.batch_id)) rosterByBatch.set(e.batch_id, new Set());
     rosterByBatch.get(e.batch_id)!.add(e.student_id);
   }
-
-  return sessions
-    .filter(
-      (s) =>
-        s.date === date &&
-        (isOwner || s.teacher_id === teacherId) &&
-        (s.status === "scheduled" || s.status === "extra"),
-    )
+  const daySessions: TodaySession[] = sessions
+    .filter((s) => s.date === date && mine(s) && markable(s))
     .sort((a, b) => a.start.localeCompare(b.start))
     .map((s) => {
       const latest = latestPerStudent(attendance, s.session_id);
       const rosterSet = rosterByBatch.get(s.batch_id) ?? new Set<string>();
-      // count present only among current roster, so presentCount never exceeds rosterSize
-      const present = [...latest.values()].filter(
-        (a) => a.status === "present" && rosterSet.has(a.student_id),
+      // count attended (present + late) only among current roster, so it never exceeds rosterSize
+      const attended = [...latest.values()].filter(
+        (a) => isAttended(a.status) && rosterSet.has(a.student_id),
       ).length;
       return {
         ...s,
-        batchName: batchById.get(s.batch_id)?.name ?? s.batch_id,
-        roomName: roomById.get(s.room_id)?.name ?? s.room_id,
+        batchName: batchName(s.batch_id),
+        roomName: roomName(s.room_id),
         rosterSize: rosterSet.size,
         marked: latest.size > 0,
-        presentCount: present,
+        attendedCount: attended,
       };
     });
+
+  // ---- unmarked backlog (zero marks; partial sessions surface in the register) ----
+  const hasMarks = new Set(attendance.map((a) => a.session_id));
+  const from = addDays(today, -BACKLOG_DAYS);
+  const backlog: BacklogSession[] = sessions
+    .filter(
+      (s) =>
+        s.date < today &&
+        s.date >= from &&
+        mine(s) &&
+        markable(s) &&
+        !hasMarks.has(s.session_id),
+    )
+    // rosterOn re-scans enrolls per candidate — fine at backlog scale (≤ ~2 weeks
+    // of a teacher's sessions); index by batch if that ever grows.
+    .map((s) => ({ s, rosterSize: rosterOn(s.batch_id, s.date) }))
+    .filter((x) => x.rosterSize > 0)
+    .sort((a, b) => b.s.date.localeCompare(a.s.date) || a.s.start.localeCompare(b.s.start))
+    .map(({ s, rosterSize }) => ({
+      session_id: s.session_id,
+      date: s.date,
+      batchName: batchName(s.batch_id),
+      roomName: roomName(s.room_id),
+      start: s.start,
+      rosterSize,
+    }));
+
+  return { sessions: daySessions, backlog };
 }
 
 export async function getSessionMeta(
@@ -603,6 +668,31 @@ export function monthMatrix(anchorIso: string): MonthGrid {
   };
 }
 
+export interface MonthRange {
+  anchor: string; // YYYY-MM
+  start: string; // YYYY-MM-01
+  end: string; // YYYY-MM-<lastDay>
+  label: string; // "June 2026"
+  prev: string; // YYYY-MM
+  next: string; // YYYY-MM
+}
+
+/** Bounds + label + neighbour anchors for the month containing `anchor` (YYYY-MM).
+ *  The register's date math — start/end frame the Sheet read, prev/next drive nav. */
+export function monthRange(anchor: string): MonthRange {
+  const [y, m] = anchor.split("-").map(Number);
+  const mm = String(m).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of next month
+  return {
+    anchor: `${y}-${mm}`,
+    start: `${y}-${mm}-01`,
+    end: `${y}-${mm}-${String(lastDay).padStart(2, "0")}`,
+    label: `${MONTHS_FULL[m - 1]} ${y}`,
+    prev: m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`,
+    next: m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`,
+  };
+}
+
 export async function getRules(): Promise<TimetableRule[]> {
   return readTab<TimetableRule>("Timetable");
 }
@@ -1016,7 +1106,7 @@ export async function getRule(slotId: string): Promise<TimetableRule | null> {
 // ---------------- Owner dashboard stats ----------------
 
 interface Agg {
-  present: number;
+  attended: number;
   total: number;
 }
 
@@ -1027,15 +1117,15 @@ function aggregate(
   const m = new Map<string, Agg>();
   for (const mark of marks) {
     const k = keyFn(mark);
-    const a = m.get(k) ?? { present: 0, total: 0 };
+    const a = m.get(k) ?? { attended: 0, total: 0 };
     a.total += 1;
-    if (mark.status === "present") a.present += 1;
+    if (isAttended(mark.status)) a.attended += 1;
     m.set(k, a);
   }
   return m;
 }
 
-const pct = (a: Agg) => (a.total ? a.present / a.total : 0);
+const pct = (a: Agg) => (a.total ? a.attended / a.total : 0);
 
 export interface OwnerStats {
   overall: number;
@@ -1058,7 +1148,19 @@ export interface OwnerStats {
   statusBreakdown: { present: number; absent: number; late: number };
   /** Daily attendance %, oldest→newest, continuous over the last 14 marked days'
    *  span. Unmarked days in range carry pct=null (gap) — drives the trend chart. */
-  trend: { date: string; pct: number | null; present: number; total: number }[];
+  trend: { date: string; pct: number | null; attended: number; total: number }[];
+  /** Threshold (consecutive absences) at which a student enters the follow-up list. */
+  followupStreak: number;
+  /** Active students on a current run of ≥ followupStreak absences — the acute
+   *  "call the parent" list, distinct from the cumulative defaulters. Worst first. */
+  followups: {
+    id: string;
+    name: string;
+    parentPhone: string;
+    batchName: string;
+    streak: number;
+    lastAttended: string; // date of their most recent present/late, "" if never
+  }[];
 }
 
 export interface StatsTabs {
@@ -1091,23 +1193,24 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
   const batchById = new Map(batches.map((b) => [b.batch_id, b]));
 
   const present = marks.filter((m) => m.status === "present").length;
-  const overall = marks.length ? present / marks.length : 0;
+  const late = marks.filter((m) => m.status === "late").length;
+  const overall = marks.length ? (present + late) / marks.length : 0;
 
   const statusBreakdown = {
     present,
     absent: marks.filter((m) => m.status === "absent").length,
-    late: marks.filter((m) => m.status === "late").length,
+    late,
   };
 
   // Daily attendance %: a CONTINUOUS calendar range spanning the last 14 marked
   // days, so every date in between (incl. days with no sessions, e.g. a holiday)
   // still appears on the axis. Unmarked days carry pct=null → the chart bridges
   // them (connectNulls) but the date label is shown.
-  const dayAgg = new Map<string, { present: number; total: number }>();
+  const dayAgg = new Map<string, { attended: number; total: number }>();
   for (const m of marks) {
-    const e = dayAgg.get(m.date) ?? { present: 0, total: 0 };
+    const e = dayAgg.get(m.date) ?? { attended: 0, total: 0 };
     e.total++;
-    if (m.status === "present") e.present++;
+    if (isAttended(m.status)) e.attended++;
     dayAgg.set(m.date, e);
   }
   const markedDays = [...dayAgg.keys()].sort();
@@ -1115,7 +1218,7 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
   const trend: {
     date: string;
     pct: number | null;
-    present: number;
+    attended: number;
     total: number;
   }[] = [];
   if (windowDays.length) {
@@ -1125,8 +1228,8 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
       const e = dayAgg.get(iso);
       trend.push({
         date: iso,
-        pct: e ? e.present / e.total : null,
-        present: e?.present ?? 0,
+        pct: e ? e.attended / e.total : null,
+        attended: e?.attended ?? 0,
         total: e?.total ?? 0,
       });
       const [y, mo, d] = iso.split("-").map(Number);
@@ -1169,6 +1272,45 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
       timestamp: m.timestamp,
     }));
 
+  // Absence follow-up: active students whose most-recent marked sessions are a run
+  // of absences (≥ threshold). `marks` holds the winning mark per session, so
+  // unmarked sessions aren't here (skipped); present/late breaks the run.
+  const followupStreak = Math.max(2, parseInt(cfg.get("absence_followup_streak") ?? "3", 10) || 3);
+  const byStudent = new Map<string, AttendanceRow[]>();
+  for (const m of marks) {
+    const arr = byStudent.get(m.student_id);
+    if (arr) arr.push(m);
+    else byStudent.set(m.student_id, [m]);
+  }
+  const followups = [...byStudent.entries()]
+    .map(([id, rows]) => {
+      rows.sort((a, b) => a.date.localeCompare(b.date) || a.timestamp.localeCompare(b.timestamp));
+      let streak = 0;
+      let lastBatch = "";
+      for (let i = rows.length - 1; i >= 0 && rows[i].status === "absent"; i--) {
+        streak++;
+        if (!lastBatch) lastBatch = rows[i].batch_id; // the class they're missing
+      }
+      let lastAttended = "";
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (isAttended(rows[i].status)) {
+          lastAttended = rows[i].date;
+          break;
+        }
+      }
+      return { id, streak, lastBatch, lastAttended };
+    })
+    .filter((x) => x.streak >= followupStreak && studentById.get(x.id)?.status === "active")
+    .map((x) => ({
+      id: x.id,
+      name: studentById.get(x.id)?.name ?? x.id,
+      parentPhone: studentById.get(x.id)?.parent_phone ?? "",
+      batchName: batchById.get(x.lastBatch)?.name ?? x.lastBatch,
+      streak: x.streak,
+      lastAttended: x.lastAttended,
+    }))
+    .sort((a, b) => b.streak - a.streak || a.name.localeCompare(b.name));
+
   return {
     overall,
     totalMarks: marks.length,
@@ -1180,6 +1322,8 @@ export async function getOwnerStats(pre?: StatsTabs): Promise<OwnerStats> {
     recentManual,
     statusBreakdown,
     trend,
+    followupStreak,
+    followups,
   };
 }
 
@@ -1532,7 +1676,7 @@ export interface StudentProfile {
     status: string;
   }[];
   history: { date: string; batchName: string; status: string; method: string }[];
-  present: number;
+  attended: number; // present + late (late counts as attended)
   total: number;
   pct: number;
 }
@@ -1566,7 +1710,7 @@ export async function getStudentProfile(id: string): Promise<StudentProfile | nu
   const marks = [
     ...latestPerSessionStudent(attendance.filter((a) => a.student_id === id)).values(),
   ];
-  const present = marks.filter((m) => m.status === "present").length;
+  const attended = marks.filter((m) => isAttended(m.status)).length;
   const history = marks
     .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp))
     .slice(0, 100)
@@ -1580,9 +1724,9 @@ export async function getStudentProfile(id: string): Promise<StudentProfile | nu
     student,
     enrollments,
     history,
-    present,
+    attended,
     total: marks.length,
-    pct: marks.length ? present / marks.length : 0,
+    pct: marks.length ? attended / marks.length : 0,
   };
 }
 
@@ -2010,6 +2154,8 @@ export interface CenterConfig {
   center_name: string;
   timezone: string;
   attendance_threshold: string;
+  /** Min consecutive absences before a student shows in the follow-up list. */
+  absence_followup_streak: string;
   week_start: string;
   logo_url: string;
   room_changeover_buffer_min: string;
@@ -2023,6 +2169,7 @@ const CONFIG_KEYS: (keyof CenterConfig)[] = [
   "center_name",
   "timezone",
   "attendance_threshold",
+  "absence_followup_streak",
   "week_start",
   "logo_url",
   "room_changeover_buffer_min",
@@ -2036,6 +2183,7 @@ export async function getCenterConfig(): Promise<CenterConfig> {
     center_name: m.get("center_name") ?? "",
     timezone: m.get("timezone") ?? (process.env.CENTER_TZ ?? "Asia/Kolkata"),
     attendance_threshold: m.get("attendance_threshold") ?? "75",
+    absence_followup_streak: m.get("absence_followup_streak") ?? "3",
     week_start: m.get("week_start") ?? "Mon",
     logo_url: m.get("logo_url") ?? "",
     room_changeover_buffer_min: m.get("room_changeover_buffer_min") ?? "0",
@@ -2397,6 +2545,135 @@ export async function getBatchProgress(
   };
   const summary = computeProgressSummary(own.map((c) => c.status), term, today);
   return { batch, course, chapters: own, summary, term };
+}
+
+// ---------------- Attendance register (per-batch month grid) ----------------
+
+export type RegisterState =
+  | AttendanceStatus // present | absent | late (an actual mark)
+  | "unmarked" // past/today, enrolled, no mark — the actionable gap
+  | "cancelled"
+  | "not-enrolled" // enrollment didn't cover this date
+  | "upcoming"; // session is in the future
+
+export interface RegisterColumn {
+  session_id: string;
+  date: string;
+  start: string;
+  dayNum: number;
+  weekday: string;
+  cancelled: boolean;
+}
+
+export interface RegisterRow {
+  student_id: string;
+  name: string;
+  active: boolean;
+  states: RegisterState[]; // aligned 1:1 with columns
+  attended: number; // present + late, over the marked sessions this month
+  marked: number; // present + absent + late this month (the rate denominator)
+  pct: number | null; // attended/marked, or null when nothing's marked yet
+}
+
+export interface BatchRegister {
+  batch: Batch;
+  month: MonthRange;
+  columns: RegisterColumn[];
+  rows: RegisterRow[];
+  threshold: number;
+}
+
+/**
+ * One batch's attendance as a students × sessions grid for a month. A cell is the
+ * latest mark, or a reason it's blank (cancelled / not-yet-enrolled / future /
+ * unmarked). An `unmarked` cell on a past session is the actionable gap — clicking
+ * the column header opens that session to mark. 5 tab reads + 1 config (single
+ * config serves `today` + threshold, the getBatchDetail pattern).
+ */
+export async function getBatchRegister(
+  batchId: string,
+  monthAnchor: string,
+): Promise<BatchRegister | null> {
+  const [batches, enrolls, students, sessions, attendance, cfgMap] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<Student>("Students"),
+    readTab<Session>("Sessions"),
+    readTab<AttendanceRow>("Attendance"),
+    config(),
+  ]);
+  const batch = batches.find((b) => b.batch_id === batchId);
+  if (!batch) return null;
+  const today = todayFromCfg(cfgMap);
+  // default to the current centre month when no valid YYYY-MM is given (one
+  // config read serves today + threshold + the anchor fallback)
+  const month = monthRange(/^\d{4}-(0[1-9]|1[0-2])$/.test(monthAnchor) ? monthAnchor : today.slice(0, 7));
+  const threshold = parseInt(cfgMap.get("attendance_threshold") ?? "75", 10);
+
+  // Columns: this batch's sessions in the month (cancelled kept, struck in the UI).
+  const columns: RegisterColumn[] = sessions
+    .filter((s) => s.batch_id === batchId && s.date >= month.start && s.date <= month.end)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
+    .map((s) => ({
+      session_id: s.session_id,
+      date: s.date,
+      start: s.start,
+      dayNum: Number(s.date.slice(8, 10)),
+      weekday: dowOf(s.date),
+      cancelled: s.status === "cancelled",
+    }));
+
+  // Latest mark per (session, student), pre-filtered to this batch + month.
+  const latest = latestPerSessionStudent(
+    attendance.filter(
+      (a) => a.batch_id === batchId && a.date >= month.start && a.date <= month.end,
+    ),
+  );
+
+  // Rows: students whose enrollment in this batch overlaps the month (active or left,
+  // so a mid-month leaver still shows their partial row — and inactive students keep
+  // their history). Per-cell `not-enrolled` handles the late joiner.
+  const enrollsByStudent = new Map<string, Enrollment[]>();
+  for (const e of enrolls) {
+    if (e.batch_id !== batchId) continue;
+    if (e.status !== "active" && e.status !== "left") continue;
+    if (e.start_date > month.end || (e.end_date !== "" && e.end_date < month.start)) continue;
+    if (!enrollsByStudent.has(e.student_id)) enrollsByStudent.set(e.student_id, []);
+    enrollsByStudent.get(e.student_id)!.push(e);
+  }
+  const studentById = new Map(students.map((s) => [s.student_id, s]));
+
+  const rows: RegisterRow[] = [...enrollsByStudent.keys()]
+    .map((id) => studentById.get(id))
+    .filter((s): s is Student => !!s)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((s) => {
+      const ens = enrollsByStudent.get(s.student_id)!;
+      let attended = 0;
+      let marked = 0;
+      const states = columns.map((col): RegisterState => {
+        if (col.cancelled) return "cancelled";
+        if (!ens.some((e) => enrollmentOnDate(e, col.date))) return "not-enrolled";
+        const mark = latest.get(`${col.session_id}|${s.student_id}`);
+        if (mark) {
+          marked++;
+          if (isAttended(mark.status)) attended++;
+          return mark.status;
+        }
+        return col.date > today ? "upcoming" : "unmarked";
+      });
+      return {
+        student_id: s.student_id,
+        name: s.name,
+        active: s.status === "active",
+        states,
+        attended,
+        marked,
+        pct: marked ? attended / marked : null,
+      };
+    });
+
+  return { batch, month, columns, rows, threshold };
 }
 
 /** The active course a batch maps to, by case-insensitive subject + level. The

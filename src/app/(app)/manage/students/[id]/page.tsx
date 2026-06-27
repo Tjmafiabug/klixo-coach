@@ -63,7 +63,7 @@ export default async function StudentProfilePage({
     getStudentFees(id),
   ]);
   if (!profile) notFound();
-  const { student, enrollments, history, present, total, pct } = profile;
+  const { student, enrollments, history, attended, total, pct } = profile;
   const active = student.status === "active";
   const threshold = parseInt(cfg.attendance_threshold, 10) || 75;
   const back = `/manage/students/${id}`;
@@ -97,7 +97,7 @@ export default async function StudentProfilePage({
         <div>
           <p className="text-sm font-semibold text-foreground">Attendance</p>
           <p className="mt-0.5 text-sm text-muted-foreground tabular-nums">
-            {present}/{total} present
+            {attended}/{total} attended
           </p>
         </div>
         {total > 0 ? <PctBadge pct={pct} threshold={threshold} /> : (

@@ -144,7 +144,15 @@ export default async function EditBatchPage({
           <p className="text-sm font-semibold text-foreground">
             Students <span className="text-muted-foreground">({enrollments.filter((e) => e.status === "active" && !e.end_date).length} active)</span>
           </p>
-          <ExportButton kind="attendance" label="Export attendance" params={{ batch: batch.batch_id }} />
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/manage/batches/${batch.batch_id}/register`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted-foreground transition-[color,background-color,transform] hover:bg-muted hover:text-foreground active:scale-[0.98]"
+            >
+              Register
+            </Link>
+            <ExportButton kind="attendance" label="Export attendance" params={{ batch: batch.batch_id }} />
+          </div>
         </div>
         {enrollments.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No enrollments yet.</p>

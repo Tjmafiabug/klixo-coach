@@ -13,6 +13,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function errorText(e?: string) {
   if (e === "missing") return "Centre name is required.";
   if (e === "threshold") return "Attendance threshold must be a whole number 0–100.";
+  if (e === "streak") return "Follow-up streak must be a whole number, 2–10.";
   if (e === "buffer") return "Room changeover buffer must be a whole number, 0–180 minutes.";
   if (e === "term") return "Term end must be a valid date after the term start.";
   return null;
@@ -61,6 +62,14 @@ export default async function SettingsPage({
             <input name="buffer" inputMode="numeric" defaultValue={cfg.room_changeover_buffer_min} className={fieldClass} aria-invalid={sp.error === "buffer" || undefined} />
           </label>
         </div>
+
+        <label className="mt-3 block">
+          <span className="text-sm font-medium">Follow-up after (absences in a row)</span>
+          <input name="followupStreak" inputMode="numeric" defaultValue={cfg.absence_followup_streak} className={fieldClass} aria-invalid={sp.error === "streak" || undefined} />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Students with this many consecutive absences show in the dashboard follow-up list (2–10).
+          </p>
+        </label>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">

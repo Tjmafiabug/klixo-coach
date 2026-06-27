@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getSessionsOnDate, effectiveToday } from "@/lib/data";
+import { getDayBoard, effectiveToday } from "@/lib/data";
+import { shortDate } from "@/lib/format";
 import { runGeneration } from "@/lib/actions";
 import { Reveal } from "@/components/motion";
 import { TodayDateNav } from "./TodayDateNav";
@@ -40,7 +41,7 @@ export default async function TodayPage({
   const [today, sp] = await Promise.all([effectiveToday(), searchParams]);
   // selected date: valid ISO, never in the future
   const date = sp.date && ISO.test(sp.date) && sp.date <= today ? sp.date : today;
-  const sessions = await getSessionsOnDate(date, user.teacherId, isOwner);
+  const { sessions, backlog } = await getDayBoard(date, today, user.teacherId, isOwner);
 
   const isToday = date === today;
   const pending = sessions.filter((s) => !s.marked).length;
@@ -108,6 +109,37 @@ export default async function TodayPage({
         </p>
       ) : null}
 
+      {backlog.length > 0 ? (
+        <div className="mt-4 rounded-2xl border border-warning/25 bg-warning-subtle p-4">
+          <p className="text-sm font-semibold text-warning">
+            {backlog.length} past session{backlog.length === 1 ? "" : "s"} still unmarked
+          </p>
+          <ul className="mt-2 divide-y divide-warning/15">
+            {backlog.slice(0, 6).map((b) => (
+              <li key={b.session_id}>
+                <Link
+                  href={`/mark/${b.session_id}`}
+                  className="flex items-center justify-between gap-3 py-1.5 text-sm transition-colors hover:text-warning"
+                >
+                  <span className="min-w-0 truncate text-foreground">
+                    <span className="font-mono tabular-nums text-muted-foreground">{shortDate(b.date)}</span>
+                    {" · "}
+                    {b.batchName}
+                    <span className="text-muted-foreground"> · {b.start} · {b.rosterSize} students</span>
+                  </span>
+                  <span className="shrink-0 font-semibold text-warning">Mark →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {backlog.length > 6 ? (
+            <p className="mt-1.5 text-xs font-medium text-warning/80">
+              and {backlog.length - 6} more
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {sessions.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
           <p className="font-medium text-foreground">No sessions</p>
@@ -151,7 +183,7 @@ export default async function TodayPage({
 
                   {s.marked ? (
                     <span className="flex items-center gap-1.5 rounded-full bg-success-subtle px-2.5 py-1 text-xs font-semibold text-success tabular-nums">
-                      <CheckIcon /> {s.presentCount}/{s.rosterSize}
+                      <CheckIcon /> {s.attendedCount}/{s.rosterSize}
                     </span>
                   ) : (
                     <span className="rounded-full bg-brand px-3.5 py-1.5 text-sm font-semibold text-brand-foreground transition-colors group-hover:bg-brand-hover">

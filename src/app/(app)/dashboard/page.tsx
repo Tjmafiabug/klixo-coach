@@ -126,8 +126,8 @@ export default async function DashboardPage() {
         </Reveal>
       </div>
 
-      {/* ---- Batches + Defaulters ---- */}
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      {/* ---- Batches · Defaulters · Follow-up ---- */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Reveal delay={0.05}>
           <Card
             title="Attendance by batch"
@@ -159,6 +159,52 @@ export default async function DashboardPage() {
                     <PctBadge pct={d.pct} threshold={stats.threshold} />
                   </li>
                 ))}
+              </ul>
+            )}
+          </Card>
+        </Reveal>
+
+        <Reveal delay={0.15}>
+          <Card
+            title="Follow-up"
+            subtitle={`${stats.followupStreak}+ absences in a row · call the parent`}
+          >
+            {stats.followups.length === 0 ? (
+              <Empty>No one on an absence streak.</Empty>
+            ) : (
+              <ul className="-mx-1 h-[15rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+                {stats.followups.map((f) => {
+                  const wa = waLink(f.parentPhone);
+                  return (
+                    <li key={f.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <Link href={`/manage/students/${f.id}`} className="group min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground group-hover:text-brand">
+                          {f.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {f.batchName}
+                          {f.lastAttended ? ` · last seen ${shortDate(f.lastAttended)}` : " · never attended"}
+                        </p>
+                      </Link>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded-full bg-danger-subtle px-2 py-0.5 text-xs font-bold tabular-nums text-danger">
+                          {f.streak}×
+                        </span>
+                        {wa ? (
+                          <a
+                            href={wa}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Message ${f.name}'s parent on WhatsApp`}
+                            className="rounded-lg border border-success/30 bg-success-subtle px-2.5 py-1 text-xs font-semibold text-success transition-colors hover:bg-success/10"
+                          >
+                            Chat
+                          </a>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -300,6 +346,15 @@ export default async function DashboardPage() {
       </div>
     </div>
   );
+}
+
+// India-first WhatsApp deep link. Phones are 6–15 digits; a bare 10-digit number
+// gets the +91 country code, anything else is assumed already international. No
+// prefilled message — the owner writes their own.
+function waLink(phone: string): string | null {
+  const d = phone.replace(/\D/g, "");
+  if (!d) return null;
+  return `https://wa.me/${d.length === 10 ? `91${d}` : d}`;
 }
 
 function KpiTile({
