@@ -49,14 +49,35 @@ export function sheetId(): string {
   return currentCenter().sheetId;
 }
 
+/** Retry transient Sheets failures (429 rate-limit, 5xx) with exponential
+ *  backoff + jitter. Sheets read quota is ~60/min/user, so bursts of navigation
+ *  can spike a 429 — this lets them self-heal instead of erroring the screen. */
+async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+  let delay = 350;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e: unknown) {
+      const err = e as { code?: number; status?: number; response?: { status?: number } };
+      const status = err?.code ?? err?.status ?? err?.response?.status;
+      const transient = status === 429 || (typeof status === "number" && status >= 500 && status < 600);
+      if (attempt >= tries - 1 || !transient) throw e;
+      await new Promise((r) => setTimeout(r, delay + Math.floor(Math.random() * 250)));
+      delay *= 2;
+    }
+  }
+}
+
 /** Read a tab and return rows as objects keyed by the header row. */
 export async function readTab<T = Record<string, string>>(
   tab: string,
 ): Promise<T[]> {
-  const res = await client().spreadsheets.values.get({
-    spreadsheetId: sheetId(),
-    range: `'${tab}'`, // quote so tab names with spaces/special chars resolve
-  });
+  const res = await withRetry(() =>
+    client().spreadsheets.values.get({
+      spreadsheetId: sheetId(),
+      range: `'${tab}'`, // quote so tab names with spaces/special chars resolve
+    }),
+  );
   const rows = res.data.values ?? [];
   if (rows.length === 0) return [];
   const [header, ...body] = rows;

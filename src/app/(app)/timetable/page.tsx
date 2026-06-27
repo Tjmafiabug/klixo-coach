@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import {
-  getTimetableView,
   getSessionsInRange,
   weekStartOf,
   weekDays,
@@ -11,6 +10,7 @@ import {
   effectiveToday,
   monthMatrix,
   type WeekDay,
+  type SessionView,
 } from "@/lib/data";
 import { Reveal } from "@/components/motion";
 import { PageHeader, PrimaryLink } from "@/components/page";
@@ -21,6 +21,37 @@ export const dynamic = "force-dynamic";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const isISO = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const fmt = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
+const toMin = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+
+/** Room/teacher double-bookings among the sessions already loaded for the view —
+ *  computed in-memory (no extra Sheets reads), scoped to what's on screen. */
+function sessionClashes(sessions: SessionView[]) {
+  const byDate = new Map<string, SessionView[]>();
+  for (const s of sessions) {
+    const arr = byDate.get(s.date);
+    if (arr) arr.push(s);
+    else byDate.set(s.date, [s]);
+  }
+  const out: { type: string; date: string; a: string; b: string }[] = [];
+  for (const [date, arr] of byDate) {
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        const a = arr[i];
+        const b = arr[j];
+        if (!(toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end))) continue;
+        if (a.room_id && a.room_id === b.room_id) {
+          out.push({ type: "room", date, a: `${a.batchName} · ${a.roomName}`, b: b.batchName });
+        } else if (a.teacher_id && a.teacher_id === b.teacher_id) {
+          out.push({ type: "teacher", date, a: `${a.batchName} · ${a.teacherName}`, b: b.batchName });
+        }
+      }
+    }
+  }
+  return out;
+}
 
 export default async function TimetablePage({
   searchParams,
@@ -63,10 +94,8 @@ export default async function TimetablePage({
     rangeEnd = addDays(weekStart, 6);
   }
 
-  const [{ clashes }, sessions] = await Promise.all([
-    getTimetableView(),
-    getSessionsInRange(rangeStart, rangeEnd),
-  ]);
+  const sessions = await getSessionsInRange(rangeStart, rangeEnd);
+  const clashes = sessionClashes(sessions);
 
   const href = (v: string, dd: string) => `/timetable?view=${v}&d=${dd}`;
   let prevD: string;
