@@ -212,7 +212,7 @@ export default async function StudentProfilePage({
             <p className="text-sm font-semibold text-foreground">Recent attendance</p>
             <ExportButton kind="student" label="Export CSV" params={{ id: student.student_id }} />
           </div>
-          <ul className="mt-3 flex flex-col gap-1.5">
+          <ul className="mt-3 flex max-h-[22rem] flex-col gap-1.5 overflow-y-auto scroll-slim pr-1">
             {history.map((h, i) => (
               <li key={i} className="flex items-center justify-between gap-3 text-sm">
                 <span className="text-muted-foreground tabular-nums">{h.date}</span>
