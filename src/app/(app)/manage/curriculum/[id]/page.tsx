@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getCourseDetail } from "@/lib/data";
 import { saveChapter, moveChapterAction } from "@/lib/actions";
-import { PageHeader } from "@/components/page";
+import { PageHeader, SearchBox } from "@/components/page";
 import { Banner, fieldClass, textareaClass, ActiveChip } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Reveal } from "@/components/motion";
@@ -21,7 +21,7 @@ export default async function CourseDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; saved?: string; deleted?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; deleted?: string; q?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
@@ -33,6 +33,16 @@ export default async function CourseDetailPage({
   const { course, chapters } = detail;
   const active = course.active === "TRUE";
   const err = errorText(sp.error);
+
+  const q = (sp.q ?? "").trim();
+  const ql = q.toLowerCase();
+  const searching = q.length > 0;
+  // reorder is meaningless on a filtered view, so it's hidden while searching.
+  const shown = searching
+    ? chapters.filter(
+        (ch) => ch.title.toLowerCase().includes(ql) || ch.topics.toLowerCase().includes(ql),
+      )
+    : chapters;
 
   // small icon-button style for the per-chapter move/delete controls
   const iconBtn =
@@ -47,6 +57,11 @@ export default async function CourseDetailPage({
         subtitle={`${course.subject} · ${course.level} · ${chapters.length} chapter${
           chapters.length === 1 ? "" : "s"
         }`}
+        actions={
+          chapters.length > 0 ? (
+            <SearchBox action={`/manage/curriculum/${id}`} placeholder="Search chapters…" defaultValue={q} />
+          ) : undefined
+        }
       />
 
       <div className="mt-3 flex items-center gap-3">
@@ -77,9 +92,13 @@ export default async function CourseDetailPage({
         <p className="mt-6 rounded-2xl border border-border bg-surface p-6 text-sm text-muted-foreground">
           No chapters yet. Add the first one below.
         </p>
+      ) : shown.length === 0 ? (
+        <p className="mt-6 rounded-2xl border border-dashed border-border bg-surface p-6 text-sm text-muted-foreground">
+          No chapters match “{q}”.
+        </p>
       ) : (
         <ol className="mt-6 space-y-3">
-          {chapters.map((ch, i) => (
+          {shown.map((ch, i) => (
             <Reveal key={ch.chapter_id} delay={Math.min(i * 0.03, 0.3)}>
               <li className="rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
                 <div className="flex items-start gap-3">
@@ -103,34 +122,38 @@ export default async function CourseDetailPage({
                     ) : null}
                   </div>
 
-                  {/* reorder + edit + delete controls */}
+                  {/* reorder + edit controls — reorder hidden while searching */}
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <form action={moveChapterAction}>
-                      <input type="hidden" name="courseId" value={course.course_id} />
-                      <input type="hidden" name="chapterId" value={ch.chapter_id} />
-                      <input type="hidden" name="dir" value="up" />
-                      <SubmitButton
-                        className={iconBtn}
-                        disabled={i === 0}
-                        ariaLabel="Move up"
-                        pendingText="·"
-                      >
-                        ↑
-                      </SubmitButton>
-                    </form>
-                    <form action={moveChapterAction}>
-                      <input type="hidden" name="courseId" value={course.course_id} />
-                      <input type="hidden" name="chapterId" value={ch.chapter_id} />
-                      <input type="hidden" name="dir" value="down" />
-                      <SubmitButton
-                        className={iconBtn}
-                        disabled={i === chapters.length - 1}
-                        ariaLabel="Move down"
-                        pendingText="·"
-                      >
-                        ↓
-                      </SubmitButton>
-                    </form>
+                    {!searching ? (
+                      <>
+                        <form action={moveChapterAction}>
+                          <input type="hidden" name="courseId" value={course.course_id} />
+                          <input type="hidden" name="chapterId" value={ch.chapter_id} />
+                          <input type="hidden" name="dir" value="up" />
+                          <SubmitButton
+                            className={iconBtn}
+                            disabled={i === 0}
+                            ariaLabel="Move up"
+                            pendingText="·"
+                          >
+                            ↑
+                          </SubmitButton>
+                        </form>
+                        <form action={moveChapterAction}>
+                          <input type="hidden" name="courseId" value={course.course_id} />
+                          <input type="hidden" name="chapterId" value={ch.chapter_id} />
+                          <input type="hidden" name="dir" value="down" />
+                          <SubmitButton
+                            className={iconBtn}
+                            disabled={i === chapters.length - 1}
+                            ariaLabel="Move down"
+                            pendingText="·"
+                          >
+                            ↓
+                          </SubmitButton>
+                        </form>
+                      </>
+                    ) : null}
                     <Link
                       href={`/manage/curriculum/${id}/chapters/${ch.chapter_id}`}
                       className={iconBtn}

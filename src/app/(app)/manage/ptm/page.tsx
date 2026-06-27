@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getPtmBoard } from "@/lib/data";
 import { shortDate, waLink, paginate } from "@/lib/format";
-import { Pager } from "@/components/page";
+import { Pager, SearchBox } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ const RECENT_PREVIEW = 8;
 export default async function PtmPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; q?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
@@ -27,14 +27,25 @@ export default async function PtmPage({
     getPtmBoard(),
     searchParams,
   ]);
-  const duePage = paginate(due, Number(sp.page), 12);
+  const q = (sp.q ?? "").trim();
+  const ql = q.toLowerCase();
+  const match = (n: string) => n.toLowerCase().includes(ql);
+  const dueF = q ? due.filter((d) => match(d.name)) : due;
+  const upcomingF = q ? upcoming.filter((u) => match(u.studentName)) : upcoming;
+  const recentF = q ? recent.filter((r) => match(r.studentName)) : recent;
+  const duePage = paginate(dueF, Number(sp.page), 12);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6">
-      <h2 className="text-2xl font-bold tracking-tight">Parent meetings</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Who to meet, what&apos;s booked, and what was discussed. Open a student to schedule or log one.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight">Parent meetings</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Who to meet, what&apos;s booked, and what was discussed. Open a student to schedule or log one.
+          </p>
+        </div>
+        <SearchBox action="/manage/ptm" placeholder="Search by student…" defaultValue={q} />
+      </div>
 
       <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
         {/* To meet — risk-ranked */}
@@ -45,8 +56,10 @@ export default async function PtmPage({
               no meeting in {intervalDays}d · low attendance · absence streak · fees due
             </span>
           </div>
-          {due.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">Everyone&apos;s been met recently — nothing flagged.</p>
+          {dueF.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              {q ? `No flagged students match “${q}”.` : "Everyone’s been met recently — nothing flagged."}
+            </p>
           ) : (
             <ul className="mt-3 divide-y divide-border">
               {duePage.slice.map((d) => {
@@ -93,17 +106,20 @@ export default async function PtmPage({
             start={duePage.start}
             size={duePage.size}
             baseHref="/manage/ptm"
+            params={{ q: q || undefined }}
           />
         </section>
 
         {/* Upcoming */}
         <section className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
           <p className="text-sm font-semibold text-foreground">Upcoming</p>
-          {upcoming.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">No meetings scheduled.</p>
+          {upcomingF.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              {q ? "No scheduled meetings match." : "No meetings scheduled."}
+            </p>
           ) : (
             <ul className="mt-3 flex flex-col gap-1.5">
-              {upcoming.map((u) => {
+              {upcomingF.map((u) => {
                 const wa = waLink(u.parentPhone);
                 return (
                   <li
@@ -139,11 +155,13 @@ export default async function PtmPage({
         {/* Recent */}
         <section className="rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
           <p className="text-sm font-semibold text-foreground">Recent</p>
-          {recent.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">No meetings logged yet.</p>
+          {recentF.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              {q ? "No logged meetings match." : "No meetings logged yet."}
+            </p>
           ) : (
             <ul className="mt-3 flex flex-col gap-1.5">
-              {recent.slice(0, RECENT_PREVIEW).map((r) => (
+              {recentF.slice(0, RECENT_PREVIEW).map((r) => (
                 <li key={r.ptm_id} className="rounded-xl border border-border px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
                     <Link

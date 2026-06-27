@@ -2,9 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { listBatches, effectiveToday } from "@/lib/data";
+import { paginate } from "@/lib/format";
 import { ActiveChip, Banner } from "@/components/ui";
 import { Reveal } from "@/components/motion";
-import { PageHeader, PrimaryLink, RowChevron } from "@/components/page";
+import { PageHeader, PrimaryLink, RowChevron, SearchBox, Pager } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ const daysBetween = (from: string, to: string) => {
 export default async function BatchesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; q?: string; page?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
@@ -29,6 +30,18 @@ export default async function BatchesPage({
   ]);
   const active = batches.filter((b) => b.active).length;
 
+  const q = (sp.q ?? "").trim();
+  const ql = q.toLowerCase();
+  const matches = q
+    ? batches.filter(
+        (b) =>
+          b.name.toLowerCase().includes(ql) ||
+          b.subject.toLowerCase().includes(ql) ||
+          b.teacherName.toLowerCase().includes(ql),
+      )
+    : batches;
+  const { slice, page, pages, total, start, size } = paginate(matches, Number(sp.page));
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
@@ -36,7 +49,12 @@ export default async function BatchesPage({
         backLabel="Manage"
         title="Batches"
         subtitle={`${active} active · ${batches.length} total`}
-        actions={<PrimaryLink href="/manage/batches/new">+ Add batch</PrimaryLink>}
+        actions={
+          <>
+            <SearchBox action="/manage/batches" placeholder="Search batches…" defaultValue={q} />
+            <PrimaryLink href="/manage/batches/new">+ Add batch</PrimaryLink>
+          </>
+        }
       />
 
       {sp.saved ? (
@@ -45,8 +63,15 @@ export default async function BatchesPage({
         </div>
       ) : null}
 
+      {total === 0 ? (
+        <div className="mt-6 grid h-[160px] place-items-center rounded-2xl border border-dashed border-border bg-surface-2">
+          <p className="px-4 text-center text-sm text-muted-foreground">
+            {q ? `No batches match “${q}”.` : "No batches yet."}
+          </p>
+        </div>
+      ) : (
       <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {batches.map((b, i) => {
+        {slice.map((b, i) => {
           const dleft = b.expected_end_date ? daysBetween(today, b.expected_end_date) : null;
           const endChip =
             dleft === null ? null : dleft < 0 ? (
@@ -86,6 +111,17 @@ export default async function BatchesPage({
           );
         })}
       </ul>
+      )}
+
+      <Pager
+        page={page}
+        pages={pages}
+        total={total}
+        start={start}
+        size={size}
+        baseHref="/manage/batches"
+        params={{ q: q || undefined }}
+      />
     </div>
   );
 }

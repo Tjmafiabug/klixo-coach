@@ -6,19 +6,22 @@ import { saveRoom } from "@/lib/actions";
 import { Banner, fieldClass } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Reveal } from "@/components/motion";
-import { PageHeader, RowChevron } from "@/components/page";
+import { PageHeader, RowChevron, SearchBox } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
 export default async function RoomsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; deleted?: string; error?: string }>;
+  searchParams: Promise<{ saved?: string; deleted?: string; error?: string; q?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const [rooms, sp] = await Promise.all([listRooms(), searchParams]);
+
+  const q = (sp.q ?? "").trim();
+  const matches = q ? rooms.filter((r) => r.name.toLowerCase().includes(q.toLowerCase())) : rooms;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
@@ -27,6 +30,7 @@ export default async function RoomsPage({
         backLabel="Manage"
         title="Rooms"
         subtitle={`${rooms.length} rooms`}
+        actions={<SearchBox action="/manage/rooms" placeholder="Search rooms…" defaultValue={q} />}
       />
 
       <div className="mt-4 space-y-3">
@@ -65,8 +69,13 @@ export default async function RoomsPage({
         </div>
       </form>
 
+      {q && matches.length === 0 ? (
+        <p className="mt-5 rounded-2xl border border-dashed border-border bg-surface-2 p-6 text-center text-sm text-muted-foreground">
+          No rooms match “{q}”.
+        </p>
+      ) : (
       <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {rooms.map((r, i) => (
+        {matches.map((r, i) => (
           <Reveal key={r.room_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
             <li className="h-full">
               <Link
@@ -85,6 +94,7 @@ export default async function RoomsPage({
           </Reveal>
         ))}
       </ul>
+      )}
     </div>
   );
 }
