@@ -37,14 +37,27 @@ export interface PaymentRow {
 }
 
 
-export interface Teacher {
-  teacher_id: string;
-  name: string;
-  phone: string;
-  pin_hash: string;
-  role: "teacher" | "owner";
-  subjects: string;
-  active: string; // "TRUE" | "FALSE"
+/** A person on staff — teaching or non-teaching. The single people table
+ *  (Sheet tab "Staff", formerly "Teachers"). The PK column is historically
+ *  `teacher_id`; FK columns in Batches/Sessions/Timetable/Attendance/PTM all
+ *  reference it by that same name, so it keeps the name on disk. Columns A..M
+ *  (positional for writes). Two independent discriminators:
+ *    - staff_type: who can be assigned to teach / appears in teacher pickers
+ *    - role:       app login access (non-teaching staff have role "" = no login) */
+export interface Staff {
+  teacher_id: string;     // A  PK — T### teaching, S### non-teaching
+  name: string;           // B
+  phone: string;          // C  login key for staff who sign in ("" allowed for non-teaching)
+  pin_hash: string;       // D  bcrypt; "" / "<placeholder>" = no login
+  role: string;           // E  "" | "teacher" | "owner"
+  subjects: string;       // F  teaching staff only
+  active: string;         // G  "TRUE" | "FALSE"
+  staff_type: string;     // H  "teaching" | "non_teaching" ("" = teaching, legacy rows)
+  designation: string;    // I  e.g. Receptionist, Accountant, Counselor (non-teaching)
+  department: string;     // J  e.g. Front Office, Accounts, Facilities
+  join_date: string;      // K  YYYY-MM-DD
+  monthly_salary: string; // L  base monthly salary (₹), "" if unset — used by payroll (Phase 4)
+  notes: string;          // M
 }
 
 export interface Student {

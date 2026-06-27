@@ -108,7 +108,7 @@ export default async function ManagePage() {
     { href: "/manage/batches", title: "Batches", sub: `${c.batchesActive} active · ${c.batchesTotal} total`, icon: BatchesIcon },
     { href: "/manage/fees", title: "Fees", sub: `${rupees(c.feesOutstanding)} outstanding`, icon: FeesIcon },
     { href: "/manage/curriculum", title: "Curriculum", sub: "Syllabus & chapters by class", icon: CurriculumIcon },
-    { href: "/manage/teachers", title: "Teachers", sub: `${c.teachersActive} active staff`, icon: TeachersIcon },
+    { href: "/manage/staff", title: "Staff", sub: `${c.teachersActive} active staff`, icon: TeachersIcon },
     { href: "/timetable", title: "Timetable", sub: `${c.rules} recurring rules`, icon: ClockIcon },
     { href: "/manage/rooms", title: "Rooms", sub: `${c.rooms} rooms`, icon: RoomsIcon },
     { href: "/manage/holidays", title: "Holidays", sub: `${c.holidays} dates`, icon: HolidaysIcon },

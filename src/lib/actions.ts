@@ -24,12 +24,12 @@ import {
   roomUsage,
   createHoliday,
   deleteHoliday,
-  getTeacher,
-  createTeacher,
-  updateTeacher,
-  setTeacherPin,
-  setTeacherActive,
-  teacherPhoneTaken,
+  getStaff,
+  createStaff,
+  updateStaff,
+  setStaffPin,
+  setStaffActive,
+  staffPhoneTaken,
   otherActiveOwners,
   createStudent,
   updateStudent,
@@ -72,6 +72,7 @@ import {
   isPtmMode,
   isPtmStatus,
 } from "@/lib/data";
+import type { StaffInput } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
 import type { AttendanceStatus, PtmMode, PtmStatus } from "@/lib/types";
@@ -116,12 +117,13 @@ export async function login(
   }
 
   recordSuccess(phone);
+  const role = teacher.role === "owner" ? "owner" : "teacher";
   await createSession({
     teacherId: teacher.teacher_id,
-    role: teacher.role,
+    role,
     name: teacher.name,
   });
-  redirect(teacher.role === "owner" ? "/dashboard" : "/today");
+  redirect(role === "owner" ? "/dashboard" : "/today");
 }
 
 export async function logout(): Promise<void> {
@@ -391,59 +393,91 @@ export async function deleteHolidayAction(formData: FormData): Promise<void> {
   redirect("/manage/holidays?deleted=1");
 }
 
-// ---------------- C4 Teachers ----------------
+// ---------------- C4 Staff (teaching + non-teaching) ----------------
 
-export async function saveTeacher(formData: FormData): Promise<void> {
+export async function saveStaff(formData: FormData): Promise<void> {
   await requireOwner();
   const id = String(formData.get("teacherId") ?? "").trim();
+  const staff_type =
+    String(formData.get("staff_type") ?? "teaching") === "non_teaching"
+      ? "non_teaching"
+      : "teaching";
+  const teaching = staff_type === "teaching";
   const name = String(formData.get("name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
-  const role = String(formData.get("role") ?? "teacher") === "owner" ? "owner" : "teacher";
-  const subjects = String(formData.get("subjects") ?? "").trim();
+  // role/subjects apply to teaching staff only; non-teaching never log in
+  const role = teaching
+    ? String(formData.get("role") ?? "teacher") === "owner"
+      ? "owner"
+      : "teacher"
+    : "";
+  const subjects = teaching ? String(formData.get("subjects") ?? "").trim() : "";
+  const designation = teaching ? "" : String(formData.get("designation") ?? "").trim();
+  const department = teaching ? "" : String(formData.get("department") ?? "").trim();
+  const join_date = String(formData.get("join_date") ?? "").trim();
+  const monthly_salary = String(formData.get("monthly_salary") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
   const pin = String(formData.get("pin") ?? "").trim();
-  const back = id ? `/manage/teachers/${id}` : "/manage/teachers/new";
+  const back = id ? `/manage/staff/${id}` : `/manage/staff/new?type=${staff_type}`;
 
-  if (!name || !isPhone(phone)) redirect(`${back}?error=missing`);
-  if (await teacherPhoneTaken(phone, id || undefined)) redirect(`${back}?error=phone`);
+  // teaching staff log in → phone required & valid. non-teaching: phone optional,
+  // but if given it must be a valid number (and still unique).
+  if (!name) redirect(`${back}?error=missing`);
+  if (teaching && !isPhone(phone)) redirect(`${back}?error=missing`);
+  if (phone && !isPhone(phone)) redirect(`${back}?error=missing`);
+  if (await staffPhoneTaken(phone, id || undefined)) redirect(`${back}?error=phone`);
+
+  const input: StaffInput = {
+    name,
+    phone,
+    staff_type,
+    role,
+    subjects,
+    designation,
+    department,
+    join_date,
+    monthly_salary,
+    notes,
+  };
 
   if (id) {
-    // demoting the last active owner would lock the centre out
-    const cur = await getTeacher(id);
+    // demoting/retyping the last active owner would lock the centre out
+    const cur = await getStaff(id);
     if (cur?.role === "owner" && role !== "owner" && (await otherActiveOwners(id)) === 0) {
       redirect(`${back}?error=lastowner`);
     }
-    await updateTeacher(id, { name, phone, role, subjects });
+    await updateStaff(id, input);
   } else {
-    if (!isPin(pin)) redirect(`${back}?error=pin`);
-    const pinHash = bcrypt.hashSync(pin, 10);
-    await createTeacher({ name, phone, role, subjects, pinHash });
+    if (teaching && !isPin(pin)) redirect(`${back}?error=pin`);
+    const pinHash = teaching ? bcrypt.hashSync(pin, 10) : "";
+    await createStaff({ ...input, pinHash });
   }
-  redirect("/manage/teachers?saved=1");
+  redirect("/manage/staff?saved=1");
 }
 
-export async function resetTeacherPin(formData: FormData): Promise<void> {
+export async function resetStaffPin(formData: FormData): Promise<void> {
   await requireOwner();
   const id = String(formData.get("teacherId") ?? "").trim();
   const pin = String(formData.get("pin") ?? "").trim();
-  if (!id) redirect("/manage/teachers");
-  if (!isPin(pin)) redirect(`/manage/teachers/${id}?error=pin`);
-  await setTeacherPin(id, bcrypt.hashSync(pin, 10));
-  redirect(`/manage/teachers/${id}?pinset=1`);
+  if (!id) redirect("/manage/staff");
+  if (!isPin(pin)) redirect(`/manage/staff/${id}?error=pin`);
+  await setStaffPin(id, bcrypt.hashSync(pin, 10));
+  redirect(`/manage/staff/${id}?pinset=1`);
 }
 
-export async function toggleTeacherActive(formData: FormData): Promise<void> {
+export async function toggleStaffActive(formData: FormData): Promise<void> {
   await requireOwner();
   const id = String(formData.get("teacherId") ?? "").trim();
   const active = String(formData.get("active") ?? "") === "true";
-  if (!id) redirect("/manage/teachers");
+  if (!id) redirect("/manage/staff");
   if (!active) {
-    const cur = await getTeacher(id);
+    const cur = await getStaff(id);
     if (cur?.role === "owner" && (await otherActiveOwners(id)) === 0) {
-      redirect(`/manage/teachers/${id}?error=lastowner`);
+      redirect(`/manage/staff/${id}?error=lastowner`);
     }
   }
-  await setTeacherActive(id, active);
-  redirect("/manage/teachers?saved=1");
+  await setStaffActive(id, active);
+  redirect("/manage/staff?saved=1");
 }
 
 // ---------------- C1 Students ----------------

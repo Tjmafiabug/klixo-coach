@@ -8,7 +8,6 @@ import {
 } from "@/lib/sheets";
 import { centerToday, centerTimestamp } from "@/lib/time";
 import type {
-  Teacher,
   Student,
   Batch,
   Enrollment,
@@ -17,6 +16,7 @@ import type {
   AttendanceRow,
   AttendanceStatus,
   TimetableRule,
+  Staff,
   Course,
   Chapter,
   BatchProgressRow,
@@ -42,10 +42,22 @@ export async function effectiveToday(): Promise<string> {
   return demo || centerToday();
 }
 
-export async function getTeacherByPhone(phone: string): Promise<Teacher | null> {
-  const teachers = await readTab<Teacher>("Teachers");
+/** "teaching" unless explicitly flagged non-teaching (legacy rows have ""). */
+export function staffTypeOf(s: { staff_type?: string }): "teaching" | "non_teaching" {
+  return s.staff_type === "non_teaching" ? "non_teaching" : "teaching";
+}
+
+/** Can this person sign in? Login access is keyed on `role`, not staff_type —
+ *  non-teaching staff carry role "" and never authenticate. */
+export function canLogin(s: { role?: string }): boolean {
+  return s.role === "teacher" || s.role === "owner";
+}
+
+export async function getTeacherByPhone(phone: string): Promise<Staff | null> {
+  const teachers = await readTab<Staff>("Staff");
   const p = phone.trim();
-  return teachers.find((t) => t.phone === p && t.active === "TRUE") ?? null;
+  // login candidates only: active, phone match, and has a login role
+  return teachers.find((t) => t.phone === p && t.active === "TRUE" && canLogin(t)) ?? null;
 }
 
 export interface SessionMeta extends Session {
@@ -433,7 +445,7 @@ export async function getFormOptions(): Promise<FormOptions> {
   const [batches, rooms, teachers] = await Promise.all([
     readTab<Batch>("Batches"),
     readTab<Room>("Rooms"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
   ]);
   return {
     batches: batches
@@ -445,8 +457,9 @@ export async function getFormOptions(): Promise<FormOptions> {
         roomId: b.room_id,
       })),
     rooms: rooms.map((r) => ({ id: r.room_id, name: r.name })),
+    // only teaching staff may be assigned to a batch/session/rule
     teachers: teachers
-      .filter((t) => t.active === "TRUE")
+      .filter((t) => t.active === "TRUE" && staffTypeOf(t) === "teaching")
       .map((t) => ({ id: t.teacher_id, name: t.name })),
   };
 }
@@ -560,7 +573,7 @@ export async function getSessionsInRange(start: string, end: string): Promise<Se
     readTab<Session>("Sessions"),
     readTab<Batch>("Batches"),
     readTab<Room>("Rooms"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
     readTab<TimetableRule>("Timetable"),
     readTab<{ date: string; name: string }>("Holidays"),
   ]);
@@ -818,7 +831,7 @@ export interface HealthTabs {
   enrolls: Enrollment[];
   batches: Batch[];
   rooms: Room[];
-  teachers: Teacher[];
+  teachers: Staff[];
   cfg: Map<string, string>;
 }
 
@@ -828,7 +841,7 @@ async function readHealthTabs(): Promise<HealthTabs> {
     readTab<Enrollment>("Enrollments"),
     readTab<Batch>("Batches"),
     readTab<Room>("Rooms"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
     config(),
   ]);
   return { sessions, enrolls, batches, rooms, teachers, cfg };
@@ -1076,7 +1089,7 @@ export async function getTimetableView(): Promise<{
     readTab<TimetableRule>("Timetable"),
     readTab<Batch>("Batches"),
     readTab<Room>("Rooms"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
     scheduleHealth(),
   ]);
   const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
@@ -1170,7 +1183,7 @@ export interface StatsTabs {
   attendance: AttendanceRow[];
   students: Student[];
   batches: Batch[];
-  teachers: Teacher[];
+  teachers: Staff[];
   cfg: Map<string, string>;
 }
 
@@ -1179,7 +1192,7 @@ async function readStatsTabs(): Promise<StatsTabs> {
     readTab<AttendanceRow>("Attendance"),
     readTab<Student>("Students"),
     readTab<Batch>("Batches"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
     config(),
   ]);
   return { attendance, students, batches, teachers, cfg };
@@ -1344,7 +1357,7 @@ export async function getOwnerDashboard(): Promise<{
       readTab<AttendanceRow>("Attendance"),
       readTab<Student>("Students"),
       readTab<Batch>("Batches"),
-      readTab<Teacher>("Teachers"),
+      readTab<Staff>("Staff"),
       readTab<Room>("Rooms"),
       readTab<Session>("Sessions"),
       readTab<Enrollment>("Enrollments"),
@@ -1481,25 +1494,68 @@ export async function deleteHoliday(date: string): Promise<void> {
   await generateSessions();
 }
 
-// ---------------- C4 Teachers ----------------
+// ---------------- C4 Staff (teaching + non-teaching) ----------------
 
-export interface TeacherView {
+/** The editable shape of a staff record (everything except id/pin/active, which
+ *  are managed separately). `role`/`subjects` apply to teaching staff;
+ *  `designation`/`department` to non-teaching. */
+export interface StaffInput {
+  name: string;
+  phone: string;
+  staff_type: "teaching" | "non_teaching";
+  role: string; // "" | "teacher" | "owner" — login access (teaching only)
+  subjects: string;
+  designation: string;
+  department: string;
+  join_date: string;
+  monthly_salary: string;
+  notes: string;
+}
+
+export interface StaffView {
   teacher_id: string;
   name: string;
   phone: string;
-  role: "teacher" | "owner";
+  staff_type: "teaching" | "non_teaching";
+  role: string; // login role; "" for non-teaching
   subjects: string;
+  designation: string;
+  department: string;
   active: boolean;
   hasPin: boolean;
-  /** active batches this teacher is assigned to (block deactivation). */
+  /** active batches this person teaches (teaching staff only; blocks deactivation). */
   batchCount: number;
   /** names of those active batches, sorted — shown on the card. */
   batchNames: string[];
 }
 
-export async function listTeachers(): Promise<TeacherView[]> {
-  const [teachers, batches] = await Promise.all([
-    readTab<Teacher>("Teachers"),
+/** Positional row (A..M) for the Staff tab. */
+function staffRow(
+  id: string,
+  input: StaffInput,
+  pinHash: string,
+  active: string,
+): string[] {
+  return [
+    id,
+    input.name,
+    input.phone,
+    pinHash,
+    input.role,
+    input.subjects,
+    active,
+    input.staff_type,
+    input.designation,
+    input.department,
+    input.join_date,
+    input.monthly_salary,
+    input.notes,
+  ];
+}
+
+export async function listStaff(): Promise<StaffView[]> {
+  const [staff, batches] = await Promise.all([
+    readTab<Staff>("Staff"),
     readTab<Batch>("Batches"),
   ]);
   const bNames = new Map<string, string[]>();
@@ -1509,17 +1565,20 @@ export async function listTeachers(): Promise<TeacherView[]> {
       arr.push(b.name);
       bNames.set(b.teacher_id, arr);
     }
-  return teachers
-    .map((t) => {
-      const names = (bNames.get(t.teacher_id) ?? []).sort((a, b) => a.localeCompare(b));
+  return staff
+    .map((s) => {
+      const names = (bNames.get(s.teacher_id) ?? []).sort((a, b) => a.localeCompare(b));
       return {
-        teacher_id: t.teacher_id,
-        name: t.name,
-        phone: t.phone,
-        role: t.role === "owner" ? ("owner" as const) : ("teacher" as const),
-        subjects: t.subjects,
-        active: t.active === "TRUE",
-        hasPin: !!t.pin_hash && !t.pin_hash.startsWith("<"),
+        teacher_id: s.teacher_id,
+        name: s.name,
+        phone: s.phone,
+        staff_type: staffTypeOf(s),
+        role: s.role ?? "",
+        subjects: s.subjects,
+        designation: s.designation ?? "",
+        department: s.department ?? "",
+        active: s.active === "TRUE",
+        hasPin: !!s.pin_hash && !s.pin_hash.startsWith("<"),
         batchCount: names.length,
         batchNames: names,
       };
@@ -1530,12 +1589,12 @@ export async function listTeachers(): Promise<TeacherView[]> {
     );
 }
 
-export async function getTeacher(id: string): Promise<Teacher | null> {
-  const teachers = await readTab<Teacher>("Teachers");
-  return teachers.find((t) => t.teacher_id === id) ?? null;
+export async function getStaff(id: string): Promise<Staff | null> {
+  const staff = await readTab<Staff>("Staff");
+  return staff.find((s) => s.teacher_id === id) ?? null;
 }
 
-export interface TeacherBatch {
+export interface StaffBatch {
   batch_id: string;
   name: string;
   subject: string;
@@ -1543,12 +1602,12 @@ export interface TeacherBatch {
   active: boolean;
 }
 
-/** Batches assigned to a teacher (active first, then by name) — for the teacher
- *  profile page. Reads Batches only (1 read). */
-export async function getTeacherBatches(teacherId: string): Promise<TeacherBatch[]> {
+/** Batches assigned to a teaching staffer (active first, then by name) — for the
+ *  staff profile page. Reads Batches only (1 read). */
+export async function getStaffBatches(staffId: string): Promise<StaffBatch[]> {
   const batches = await readTab<Batch>("Batches");
   return batches
-    .filter((b) => b.teacher_id === teacherId)
+    .filter((b) => b.teacher_id === staffId)
     .map((b) => ({
       batch_id: b.batch_id,
       name: b.name,
@@ -1559,62 +1618,62 @@ export async function getTeacherBatches(teacherId: string): Promise<TeacherBatch
     .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
 }
 
-/** Is `phone` already used by another teacher? (login keys on phone — keep unique.) */
-export async function teacherPhoneTaken(
+/** Is `phone` already used by another staffer? (login keys on phone — keep
+ *  unique.) Empty phone is allowed for non-teaching staff and never collides. */
+export async function staffPhoneTaken(
   phone: string,
   exceptId?: string,
 ): Promise<boolean> {
-  const teachers = await readTab<Teacher>("Teachers");
-  return teachers.some((t) => t.phone === phone && t.teacher_id !== exceptId);
+  const p = phone.trim();
+  if (!p) return false;
+  const staff = await readTab<Staff>("Staff");
+  return staff.some((s) => s.phone === p && s.teacher_id !== exceptId);
 }
 
-export async function createTeacher(input: {
-  name: string;
-  phone: string;
-  role: "teacher" | "owner";
-  subjects: string;
-  pinHash: string;
-}): Promise<string> {
-  const teachers = await readTab<Teacher>("Teachers");
-  const id = nextId(teachers.map((t) => t.teacher_id), "T", 3);
-  await appendRows("Teachers", [
-    [id, input.name, input.phone, input.pinHash, input.role, input.subjects, "TRUE"],
-  ]);
+export async function createStaff(
+  input: StaffInput & { pinHash: string },
+): Promise<string> {
+  const staff = await readTab<Staff>("Staff");
+  const prefix = input.staff_type === "non_teaching" ? "S" : "T";
+  // nextId strips the prefix letters, so number each prefix's series independently
+  const id = nextId(
+    staff.filter((s) => s.teacher_id.startsWith(prefix)).map((s) => s.teacher_id),
+    prefix,
+    3,
+  );
+  await appendRows("Staff", [staffRow(id, input, input.pinHash, "TRUE")]);
   return id;
 }
 
 /** Update editable fields; pin_hash + active are preserved from the saved row. */
-export async function updateTeacher(
-  id: string,
-  input: { name: string; phone: string; role: "teacher" | "owner"; subjects: string },
-): Promise<void> {
-  const teachers = await readTab<Teacher>("Teachers");
-  const idx = teachers.findIndex((t) => t.teacher_id === id);
+export async function updateStaff(id: string, input: StaffInput): Promise<void> {
+  const staff = await readTab<Staff>("Staff");
+  const idx = staff.findIndex((s) => s.teacher_id === id);
   if (idx < 0) return;
-  const cur = teachers[idx];
-  await updateValues(`Teachers!A${idx + 2}:G${idx + 2}`, [
-    [id, input.name, input.phone, cur.pin_hash, input.role, input.subjects, cur.active],
+  const cur = staff[idx];
+  await updateValues(`Staff!A${idx + 2}:M${idx + 2}`, [
+    staffRow(id, input, cur.pin_hash, cur.active),
   ]);
 }
 
-export async function setTeacherPin(id: string, pinHash: string): Promise<void> {
-  const teachers = await readTab<Teacher>("Teachers");
-  const idx = teachers.findIndex((t) => t.teacher_id === id);
-  if (idx >= 0) await updateValues(`Teachers!D${idx + 2}`, [[pinHash]]);
+export async function setStaffPin(id: string, pinHash: string): Promise<void> {
+  const staff = await readTab<Staff>("Staff");
+  const idx = staff.findIndex((s) => s.teacher_id === id);
+  if (idx >= 0) await updateValues(`Staff!D${idx + 2}`, [[pinHash]]);
 }
 
-export async function setTeacherActive(id: string, active: boolean): Promise<void> {
-  const teachers = await readTab<Teacher>("Teachers");
-  const idx = teachers.findIndex((t) => t.teacher_id === id);
+export async function setStaffActive(id: string, active: boolean): Promise<void> {
+  const staff = await readTab<Staff>("Staff");
+  const idx = staff.findIndex((s) => s.teacher_id === id);
   if (idx >= 0)
-    await updateValues(`Teachers!G${idx + 2}`, [[active ? "TRUE" : "FALSE"]]);
+    await updateValues(`Staff!G${idx + 2}`, [[active ? "TRUE" : "FALSE"]]);
 }
 
 /** Number of active owners other than `exceptId` — guards the last-owner rule. */
 export async function otherActiveOwners(exceptId: string): Promise<number> {
-  const teachers = await readTab<Teacher>("Teachers");
-  return teachers.filter(
-    (t) => t.role === "owner" && t.active === "TRUE" && t.teacher_id !== exceptId,
+  const staff = await readTab<Staff>("Staff");
+  return staff.filter(
+    (s) => s.role === "owner" && s.active === "TRUE" && s.teacher_id !== exceptId,
   ).length;
 }
 
@@ -1786,7 +1845,7 @@ export interface BatchView {
 export async function listBatches(): Promise<BatchView[]> {
   const [batches, teachers, rooms, enrolls] = await Promise.all([
     readTab<Batch>("Batches"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
     readTab<Room>("Rooms"),
     readTab<Enrollment>("Enrollments"),
   ]);
@@ -1901,7 +1960,7 @@ export async function getBatchDetail(id: string): Promise<BatchDetail | null> {
   const [batches, teachers, rooms, students, enrolls, courses, chapters, progressRows, cfgMap] =
     await Promise.all([
       readTab<Batch>("Batches"),
-      readTab<Teacher>("Teachers"),
+      readTab<Staff>("Staff"),
       readTab<Room>("Rooms"),
       readTab<Student>("Students"),
       readTab<Enrollment>("Enrollments"),
@@ -2085,7 +2144,7 @@ export async function refsExist(refs: {
   const [batches, rooms, teachers, students] = await Promise.all([
     refs.batchId ? readTab<Batch>("Batches") : Promise.resolve<Batch[]>([]),
     refs.roomId ? readTab<Room>("Rooms") : Promise.resolve<Room[]>([]),
-    refs.teacherId ? readTab<Teacher>("Teachers") : Promise.resolve<Teacher[]>([]),
+    refs.teacherId ? readTab<Staff>("Staff") : Promise.resolve<Staff[]>([]),
     refs.studentId ? readTab<Student>("Students") : Promise.resolve<Student[]>([]),
   ]);
   if (refs.batchId) {
@@ -2095,7 +2154,8 @@ export async function refsExist(refs: {
   if (refs.roomId && !rooms.some((x) => x.room_id === refs.roomId)) return false;
   if (refs.teacherId) {
     const t = teachers.find((x) => x.teacher_id === refs.teacherId);
-    if (!t) return false;
+    // must exist AND be teaching staff (a non-teaching staffer can't teach)
+    if (!t || staffTypeOf(t) !== "teaching") return false;
     if (refs.teacherMustBeActive !== false && t.active !== "TRUE") return false;
   }
   if (refs.studentId) {
@@ -2120,7 +2180,7 @@ export function integrityIssues(tabs: {
   enrolls: Enrollment[];
   batches: Batch[];
   rooms: Room[];
-  teachers: Teacher[];
+  teachers: Staff[];
   students: Student[];
   rules?: TimetableRule[];
 }): IntegrityIssue[] {
@@ -2167,7 +2227,7 @@ export async function getManageCounts(): Promise<ManageCounts> {
   const [students, batches, teachers, rooms, holidays, rules] = await Promise.all([
     readTab<Student>("Students"),
     readTab<Batch>("Batches"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
     readTab<Room>("Rooms"),
     readTab<Holiday>("Holidays"),
     readTab<TimetableRule>("Timetable"),
@@ -2876,7 +2936,7 @@ export async function reportAttendance(opts: {
     readTab<AttendanceRow>("Attendance"),
     readTab<Student>("Students"),
     readTab<Batch>("Batches"),
-    readTab<Teacher>("Teachers"),
+    readTab<Staff>("Staff"),
   ]);
   const sName = new Map(students.map((s) => [s.student_id, s.name]));
   const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
@@ -3820,7 +3880,7 @@ export async function getPtmBoard(): Promise<PtmBoard> {
       readTab<AttendanceRow>("Attendance"),
       readTab<Student>("Students"),
       readTab<Batch>("Batches"),
-      readTab<Teacher>("Teachers"),
+      readTab<Staff>("Staff"),
       config(),
       safeReadTab<FeeChargeRow>("FeeCharges"),
       safeReadTab<PaymentRow>("Payments"),

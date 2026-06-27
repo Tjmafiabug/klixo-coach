@@ -42,7 +42,7 @@ const SECTIONS: NavSection[] = [
       { href: "/manage/fees", label: "Fees", desc: "Dues, payments & defaulters", icon: FeesIcon, match: ["/manage/fees"], ownerOnly: true },
       { href: "/manage/ptm", label: "Parent meetings", desc: "Schedule, log & follow up", icon: PtmIcon, match: ["/manage/ptm"], ownerOnly: true },
       { href: "/manage/curriculum", label: "Curriculum", desc: "Syllabus & chapters by class", icon: CurriculumIcon, match: ["/manage/curriculum"], ownerOnly: true },
-      { href: "/manage/teachers", label: "Teachers", desc: "Staff & PINs", icon: TeachersIcon, match: ["/manage/teachers"], ownerOnly: true },
+      { href: "/manage/staff", label: "Staff", desc: "Teaching & non-teaching", icon: TeachersIcon, match: ["/manage/staff"], ownerOnly: true },
       { href: "/manage/rooms", label: "Rooms", desc: "Rooms & capacity", icon: RoomsIcon, match: ["/manage/rooms"], ownerOnly: true },
       { href: "/manage/holidays", label: "Holidays", desc: "Non-teaching days", icon: HolidaysIcon, match: ["/manage/holidays"], ownerOnly: true },
       { href: "/manage/settings", label: "Settings", desc: "Centre name, threshold & term", icon: SettingsIcon, match: ["/manage/settings"], ownerOnly: true },
