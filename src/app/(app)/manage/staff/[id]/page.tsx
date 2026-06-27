@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getStaff, otherActiveOwners, getStaffBatches, staffTypeOf } from "@/lib/data";
+import {
+  getStaff,
+  otherActiveOwners,
+  getStaffBatches,
+  staffTypeOf,
+  getStaffAttendanceSummary,
+  getStaffOpenTasks,
+} from "@/lib/data";
+import { shortDate } from "@/lib/format";
 import { saveStaff, resetStaffPin, toggleStaffActive } from "@/lib/actions";
 import { Banner, fieldClass, ActiveChip } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -27,10 +35,12 @@ export default async function EditStaffPage({
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
   const { id } = await params;
-  const [staff, others, batches, sp] = await Promise.all([
+  const [staff, others, batches, att, tasks, sp] = await Promise.all([
     getStaff(id),
     otherActiveOwners(id),
     getStaffBatches(id),
+    getStaffAttendanceSummary(id),
+    getStaffOpenTasks(id),
     searchParams,
   ]);
   if (!staff) notFound();
@@ -61,6 +71,60 @@ export default async function EditStaffPage({
         {err ? <Banner tone="danger">{err}</Banner> : null}
         {sp.pinset ? <Banner tone="success">PIN updated.</Banner> : null}
       </div>
+
+      <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">
+            Attendance <span className="font-normal text-muted-foreground">· this month</span>
+          </p>
+          <Link
+            href={`/manage/staff/attendance?date=${att.month}-01`}
+            className="text-xs font-semibold text-brand hover:underline"
+          >
+            Open register →
+          </Link>
+        </div>
+        {att.marked === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">No attendance marked this month.</p>
+        ) : (
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium tabular-nums">
+            <span className="text-success">{att.present} present</span>
+            <span className="text-danger">{att.absent} absent</span>
+            <span className="text-brand">{att.leave} leave</span>
+            <span className="text-warning">{att.half_day} half-day</span>
+            <span className="text-muted-foreground">· {att.marked} days marked</span>
+          </div>
+        )}
+      </div>
+
+      {tasks.length > 0 ? (
+        <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-foreground">
+              Open tasks{" "}
+              <span className="font-normal text-muted-foreground">({tasks.length})</span>
+            </p>
+            <Link href="/manage/staff/tasks" className="text-xs font-semibold text-brand hover:underline">
+              All tasks →
+            </Link>
+          </div>
+          <ul className="mt-3 flex flex-col gap-1.5">
+            {tasks.slice(0, 5).map((t) => (
+              <li
+                key={t.task_id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2"
+              >
+                <span className="min-w-0 truncate text-sm text-foreground">{t.title}</span>
+                {t.due_date ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    due {shortDate(t.due_date)}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {teaching ? (
         <div className="mt-4 rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">

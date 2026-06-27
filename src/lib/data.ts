@@ -27,6 +27,10 @@ import type {
   PtmRow,
   PtmMode,
   PtmStatus,
+  StaffAttendanceRow,
+  StaffAttendanceStatus,
+  StaffTaskRow,
+  StaffTaskStatus,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -1675,6 +1679,334 @@ export async function otherActiveOwners(exceptId: string): Promise<number> {
   return staff.filter(
     (s) => s.role === "owner" && s.active === "TRUE" && s.teacher_id !== exceptId,
   ).length;
+}
+
+// ---------------- C4b Staff attendance (daily register) ----------------
+
+const STAFF_ATT_STATUSES: readonly StaffAttendanceStatus[] = [
+  "present",
+  "absent",
+  "leave",
+  "half_day",
+];
+export function isStaffAttendanceStatus(v: string): v is StaffAttendanceStatus {
+  return (STAFF_ATT_STATUSES as readonly string[]).includes(v);
+}
+
+/** latest mark wins per key (timestamp, then log_id tiebreak). */
+function pickLatest(
+  map: Map<string, StaffAttendanceRow>,
+  key: string,
+  a: StaffAttendanceRow,
+) {
+  const prev = map.get(key);
+  if (
+    !prev ||
+    a.timestamp > prev.timestamp ||
+    (a.timestamp === prev.timestamp && a.log_id > prev.log_id)
+  )
+    map.set(key, a);
+}
+
+export interface StaffDayMark {
+  staff_id: string;
+  name: string;
+  staff_type: "teaching" | "non_teaching";
+  role: string; // sub-label: subjects (teaching) or designation (non-teaching)
+  saved: StaffAttendanceStatus | null;
+}
+
+export interface StaffAttendanceBoard {
+  date: string;
+  prev: string;
+  next: string;
+  isFuture: boolean;
+  rows: StaffDayMark[];
+  summary: Record<StaffAttendanceStatus | "unmarked", number>;
+}
+
+/** The daily register: every ACTIVE staffer (teaching + non-teaching) with their
+ *  mark for `date`. Reads Staff + StaffAttendance (2 reads; StaffAttendance via
+ *  safeReadTab so an un-provisioned tab reads empty instead of erroring). */
+export async function getStaffAttendanceBoard(dateArg: string): Promise<StaffAttendanceBoard> {
+  const today = await effectiveToday();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg) ? dateArg : today;
+  const [staff, att] = await Promise.all([
+    readTab<Staff>("Staff"),
+    safeReadTab<StaffAttendanceRow>("StaffAttendance"),
+  ]);
+  const byStaff = new Map<string, StaffAttendanceRow>();
+  for (const a of att) if (a.date === date) pickLatest(byStaff, a.staff_id, a);
+
+  const rows: StaffDayMark[] = staff
+    .filter((s) => s.active === "TRUE")
+    .map((s) => {
+      const type = staffTypeOf(s);
+      const saved = byStaff.get(s.teacher_id)?.status;
+      return {
+        staff_id: s.teacher_id,
+        name: s.name,
+        staff_type: type,
+        role:
+          type === "teaching"
+            ? s.subjects || "Teacher"
+            : s.designation || "Staff",
+        saved: saved && isStaffAttendanceStatus(saved) ? saved : null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.staff_type.localeCompare(b.staff_type) || a.name.localeCompare(b.name),
+    );
+
+  const summary: Record<StaffAttendanceStatus | "unmarked", number> = {
+    present: 0,
+    absent: 0,
+    leave: 0,
+    half_day: 0,
+    unmarked: 0,
+  };
+  for (const r of rows) summary[r.saved ?? "unmarked"] += 1;
+
+  return { date, prev: addDays(date, -1), next: addDays(date, 1), isFuture: date > today, rows, summary };
+}
+
+/** Upsert one day's staff marks by (staff_id, date): existing rows for `date` are
+ *  updated in place, new staff appended. Pass only the marks that changed. */
+export async function submitStaffAttendance(params: {
+  date: string;
+  markedBy: string;
+  // status "" clears the day (blanks the existing row → reads as unmarked)
+  marks: { staffId: string; status: StaffAttendanceStatus | ""; note?: string }[];
+}): Promise<number> {
+  if (params.marks.length === 0) return 0;
+  const att = await safeReadTab<StaffAttendanceRow>("StaffAttendance");
+
+  const rowByStaff = new Map<string, number>();
+  const logByStaff = new Map<string, string>();
+  let max = 0;
+  att.forEach((a, i) => {
+    const n = parseInt(a.log_id.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+    if (a.date === params.date) {
+      rowByStaff.set(a.staff_id, i + 2);
+      logByStaff.set(a.staff_id, a.log_id);
+    }
+  });
+
+  const ts = centerTimestamp();
+  const updates: { range: string; values: string[][] }[] = [];
+  const appends: string[][] = [];
+  let next = max;
+
+  for (const m of params.marks) {
+    const existingRow = rowByStaff.get(m.staffId);
+    // clearing a day that was never marked is a no-op (don't append a blank row)
+    if (!existingRow && m.status === "") continue;
+    const logId = existingRow
+      ? logByStaff.get(m.staffId)!
+      : `SAT${String(++next).padStart(4, "0")}`;
+    const row = [
+      logId,
+      m.staffId,
+      params.date,
+      m.status,
+      params.markedBy,
+      ts,
+      (m.note ?? "").trim(),
+    ];
+    if (existingRow)
+      updates.push({ range: `StaffAttendance!A${existingRow}:G${existingRow}`, values: [row] });
+    else appends.push(row);
+  }
+
+  await Promise.all([
+    updates.length ? batchUpdateValues(updates) : Promise.resolve(),
+    appends.length ? appendRows("StaffAttendance", appends) : Promise.resolve(),
+  ]);
+  return params.marks.length;
+}
+
+export interface StaffAttendanceSummary {
+  month: string; // YYYY-MM
+  present: number;
+  absent: number;
+  leave: number;
+  half_day: number;
+  marked: number; // distinct days marked this month
+}
+
+/** This-month attendance tally for one staffer — for the profile card. Reads
+ *  StaffAttendance only (1 read, safe). Latest mark per day wins. */
+export async function getStaffAttendanceSummary(
+  staffId: string,
+  monthArg?: string,
+): Promise<StaffAttendanceSummary> {
+  const today = await effectiveToday();
+  const month =
+    monthArg && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthArg) ? monthArg : today.slice(0, 7);
+  const att = await safeReadTab<StaffAttendanceRow>("StaffAttendance");
+  const byDate = new Map<string, StaffAttendanceRow>();
+  for (const a of att)
+    if (a.staff_id === staffId && a.date.startsWith(month)) pickLatest(byDate, a.date, a);
+
+  const out: StaffAttendanceSummary = {
+    month,
+    present: 0,
+    absent: 0,
+    leave: 0,
+    half_day: 0,
+    marked: 0,
+  };
+  for (const a of byDate.values()) {
+    if (isStaffAttendanceStatus(a.status)) {
+      out[a.status] += 1;
+      out.marked += 1;
+    }
+  }
+  return out;
+}
+
+// ---------------- C4c Staff tasks / duties ----------------
+
+const STAFF_TASK_STATUSES: readonly StaffTaskStatus[] = ["open", "done", "cancelled"];
+export function isStaffTaskStatus(v: string): v is StaffTaskStatus {
+  return (STAFF_TASK_STATUSES as readonly string[]).includes(v);
+}
+
+export interface StaffTaskView {
+  task_id: string;
+  staff_id: string;
+  staff_name: string;
+  title: string;
+  detail: string;
+  due_date: string;
+  status: StaffTaskStatus;
+  created: string;
+  done_date: string;
+  overdue: boolean;
+}
+
+export interface StaffTaskBoard {
+  tasks: StaffTaskView[];
+  /** active staff for the assignee picker */
+  staffOptions: { id: string; name: string }[];
+  counts: Record<StaffTaskStatus, number>;
+}
+
+const taskOpenRank = (s: StaffTaskStatus) => (s === "open" ? 0 : s === "done" ? 1 : 2);
+
+/** Task board data — every task (assignee-named, overdue-flagged) + the active
+ *  staff options for the quick-add picker + status counts. 3 reads (Config via
+ *  effectiveToday, StaffTasks, Staff). */
+export async function getStaffTaskBoard(): Promise<StaffTaskBoard> {
+  const today = await effectiveToday();
+  const [tasks, staff] = await Promise.all([
+    safeReadTab<StaffTaskRow>("StaffTasks"),
+    readTab<Staff>("Staff"),
+  ]);
+  const name = new Map(staff.map((s) => [s.teacher_id, s.name]));
+
+  const views: StaffTaskView[] = tasks
+    .map((t) => {
+      const status = isStaffTaskStatus(t.status) ? t.status : "open";
+      return {
+        task_id: t.task_id,
+        staff_id: t.staff_id,
+        staff_name: name.get(t.staff_id) ?? t.staff_id,
+        title: t.title,
+        detail: t.detail,
+        due_date: t.due_date,
+        status,
+        created: t.created,
+        done_date: t.done_date,
+        overdue: status === "open" && !!t.due_date && t.due_date < today,
+      };
+    })
+    .sort((a, b) => {
+      if (taskOpenRank(a.status) !== taskOpenRank(b.status))
+        return taskOpenRank(a.status) - taskOpenRank(b.status);
+      if (a.status === "open") {
+        if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+        const ad = a.due_date || "9999-99-99";
+        const bd = b.due_date || "9999-99-99";
+        if (ad !== bd) return ad < bd ? -1 : 1;
+      }
+      return b.created.localeCompare(a.created) || b.task_id.localeCompare(a.task_id);
+    });
+
+  const counts: Record<StaffTaskStatus, number> = { open: 0, done: 0, cancelled: 0 };
+  for (const v of views) counts[v.status] += 1;
+
+  const staffOptions = staff
+    .filter((s) => s.active === "TRUE")
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((s) => ({ id: s.teacher_id, name: s.name }));
+
+  return { tasks: views, staffOptions, counts };
+}
+
+export async function createStaffTask(input: {
+  staffId: string;
+  title: string;
+  detail: string;
+  dueDate: string;
+  createdBy: string;
+}): Promise<string> {
+  const today = await effectiveToday();
+  const tasks = await safeReadTab<StaffTaskRow>("StaffTasks");
+  const id = nextId(tasks.map((t) => t.task_id), "TSK", 4);
+  await appendRows("StaffTasks", [
+    [
+      id,
+      input.staffId,
+      input.title,
+      input.detail,
+      input.dueDate,
+      "open",
+      today,
+      "",
+      input.createdBy,
+    ],
+  ]);
+  return id;
+}
+
+export async function setStaffTaskStatus(
+  taskId: string,
+  status: StaffTaskStatus,
+): Promise<void> {
+  const today = await effectiveToday();
+  const tasks = await safeReadTab<StaffTaskRow>("StaffTasks");
+  const idx = tasks.findIndex((t) => t.task_id === taskId);
+  if (idx < 0) return;
+  const cur = tasks[idx];
+  const doneDate = status === "done" ? cur.done_date || today : "";
+  await updateValues(`StaffTasks!A${idx + 2}:I${idx + 2}`, [
+    [
+      cur.task_id,
+      cur.staff_id,
+      cur.title,
+      cur.detail,
+      cur.due_date,
+      status,
+      cur.created,
+      doneDate,
+      cur.created_by,
+    ],
+  ]);
+}
+
+/** Open tasks for one staffer — for the profile card. Reads StaffTasks only
+ *  (1 read); due-soonest first. */
+export async function getStaffOpenTasks(staffId: string): Promise<StaffTaskRow[]> {
+  const tasks = await safeReadTab<StaffTaskRow>("StaffTasks");
+  return tasks
+    .filter(
+      (t) =>
+        t.staff_id === staffId && (!isStaffTaskStatus(t.status) || t.status === "open"),
+    )
+    .sort((a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999"));
 }
 
 // ---------------- C1 Students ----------------

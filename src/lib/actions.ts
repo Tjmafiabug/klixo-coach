@@ -31,6 +31,11 @@ import {
   setStaffActive,
   staffPhoneTaken,
   otherActiveOwners,
+  submitStaffAttendance,
+  isStaffAttendanceStatus,
+  createStaffTask,
+  setStaffTaskStatus,
+  isStaffTaskStatus,
   createStudent,
   updateStudent,
   setStudentActive,
@@ -75,7 +80,7 @@ import {
 import type { StaffInput } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
-import type { AttendanceStatus, PtmMode, PtmStatus } from "@/lib/types";
+import type { AttendanceStatus, PtmMode, PtmStatus, StaffAttendanceStatus } from "@/lib/types";
 
 const ATTENDANCE_STATUSES: readonly AttendanceStatus[] = ["present", "absent", "late"];
 
@@ -478,6 +483,41 @@ export async function toggleStaffActive(formData: FormData): Promise<void> {
   }
   await setStaffActive(id, active);
   redirect("/manage/staff?saved=1");
+}
+
+export async function saveStaffAttendance(formData: FormData): Promise<void> {
+  const user = await requireOwner();
+  const date = String(formData.get("date") ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) redirect("/manage/staff/attendance");
+  const raw = safeParse<{ staffId: string; status: string }[]>(formData.get("marks"), []);
+  // "" = clear that day's mark (blanks the row); any valid status sets it
+  const marks = raw
+    .filter((m) => m && m.staffId && (m.status === "" || isStaffAttendanceStatus(m.status)))
+    .map((m) => ({ staffId: m.staffId, status: m.status as StaffAttendanceStatus | "" }));
+  if (marks.length) await submitStaffAttendance({ date, markedBy: user.teacherId, marks });
+  redirect(`/manage/staff/attendance?date=${date}&saved=1`);
+}
+
+export async function addStaffTask(formData: FormData): Promise<void> {
+  const user = await requireOwner();
+  const staffId = String(formData.get("staffId") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const detail = String(formData.get("detail") ?? "").trim();
+  const dueRaw = String(formData.get("due_date") ?? "").trim();
+  if (!staffId || !title) redirect("/manage/staff/tasks?error=missing");
+  const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(dueRaw) ? dueRaw : "";
+  await createStaffTask({ staffId, title, detail, dueDate, createdBy: user.teacherId });
+  redirect("/manage/staff/tasks?saved=1");
+}
+
+export async function updateStaffTaskStatus(formData: FormData): Promise<void> {
+  await requireOwner();
+  const taskId = String(formData.get("taskId") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  if (taskId && isStaffTaskStatus(status)) await setStaffTaskStatus(taskId, status);
+  // return to the filtered view the action was triggered from
+  const back = String(formData.get("back") ?? "").trim();
+  redirect(back.startsWith("/manage/staff/tasks") ? back : "/manage/staff/tasks");
 }
 
 // ---------------- C1 Students ----------------

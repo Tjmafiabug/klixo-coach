@@ -26,6 +26,17 @@ export function shortDate(iso: string): string {
   });
 }
 
+/** ISO date "YYYY-MM-DD" → "Sat, 26 Jun" (UTC, locale-stable). */
+export function dayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
 /** A wa.me link for a phone (bare 10-digit numbers get the +91 India prefix).
  *  Returns null when there are no digits, so callers can hide the action. */
 export function waLink(phone: string): string | null {

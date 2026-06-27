@@ -187,3 +187,36 @@ export interface PtmRow {
   timestamp: string;  // I  centerTimestamp() at create (audit)
 }
 
+// ===== Staff attendance (daily register, append-only) =====
+
+export type StaffAttendanceStatus = "present" | "absent" | "leave" | "half_day";
+
+/** One staff member's attendance for one day. Upsert key = (staff_id, date) —
+ *  re-marking a day updates that row in place. Columns A..G (positional). */
+export interface StaffAttendanceRow {
+  log_id: string;     // A  SAT0001
+  staff_id: string;   // B  Staff.teacher_id (T### or S###)
+  date: string;       // C  YYYY-MM-DD
+  status: string;     // D  present | absent | leave | half_day
+  marked_by: string;  // E  owner teacher_id
+  timestamp: string;  // F  centerTimestamp() (audit)
+  note: string;       // G  optional (e.g. leave reason)
+}
+
+// ===== Staff tasks / duties =====
+
+export type StaffTaskStatus = "open" | "done" | "cancelled";
+
+/** A duty/task assigned to a staffer. Status is updated in place. Cols A..I. */
+export interface StaffTaskRow {
+  task_id: string;    // A  TSK0001
+  staff_id: string;   // B  assignee (Staff.teacher_id)
+  title: string;      // C
+  detail: string;     // D  optional
+  due_date: string;   // E  YYYY-MM-DD or ""
+  status: string;     // F  open | done | cancelled
+  created: string;    // G  YYYY-MM-DD
+  done_date: string;  // H  YYYY-MM-DD when done, else ""
+  created_by: string; // I  owner teacher_id
+}
+

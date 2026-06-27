@@ -85,4 +85,46 @@ await sheets.spreadsheets.values.update({
 });
 console.log(`Header written to ${NEW_NAME}: [${STAFF_HEADER.join(", ")}]`);
 
+// --- Phase 2: StaffAttendance tab (daily register, append-only) ---
+const STAFF_ATT_HEADER = ["log_id", "staff_id", "date", "status", "marked_by", "timestamp", "note"];
+const metaAfter = await sheets.spreadsheets.get({ spreadsheetId });
+const haveAtt = (metaAfter.data.sheets ?? []).some((s) => s.properties?.title === "StaffAttendance");
+if (!haveAtt) {
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: "StaffAttendance" } } }] },
+  });
+  console.log("Created tab: StaffAttendance");
+} else {
+  console.log("Tab already exists: StaffAttendance");
+}
+await sheets.spreadsheets.values.update({
+  spreadsheetId,
+  range: "'StaffAttendance'!A1:G1",
+  valueInputOption: "RAW",
+  requestBody: { values: [STAFF_ATT_HEADER] },
+});
+console.log(`Header written to StaffAttendance: [${STAFF_ATT_HEADER.join(", ")}]`);
+
+// --- Phase 3: StaffTasks tab (duty/task log) ---
+const STAFF_TASKS_HEADER = ["task_id", "staff_id", "title", "detail", "due_date", "status", "created", "done_date", "created_by"];
+const metaTasks = await sheets.spreadsheets.get({ spreadsheetId });
+const haveTasks = (metaTasks.data.sheets ?? []).some((s) => s.properties?.title === "StaffTasks");
+if (!haveTasks) {
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: "StaffTasks" } } }] },
+  });
+  console.log("Created tab: StaffTasks");
+} else {
+  console.log("Tab already exists: StaffTasks");
+}
+await sheets.spreadsheets.values.update({
+  spreadsheetId,
+  range: "'StaffTasks'!A1:I1",
+  valueInputOption: "RAW",
+  requestBody: { values: [STAFF_TASKS_HEADER] },
+});
+console.log(`Header written to StaffTasks: [${STAFF_TASKS_HEADER.join(", ")}]`);
+
 console.log("provision-staff done.");

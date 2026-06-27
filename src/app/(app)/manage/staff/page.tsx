@@ -57,6 +57,18 @@ export default async function StaffPage({
         actions={
           <>
             <SearchBox action="/manage/staff" placeholder="Search staff…" defaultValue={q} />
+            <Link
+              href="/manage/staff/attendance"
+              className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+            >
+              Attendance
+            </Link>
+            <Link
+              href="/manage/staff/tasks"
+              className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+            >
+              Tasks
+            </Link>
             <PrimaryLink href="/manage/staff/new">+ Add staff</PrimaryLink>
           </>
         }
