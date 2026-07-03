@@ -53,6 +53,23 @@ const SECTIONS: NavSection[] = [
 const isMatch = (pathname: string, item: NavItem) =>
   item.match.some((m) => pathname === m || pathname.startsWith(m + "/"));
 
+// Section signature hues (design spec §2.5) — the navigability layer. Applied to
+// the active-nav left bar + icon and the page-header rule only; body stays neutral.
+const SECTION_HUE: { prefix: string; hue: string }[] = [
+  { prefix: "/dashboard", hue: "#7c3aed" }, // violet
+  { prefix: "/timetable", hue: "#0891b2" }, // cyan
+  { prefix: "/manage/students", hue: "#2563eb" }, // blue
+  { prefix: "/manage/batches", hue: "#0d9488" }, // teal
+  { prefix: "/manage/fees", hue: "#059669" }, // emerald
+  { prefix: "/manage/curriculum", hue: "#d97706" }, // amber
+  { prefix: "/manage/staff", hue: "#e11d48" }, // rose
+  { prefix: "/manage/ptm", hue: "#e11d48" }, // rose
+  { prefix: "/portal", hue: "#4f46e5" }, // indigo
+];
+const sectionHue = (pathname: string): string =>
+  SECTION_HUE.find((s) => pathname === s.prefix || pathname.startsWith(s.prefix + "/"))?.hue ??
+  "#4f46e5"; // default indigo (Today, Rooms, Holidays, Settings)
+
 export function AppShell({
   name,
   role,
@@ -193,13 +210,20 @@ export function AppShell({
               <MenuIcon className="h-5 w-5" />
             </button>
 
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-[0.95rem] font-semibold tracking-tight text-foreground">
-                {active.label}
-              </h1>
-              <p className="truncate text-xs text-muted-foreground">
-                {active.desc}
-              </p>
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <span
+                className="h-8 w-1 shrink-0 rounded-full"
+                style={{ background: sectionHue(pathname) }}
+                aria-hidden
+              />
+              <div className="min-w-0">
+                <h1 className="truncate text-[0.95rem] font-semibold tracking-tight text-foreground">
+                  {active.label}
+                </h1>
+                <p className="truncate text-xs text-muted-foreground">
+                  {active.desc}
+                </p>
+              </div>
             </div>
 
             {/* Identity lives in the sidebar footer; on mobile the sidebar is a
@@ -252,6 +276,7 @@ function SidebarBody({
             {section.items.map((item) => {
               const active = isMatch(pathname, item);
               const Icon = item.icon;
+              const hue = sectionHue(item.href);
               const i = idx++;
               return (
                 <motion.div
@@ -271,17 +296,25 @@ function SidebarBody({
                     }`}
                   >
                     {active ? (
-                      <motion.span
-                        layoutId={reduce ? undefined : "nav-active"}
-                        className="absolute inset-0 -z-10 rounded-xl bg-brand-subtle"
-                        transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                      />
+                      <>
+                        <motion.span
+                          layoutId={reduce ? undefined : "nav-active"}
+                          className="absolute inset-0 -z-10 rounded-xl bg-brand-subtle"
+                          transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                        />
+                        <span
+                          className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full"
+                          style={{ background: hue }}
+                          aria-hidden
+                        />
+                      </>
                     ) : null}
-                    <Icon
-                      className={`h-[1.15rem] w-[1.15rem] shrink-0 ${
-                        active ? "text-brand" : "text-muted-foreground group-hover:text-foreground"
-                      }`}
-                    />
+                    <span
+                      className={active ? "shrink-0" : "shrink-0 text-muted-foreground group-hover:text-foreground"}
+                      style={active ? { color: hue } : undefined}
+                    >
+                      <Icon className="h-[1.15rem] w-[1.15rem]" />
+                    </span>
                     {item.label}
                   </Link>
                 </motion.div>

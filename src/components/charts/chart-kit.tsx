@@ -1,15 +1,36 @@
 "use client";
 
-/** Chart colours mirror the globals.css tokens (recharts needs literal values). */
+/** Chart colours mirror the globals.css tokens (recharts needs literal values).
+ *  Vivid *-solid values (design spec §2.6) — these are graphics, so they carry
+ *  more chroma than the AA text tokens. `series` is the ordered categorical set. */
 export const CHART = {
-  accent: "#2563eb",
-  success: "#047857",
-  warning: "#b45309",
-  danger: "#b91c1c",
+  accent: "#4f46e5", // brand indigo (line/area default)
+  success: "#059669",
+  warning: "#d97706",
+  danger: "#dc2626",
   grid: "#eef0f4",
   axis: "#5b6473",
-  ink: "#0a0a0b",
+  ink: "#0f1115",
+  // Ordered categorical palette — AA on white, distinct in b/w print.
+  series: [
+    "#4f46e5", // indigo
+    "#0d9488", // teal
+    "#d97706", // amber
+    "#e11d48", // rose
+    "#0891b2", // cyan
+    "#7c3aed", // violet
+    "#059669", // emerald
+    "#6b7280", // gray (last / other)
+  ],
 } as const;
+
+/** Attendance bar/segment colour by value vs threshold: below=red, near=amber,
+ *  clear=green. Never a flat gray bar. */
+export function pctColor(pct: number, threshold: number): string {
+  if (pct < threshold) return CHART.danger;
+  if (pct < threshold + 10) return CHART.warning;
+  return CHART.success;
+}
 
 /** Premium tooltip card shared by every chart. */
 export function TooltipCard({

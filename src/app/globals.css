@@ -1,38 +1,60 @@
 @import "tailwindcss";
 
-/* ----- KLiXO Coach design tokens — Cal.com-style professional LMS -----
-   White canvas, near-black primary, blue accent used sparingly.
-   Status colours stay dark (AA-compliant on subtle backgrounds for LMS chips). */
+/* ----- KLiXO Coach design tokens — neutral chrome + purposeful colour -----
+   White canvas + ink text + hairlines (the professional base), plus a real
+   brand hue (indigo), a warm amber spark, and vivid-but-AA semantic status.
+   See docs/UI-DESIGN-SPEC.md §2. Two variants per status: a dark AA-safe token
+   for text (pills), and a vivid *-solid token for graphics (dots, bars, charts). */
 :root {
   --background: #ffffff; /* white canvas */
-  --foreground: #111111; /* ink */
+  --foreground: #0f1115; /* ink */
   --surface: #ffffff; /* forms, tables, cards */
-  --surface-2: #f5f5f5; /* sidebar, raised panels */
-  --muted: #f5f5f5; /* hover fills, empty-state backgrounds */
+  --surface-2: #f7f7f8; /* sidebar, raised panels (slightly warmer) */
+  --muted: #f7f7f8; /* hover fills, empty-state backgrounds */
   --muted-foreground: #6b7280;
-  --border: #e5e7eb; /* hairline */
+  --border: #e6e7eb; /* hairline */
 
-  /* Brand = near-black. White text ≈ 18:1. */
-  --brand: #111111;
-  --brand-hover: #242424;
+  /* Brand = indigo (replaces near-black as the action colour). --brand aliases
+     brand-600 so every existing bg-brand/text-brand gains colour for free. */
+  --brand-50: #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-500: #6366f1;
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --brand: #4f46e5; /* = brand-600, primary action */
+  --brand-hover: #4338ca; /* = brand-700 */
   --brand-foreground: #ffffff;
-  --brand-subtle: #f5f5f5; /* active-nav fill */
+  --brand-subtle: #eef2ff; /* active-nav fill, selected rows */
 
-  /* Accent = blue, used sparingly on links, focus rings, data-viz. */
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
+  /* Secondary = amber (warmth, streaks, highlights, logo accent). */
+  --secondary: #f59e0b;
+  --secondary-600: #d97706;
+  --secondary-subtle: #fffbeb;
+
+  /* Accent aliases brand so existing focus rings / links turn indigo. */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-foreground: #ffffff;
-  --accent-subtle: #eff6ff;
+  --accent-subtle: #eef2ff;
 
-  /* Status — dark -700 variants: AA on both white and subtle backgrounds. */
+  /* Status — dark AA-safe text tokens (pills read on subtle bg). */
   --success: #047857;
   --success-subtle: #ecfdf5;
   --warning: #b45309;
   --warning-subtle: #fffbeb;
   --danger: #b91c1c;
   --danger-subtle: #fef2f2;
+  --info: #0369a1;
+  --info-subtle: #f0f9ff;
 
-  --ring: #3b82f6;
+  /* Status — vivid solids for graphics only (dots, bars, rings, charts).
+     UI graphics need 3:1, not 4.5:1, so these can carry more chroma. */
+  --success-solid: #059669;
+  --warning-solid: #d97706;
+  --danger-solid: #dc2626;
+  --info-solid: #0ea5e9;
+
+  --ring: #4f46e5;
 
   /* Aviation/hazard red — non-text accents only (dots, stripes, edges).
      Body text keeps the AA-compliant --danger; #e61919 is ~3.9:1 on white. */
@@ -51,20 +73,34 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-subtle: var(--brand-subtle);
+  --color-secondary: var(--secondary);
+  --color-secondary-600: var(--secondary-600);
+  --color-secondary-subtle: var(--secondary-subtle);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-subtle: var(--accent-subtle);
   --color-success: var(--success);
   --color-success-subtle: var(--success-subtle);
+  --color-success-solid: var(--success-solid);
   --color-warning: var(--warning);
   --color-warning-subtle: var(--warning-subtle);
+  --color-warning-solid: var(--warning-solid);
   --color-danger: var(--danger);
   --color-danger-subtle: var(--danger-subtle);
+  --color-danger-solid: var(--danger-solid);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-info-solid: var(--info-solid);
   --color-ring: var(--ring);
   --color-hazard: var(--hazard);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;

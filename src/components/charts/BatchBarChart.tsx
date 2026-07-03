@@ -3,6 +3,7 @@
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -12,7 +13,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useReducedMotion } from "framer-motion";
-import { CHART, TooltipCard, ChartEmpty } from "./chart-kit";
+import { CHART, TooltipCard, ChartEmpty, pctColor } from "./chart-kit";
 
 export function BatchBarChart({
   data,
@@ -80,7 +81,7 @@ export function BatchBarChart({
               <TooltipCard
                 title={row.name}
                 items={[
-                  { label: "Attendance", value: `${row.pct}%`, color: CHART.accent },
+                  { label: "Attendance", value: `${row.pct}%`, color: pctColor(row.pct, threshold) },
                   { label: "Marks", value: row.total.toLocaleString() },
                   { label: "Minimum", value: `${threshold}%`, color: CHART.danger },
                 ]}
@@ -91,10 +92,12 @@ export function BatchBarChart({
         <Bar
           dataKey="pct"
           radius={[0, 7, 7, 0]}
-          fill={CHART.accent}
           barSize={20}
           isAnimationActive={!reduce}
         >
+          {rows.map((r) => (
+            <Cell key={r.name} fill={pctColor(r.pct, threshold)} />
+          ))}
           <LabelList
             dataKey="pct"
             position="right"
