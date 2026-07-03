@@ -42,6 +42,7 @@ const SECTIONS: NavSection[] = [
       { href: "/manage/fees", label: "Fees", desc: "Dues, payments & defaulters", icon: FeesIcon, match: ["/manage/fees"], ownerOnly: true },
       { href: "/manage/ptm", label: "Parent meetings", desc: "Schedule, log & follow up", icon: PtmIcon, match: ["/manage/ptm"], ownerOnly: true },
       { href: "/manage/curriculum", label: "Curriculum", desc: "Syllabus & chapters by class", icon: CurriculumIcon, match: ["/manage/curriculum"], ownerOnly: true },
+      { href: "/manage/tests", label: "Tests", desc: "MCQ tests & results", icon: TestsIcon, match: ["/manage/tests"], ownerOnly: true },
       { href: "/manage/staff", label: "Staff", desc: "Teaching & non-teaching", icon: TeachersIcon, match: ["/manage/staff"], ownerOnly: true },
       { href: "/manage/rooms", label: "Rooms", desc: "Rooms & capacity", icon: RoomsIcon, match: ["/manage/rooms"], ownerOnly: true },
       { href: "/manage/holidays", label: "Holidays", desc: "Non-teaching days", icon: HolidaysIcon, match: ["/manage/holidays"], ownerOnly: true },
@@ -62,6 +63,7 @@ const SECTION_HUE: { prefix: string; hue: string }[] = [
   { prefix: "/manage/batches", hue: "#0d9488" }, // teal
   { prefix: "/manage/fees", hue: "#059669" }, // emerald
   { prefix: "/manage/curriculum", hue: "#d97706" }, // amber
+  { prefix: "/manage/tests", hue: "#9333ea" }, // purple
   { prefix: "/manage/staff", hue: "#e11d48" }, // rose
   { prefix: "/manage/ptm", hue: "#e11d48" }, // rose
   { prefix: "/portal", hue: "#4f46e5" }, // indigo
@@ -471,6 +473,14 @@ function FeesIcon({ className }: IconProps) {
     <svg {...base(className)}>
       <path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
       <path d="M12 8v8M9 11h6M9 13h4" />
+    </svg>
+  );
+}
+function TestsIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <rect x="4" y="3.5" width="16" height="17" rx="2.5" />
+      <path d="M9 8.5a2 2 0 1 1 3 1.7c-.7.4-1 .8-1 1.6M11 15h.01" />
     </svg>
   );
 }

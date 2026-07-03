@@ -9,6 +9,7 @@ export default async function AppLayout({
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
+  if (user.role === "student") redirect("/portal"); // students never see the ops app
 
   return (
     <AppShell name={user.name} role={user.role}>

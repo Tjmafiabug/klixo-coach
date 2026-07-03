@@ -13,11 +13,21 @@ function secret(): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
+// Two identities share one session shape:
+//   - staff (owner/teacher): teacherId is the Staff PK, studentId "".
+//   - student/parent portal: role "student", studentId is the Student PK the
+//     token is scoped to (the trust boundary — every portal read filters by it),
+//     teacherId "". A student's phone OR their parent_phone can mint this token;
+//     both land on the SAME studentId, so a parent only ever sees their child.
 export interface Session {
   teacherId: string;
-  role: "teacher" | "owner";
+  studentId: string;
+  role: "teacher" | "owner" | "student";
   name: string;
 }
+
+const asRole = (r: unknown): Session["role"] =>
+  r === "owner" ? "owner" : r === "student" ? "student" : "teacher";
 
 export async function createSession(s: Session): Promise<void> {
   const token = await new SignJWT({ ...s })
@@ -42,8 +52,9 @@ export async function getSession(): Promise<Session | null> {
   try {
     const { payload } = await jwtVerify(token, secret());
     return {
-      teacherId: String(payload.teacherId),
-      role: payload.role === "owner" ? "owner" : "teacher",
+      teacherId: String(payload.teacherId ?? ""),
+      studentId: String(payload.studentId ?? ""),
+      role: asRole(payload.role),
       name: String(payload.name),
     };
   } catch {

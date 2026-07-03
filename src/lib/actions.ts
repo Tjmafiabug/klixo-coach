@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import {
   getTeacherByPhone,
+  getStudentByPhone,
   getSessionMeta,
   getRoster,
   submitAttendance,
@@ -80,6 +81,13 @@ import {
   setPtmStatus,
   isPtmMode,
   isPtmStatus,
+  // Tests (Phase 3)
+  createTest,
+  addQuestion,
+  deleteQuestion,
+  setTestPublished,
+  submitAttempt,
+  isOptionKey,
 } from "@/lib/data";
 import type { StaffInput } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
@@ -114,25 +122,35 @@ export async function login(
     return { error: `Too many attempts. Try again in ${Math.ceil(lockMs / 60000)} min.` };
   }
 
+  // Staff (owner/teacher) own the phone → resolve here, success or fail.
   const teacher = await getTeacherByPhone(phone);
-  if (!teacher || !teacher.pin_hash || teacher.pin_hash.startsWith("<")) {
-    recordFailure(phone);
-    return { error: "Invalid phone or PIN." };
-  }
-  const ok = await bcrypt.compare(pin, teacher.pin_hash);
-  if (!ok) {
+  if (teacher && teacher.pin_hash && !teacher.pin_hash.startsWith("<")) {
+    if (await bcrypt.compare(pin, teacher.pin_hash)) {
+      recordSuccess(phone);
+      const role = teacher.role === "owner" ? "owner" : "teacher";
+      await createSession({ teacherId: teacher.teacher_id, studentId: "", role, name: teacher.name });
+      redirect(role === "owner" ? "/dashboard" : "/today");
+    }
     recordFailure(phone);
     return { error: "Invalid phone or PIN." };
   }
 
-  recordSuccess(phone);
-  const role = teacher.role === "owner" ? "owner" : "teacher";
-  await createSession({
-    teacherId: teacher.teacher_id,
-    role,
-    name: teacher.name,
-  });
-  redirect(role === "owner" ? "/dashboard" : "/today");
+  // Not staff → try the student/parent portal (phone or parent_phone). The token
+  // is scoped to this one studentId; every portal read filters by it server-side.
+  const student = await getStudentByPhone(phone);
+  if (student && (await bcrypt.compare(pin, student.pin_hash))) {
+    recordSuccess(phone);
+    await createSession({
+      teacherId: "",
+      studentId: student.student_id,
+      role: "student",
+      name: student.name,
+    });
+    redirect("/portal");
+  }
+
+  recordFailure(phone);
+  return { error: "Invalid phone or PIN." };
 }
 
 export async function logout(): Promise<void> {
@@ -974,4 +992,118 @@ export async function setPtmStatusAction(formData: FormData): Promise<void> {
     await setPtmStatus(ptmId, status);
   }
   redirect(`${back}?updated=1`);
+}
+
+// ============================================================================
+// Tests (Phase 3) — owner builder actions are owner-only; the taker action is
+// student-only and scopes the studentId from the SESSION, never the form.
+// ============================================================================
+
+export async function createTestAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const title = String(formData.get("title") ?? "").trim();
+  const batchId = String(formData.get("batchId") ?? "").trim();
+  const passPct = String(formData.get("passPct") ?? "").trim();
+  const marksToCut = String(formData.get("marksToCut") ?? "0").trim();
+  const durationMin = String(formData.get("durationMin") ?? "0").trim();
+  const negativeMarking = formData.get("negativeMarking") === "on";
+
+  if (!title || !batchId) redirect("/manage/tests/new?error=missing");
+  if (!isInt(passPct) || Number(passPct) > 100) redirect("/manage/tests/new?error=pass");
+  if (!(await refsExist({ batchId }))) redirect("/manage/tests/new?error=missing");
+
+  const id = await createTest({
+    title,
+    batchId,
+    passPct: Number(passPct),
+    negativeMarking,
+    marksToCut: isInt(marksToCut) ? Number(marksToCut) : 0,
+    durationMin: isInt(durationMin) ? Number(durationMin) : 0,
+  });
+  redirect(`/manage/tests/${id}`);
+}
+
+export async function addQuestionAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const testId = String(formData.get("testId") ?? "").trim();
+  const text = String(formData.get("text") ?? "").trim();
+  const opts: [string, string, string, string] = [
+    String(formData.get("optA") ?? "").trim(),
+    String(formData.get("optB") ?? "").trim(),
+    String(formData.get("optC") ?? "").trim(),
+    String(formData.get("optD") ?? "").trim(),
+  ];
+  const correct = String(formData.get("correct") ?? "").trim().toUpperCase();
+  const marks = String(formData.get("marks") ?? "1").trim();
+  const back = `/manage/tests/${testId}`;
+
+  if (!testId || !text) redirect(`${back}?error=missing`);
+  // need at least two non-empty options and a correct key that points to a filled one
+  if (opts.filter(Boolean).length < 2) redirect(`${back}?error=options`);
+  if (!isOptionKey(correct) || !opts["ABCD".indexOf(correct)]) redirect(`${back}?error=correct`);
+  if (!isInt(marks) || Number(marks) <= 0) redirect(`${back}?error=marks`);
+
+  await addQuestion({ testId, text, options: opts, correct, marks: Number(marks) });
+  redirect(`${back}?added=1`);
+}
+
+export async function deleteQuestionAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const questionId = String(formData.get("questionId") ?? "").trim();
+  const testId = String(formData.get("testId") ?? "").trim();
+  if (questionId) await deleteQuestion(questionId);
+  redirect(`/manage/tests/${testId}?qdeleted=1`);
+}
+
+export async function toggleTestPublishedAction(formData: FormData): Promise<void> {
+  await requireOwner();
+  const testId = String(formData.get("testId") ?? "").trim();
+  const publish = formData.get("publish") === "1";
+  if (testId) await setTestPublished(testId, publish);
+  redirect(`/manage/tests/${testId}?${publish ? "published=1" : "unpublished=1"}`);
+}
+
+/** Student submits a test. studentId comes from the session (trust boundary),
+ *  answers from the form as chosen_<questionId>=A..D. Scoring is server-side. */
+export async function submitTestAction(formData: FormData): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "student") redirect("/today");
+  const testId = String(formData.get("testId") ?? "").trim();
+  if (!testId) redirect("/portal/tests");
+
+  const chosen: Record<string, string> = {};
+  for (const [k, v] of formData.entries()) {
+    if (k.startsWith("chosen_")) chosen[k.slice("chosen_".length)] = String(v);
+  }
+  await submitAttempt({ testId, studentId: user.studentId, chosen });
+  redirect(`/portal/tests/${testId}`);
+}
+
+// ============================================================================
+// Phase 2 — mock online fee payment. A real Razorpay flow would create an order,
+// open Checkout, then verify the webhook signature server-side before crediting.
+// Here the "Pay now" button posts straight to this action which appends a payment
+// to the ledger. studentId + amount are re-derived server-side from the session
+// and the live outstanding — the client cannot dictate who is credited or how
+// much. // TODO: live keys — swap this for Razorpay order + signature-verified
+// webhook (see docs/BUILD-PLAN §4); keep the append idempotent by razorpay id.
+// ============================================================================
+
+export async function mockPayFeesAction(): Promise<void> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "student") redirect("/today");
+
+  const outstanding = await currentNetOutstanding(user.studentId);
+  if (outstanding <= 0) redirect("/portal/fees"); // nothing to pay
+
+  await recordPayment({
+    studentId: user.studentId,
+    amount: outstanding,
+    date: await effectiveToday(),
+    method: "upi", // Razorpay settles as UPI/card; mock records UPI
+    note: "Online payment (mock)",
+  });
+  redirect("/portal/fees?paid=1");
 }

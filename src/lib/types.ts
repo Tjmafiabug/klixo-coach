@@ -61,13 +61,14 @@ export interface Staff {
 }
 
 export interface Student {
-  student_id: string;
-  name: string;
-  phone: string;
-  parent_phone: string;
-  join_date: string;
-  status: string; // "active" | "inactive"
-  notes: string;
+  student_id: string; // A
+  name: string;       // B
+  phone: string;      // C  student's own phone (portal login key)
+  parent_phone: string; // D  guardian phone (also a portal login key → same student)
+  join_date: string;  // E
+  status: string;     // F  "active" | "inactive"
+  notes: string;      // G
+  pin_hash: string;   // H  bcrypt of the 4-digit portal PIN; "" = no portal login
 }
 
 export interface Batch {
@@ -185,6 +186,59 @@ export interface PtmRow {
   summary: string;    // G  discussion + action notes (free text)
   status: string;     // H  scheduled | done | no_show | cancelled | void
   timestamp: string;  // I  centerTimestamp() at create (audit)
+}
+
+// ===== Online tests (MCQ, mock) — Phase 3 =====
+// Four append-only tabs. Scoring is ALWAYS server-side (never trust a client
+// score). Timed exams are best-effort, not proctored (see docs/BUILD-PLAN §5).
+
+export type OptionKey = "A" | "B" | "C" | "D";
+
+/** A test definition. total_marks is derived from its questions (not stored).
+ *  Columns A..I (positional for writes). */
+export interface TestRow {
+  test_id: string;         // A  TST0001
+  title: string;           // B
+  batch_id: string;        // C  which batch it's assigned to
+  pass_pct: string;        // D  0..100
+  negative_marking: string;// E  "TRUE" | "FALSE"
+  marks_to_cut: string;    // F  marks deducted per wrong answer when negative_marking
+  duration_min: string;    // G  time limit (best-effort), "" = untimed
+  published: string;       // H  "TRUE" | "FALSE" — students only see published
+  created: string;         // I  YYYY-MM-DD
+}
+
+/** One MCQ question in a test. correct is the OptionKey of the right option.
+ *  Columns A..I (positional). */
+export interface QuestionRow {
+  question_id: string; // A  QST0001
+  test_id: string;     // B
+  text: string;        // C
+  opt_a: string;       // D
+  opt_b: string;       // E
+  opt_c: string;       // F
+  opt_d: string;       // G
+  correct: string;     // H  "A" | "B" | "C" | "D"
+  marks: string;       // I  positive int
+}
+
+/** One student's attempt at a test. One attempt per (test, student) — the taker
+ *  refuses a second. Columns A..F (positional). */
+export interface AttemptRow {
+  attempt_id: string;  // A  ATT0001
+  test_id: string;     // B
+  student_id: string;  // C
+  score: string;       // D  server-computed, floored at 0
+  max_score: string;   // E  Σ question marks at submit time
+  submitted_at: string;// F  centerTimestamp()
+}
+
+/** One answer within an attempt. chosen "" = left blank. Columns A..D. */
+export interface AnswerRow {
+  attempt_id: string;  // A
+  question_id: string; // B
+  chosen: string;      // C  "A".."D" or ""
+  correct: string;     // D  "TRUE" | "FALSE"
 }
 
 // ===== Staff attendance (daily register, append-only) =====

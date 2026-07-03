@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getOwnerDashboard, getCurriculumRollup, getFeesRollup } from "@/lib/data";
+import { getOwnerDashboard, getCurriculumRollup, getFeesRollup, getTestsDashboard } from "@/lib/data";
 import { PctBadge, StatusPill, OnTrackChip } from "@/components/ui";
 import { ExportButton } from "@/components/ExportButton";
 import { Reveal, CountUp } from "@/components/motion";
@@ -17,10 +17,11 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
 
-  const [{ stats, health, integrity }, rollup, feesRollup] = await Promise.all([
+  const [{ stats, health, integrity }, rollup, feesRollup, tests] = await Promise.all([
     getOwnerDashboard(),
     getCurriculumRollup(),
     getFeesRollup(),
+    getTestsDashboard(),
   ]);
   const blocking = health.clashes.filter((c) => c.blocking).length;
   const healthy = health.clashes.length === 0;
@@ -344,6 +345,32 @@ export default async function DashboardPage() {
         </Card>
       </Reveal>
       </div>
+
+      {/* ---- Test results ---- */}
+      {tests.recent.length > 0 ? (
+        <Reveal delay={0.05} className="mt-4">
+          <Card
+            title="Test results"
+            subtitle={`${tests.publishedCount} published test${tests.publishedCount === 1 ? "" : "s"} · class averages`}
+          >
+            <ul className="divide-y divide-border">
+              {tests.recent.map((t) => (
+                <li key={t.test_id} className="flex items-center justify-between gap-3 py-2.5">
+                  <Link href={`/manage/tests/${t.test_id}`} className="group min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground group-hover:text-brand">{t.title}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {t.batchName} · {t.attempted} attempt{t.attempted === 1 ? "" : "s"}
+                    </p>
+                  </Link>
+                  <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-foreground">
+                    {t.average != null ? `${t.average}/${t.max}` : "—"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </Reveal>
+      ) : null}
     </div>
   );
 }

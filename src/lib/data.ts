@@ -34,6 +34,11 @@ import type {
   SalaryAdjustmentRow,
   SalaryAdjustmentKind,
   SalaryPaymentRow,
+  TestRow,
+  QuestionRow,
+  AttemptRow,
+  AnswerRow,
+  OptionKey,
 } from "@/lib/types";
 
 type ConfigRow = { key: string; value: string };
@@ -2253,6 +2258,23 @@ export async function getStudent(id: string): Promise<Student | null> {
   return students.find((s) => s.student_id === id) ?? null;
 }
 
+/** Portal login lookup: an active student whose own phone OR parent_phone matches.
+ *  Both keys resolve to the same student, so student and parent share one portal
+ *  scoped to that studentId. Returns null if no login (no/placeholder pin_hash). */
+export async function getStudentByPhone(phone: string): Promise<Student | null> {
+  const students = await readTab<Student>("Students");
+  const p = phone.trim();
+  return (
+    students.find(
+      (s) =>
+        s.status === "active" &&
+        (s.phone === p || s.parent_phone === p) &&
+        !!s.pin_hash &&
+        !s.pin_hash.startsWith("<"),
+    ) ?? null
+  );
+}
+
 export async function createStudent(input: {
   name: string;
   phone: string;
@@ -4454,4 +4476,513 @@ export async function getPtmBoard(): Promise<PtmBoard> {
   });
 
   return { upcoming, recent, due, intervalDays: PTM_INTERVAL_DAYS };
+}
+
+// ============================================================================
+// Online tests (MCQ, mock) — Phase 3. Four append-only tabs: Tests, Questions,
+// Attempts, Answers. Scoring is ALWAYS server-side. All reads degrade to empty
+// via safeReadTab so a centre that never provisioned the tabs simply shows none.
+// ============================================================================
+
+const OPTION_KEYS: readonly OptionKey[] = ["A", "B", "C", "D"];
+export function isOptionKey(s: string): s is OptionKey {
+  return (OPTION_KEYS as readonly string[]).includes(s);
+}
+
+const optionText = (q: QuestionRow, k: OptionKey): string =>
+  ({ A: q.opt_a, B: q.opt_b, C: q.opt_c, D: q.opt_d })[k];
+
+/** Positional row for a QuestionRow (A..I). */
+function questionRowArr(q: QuestionRow): string[] {
+  return [q.question_id, q.test_id, q.text, q.opt_a, q.opt_b, q.opt_c, q.opt_d, q.correct, q.marks];
+}
+
+// ---- owner: list + build ----
+
+export interface TestOwnerView {
+  test_id: string;
+  title: string;
+  batch_id: string;
+  batchName: string;
+  published: boolean;
+  questionCount: number;
+  totalMarks: number;
+  attemptCount: number;
+  duration_min: string;
+}
+
+export async function listTestsOwner(): Promise<TestOwnerView[]> {
+  const [tests, questions, attempts, batches] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    safeReadTab<AttemptRow>("Attempts"),
+    readTab<Batch>("Batches"),
+  ]);
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const qByTest = new Map<string, QuestionRow[]>();
+  for (const q of questions) {
+    if (!qByTest.has(q.test_id)) qByTest.set(q.test_id, []);
+    qByTest.get(q.test_id)!.push(q);
+  }
+  const aCount = new Map<string, number>();
+  for (const a of attempts) aCount.set(a.test_id, (aCount.get(a.test_id) ?? 0) + 1);
+
+  return tests
+    .map((t) => {
+      const qs = qByTest.get(t.test_id) ?? [];
+      return {
+        test_id: t.test_id,
+        title: t.title,
+        batch_id: t.batch_id,
+        batchName: bName.get(t.batch_id) ?? t.batch_id,
+        published: t.published === "TRUE",
+        questionCount: qs.length,
+        totalMarks: qs.reduce((s, q) => s + (Number(q.marks) || 0), 0),
+        attemptCount: aCount.get(t.test_id) ?? 0,
+        duration_min: t.duration_min,
+      };
+    })
+    .sort((a, b) => b.test_id.localeCompare(a.test_id));
+}
+
+export async function getTest(id: string): Promise<TestRow | null> {
+  const tests = await safeReadTab<TestRow>("Tests");
+  return tests.find((t) => t.test_id === id) ?? null;
+}
+
+export interface TestBuild {
+  test: TestRow;
+  batchName: string;
+  questions: QuestionRow[];
+  totalMarks: number;
+}
+
+/** Owner test-detail data: the test + its questions (WITH correct answers). */
+export async function getTestBuild(id: string): Promise<TestBuild | null> {
+  const [tests, questions, batches] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    readTab<Batch>("Batches"),
+  ]);
+  const test = tests.find((t) => t.test_id === id);
+  if (!test) return null;
+  const qs = questions
+    .filter((q) => q.test_id === id)
+    .sort((a, b) => a.question_id.localeCompare(b.question_id));
+  return {
+    test,
+    batchName: batches.find((b) => b.batch_id === test.batch_id)?.name ?? test.batch_id,
+    questions: qs,
+    totalMarks: qs.reduce((s, q) => s + (Number(q.marks) || 0), 0),
+  };
+}
+
+export async function createTest(input: {
+  title: string;
+  batchId: string;
+  passPct: number;
+  negativeMarking: boolean;
+  marksToCut: number;
+  durationMin: number;
+}): Promise<string> {
+  const tests = await safeReadTab<TestRow>("Tests");
+  const id = nextId(tests.map((t) => t.test_id), "TST", 4);
+  await appendRows("Tests", [
+    [
+      id,
+      input.title,
+      input.batchId,
+      String(input.passPct),
+      input.negativeMarking ? "TRUE" : "FALSE",
+      String(input.marksToCut),
+      input.durationMin > 0 ? String(input.durationMin) : "",
+      "FALSE", // unpublished until the owner publishes
+      await effectiveToday(),
+    ],
+  ]);
+  return id;
+}
+
+export async function addQuestion(input: {
+  testId: string;
+  text: string;
+  options: [string, string, string, string]; // A,B,C,D
+  correct: OptionKey;
+  marks: number;
+}): Promise<string> {
+  const questions = await safeReadTab<QuestionRow>("Questions");
+  const id = nextId(questions.map((q) => q.question_id), "QST", 4);
+  await appendRows("Questions", [
+    questionRowArr({
+      question_id: id,
+      test_id: input.testId,
+      text: input.text,
+      opt_a: input.options[0],
+      opt_b: input.options[1],
+      opt_c: input.options[2],
+      opt_d: input.options[3],
+      correct: input.correct,
+      marks: String(input.marks),
+    }),
+  ]);
+  return id;
+}
+
+/** Delete a question by id (fresh read → row number → deleteRows). Blocked once
+ *  the test has attempts, so a graded test's questions can't shift under it. */
+export async function deleteQuestion(questionId: string): Promise<void> {
+  const questions = await safeReadTab<QuestionRow>("Questions");
+  const idx = questions.findIndex((q) => q.question_id === questionId);
+  if (idx < 0) return;
+  const attempts = await safeReadTab<AttemptRow>("Attempts");
+  if (attempts.some((a) => a.test_id === questions[idx].test_id)) return; // frozen once attempted
+  await deleteRows("Questions", [idx + 2]);
+}
+
+/** Publish/unpublish. Publishing requires ≥1 question (guarded here). */
+export async function setTestPublished(id: string, published: boolean): Promise<void> {
+  const tests = await safeReadTab<TestRow>("Tests");
+  const idx = tests.findIndex((t) => t.test_id === id);
+  if (idx < 0) return;
+  if (published) {
+    const questions = await safeReadTab<QuestionRow>("Questions");
+    if (!questions.some((q) => q.test_id === id)) return; // never publish an empty test
+  }
+  await updateValues(`Tests!H${idx + 2}`, [[published ? "TRUE" : "FALSE"]]);
+}
+
+// ---- shared: enrollment + scoring ----
+
+function isEnrolledActive(enrolls: Enrollment[], studentId: string, batchId: string): boolean {
+  return enrolls.some(
+    (e) => e.student_id === studentId && e.batch_id === batchId && e.status === "active" && e.end_date === "",
+  );
+}
+
+export interface ScoredQuestion {
+  question_id: string;
+  chosen: OptionKey | "";
+  correctKey: OptionKey;
+  isCorrect: boolean;
+  marks: number;
+  awarded: number; // +marks / 0 / −marksToCut
+}
+
+/** Pure server-side scoring. Correct → +marks. Wrong (a chosen option) → −cut
+ *  when negative marking is on, else 0. Blank → 0. Total floored at 0. Exported
+ *  for the throwaway self-check. */
+export function scoreAttempt(
+  test: Pick<TestRow, "negative_marking" | "marks_to_cut">,
+  questions: QuestionRow[],
+  chosenByQ: Map<string, string>,
+): { score: number; max: number; perQuestion: ScoredQuestion[] } {
+  const neg = test.negative_marking === "TRUE";
+  const cut = Number(test.marks_to_cut) || 0;
+  let score = 0;
+  let max = 0;
+  const perQuestion = questions.map((q) => {
+    const marks = Number(q.marks) || 0;
+    max += marks;
+    const raw = (chosenByQ.get(q.question_id) ?? "").toUpperCase();
+    const chosen: OptionKey | "" = isOptionKey(raw) ? raw : "";
+    const correctKey = (isOptionKey(q.correct) ? q.correct : "A") as OptionKey;
+    const isCorrect = chosen !== "" && chosen === correctKey;
+    const awarded = isCorrect ? marks : chosen !== "" && neg ? -cut : 0;
+    score += awarded;
+    return { question_id: q.question_id, chosen, correctKey, isCorrect, marks, awarded };
+  });
+  return { score: Math.max(0, score), max, perQuestion };
+}
+
+// ---- student: list + take + submit + result ----
+
+export interface StudentTestView {
+  test_id: string;
+  title: string;
+  batchName: string;
+  questionCount: number;
+  totalMarks: number;
+  duration_min: string;
+  passPct: number;
+  attempt: { score: number; max: number; passed: boolean } | null; // null = not taken
+}
+
+/** Published tests for the student's active batches, with their attempt (if any).
+ *  Scoped to studentId — never lists another student's tests or scores. */
+export async function getStudentTests(studentId: string): Promise<StudentTestView[]> {
+  const [tests, questions, attempts, enrolls, batches] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    safeReadTab<AttemptRow>("Attempts"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<Batch>("Batches"),
+  ]);
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const myAttempt = new Map(attempts.filter((a) => a.student_id === studentId).map((a) => [a.test_id, a]));
+  const qByTest = new Map<string, QuestionRow[]>();
+  for (const q of questions) {
+    if (!qByTest.has(q.test_id)) qByTest.set(q.test_id, []);
+    qByTest.get(q.test_id)!.push(q);
+  }
+  return tests
+    .filter((t) => t.published === "TRUE" && isEnrolledActive(enrolls, studentId, t.batch_id))
+    .map((t) => {
+      const qs = qByTest.get(t.test_id) ?? [];
+      const totalMarks = qs.reduce((s, q) => s + (Number(q.marks) || 0), 0);
+      const passPct = Number(t.pass_pct) || 0;
+      const a = myAttempt.get(t.test_id);
+      return {
+        test_id: t.test_id,
+        title: t.title,
+        batchName: bName.get(t.batch_id) ?? t.batch_id,
+        questionCount: qs.length,
+        totalMarks,
+        duration_min: t.duration_min,
+        passPct,
+        attempt: a
+          ? {
+              score: Number(a.score) || 0,
+              max: Number(a.max_score) || 0,
+              passed: (Number(a.max_score) || 0) > 0 && (Number(a.score) || 0) / (Number(a.max_score) || 1) * 100 >= passPct,
+            }
+          : null,
+      };
+    })
+    .sort((x, y) => Number(x.attempt != null) - Number(y.attempt != null) || y.test_id.localeCompare(x.test_id));
+}
+
+export type TakerQuestion = {
+  question_id: string;
+  text: string;
+  options: { key: OptionKey; text: string }[];
+  marks: number;
+};
+
+export type TakeTestResult =
+  | { ok: true; test: TestRow; questions: TakerQuestion[] }
+  | { ok: false; reason: "not-found" | "not-available" | "already-done" };
+
+/** Prepare a test for taking — WITHOUT leaking correct answers to the client.
+ *  Guards: exists, published, student enrolled in its batch, not already attempted. */
+export async function getTestForTaking(testId: string, studentId: string): Promise<TakeTestResult> {
+  const [tests, questions, attempts, enrolls] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    safeReadTab<AttemptRow>("Attempts"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const test = tests.find((t) => t.test_id === testId);
+  if (!test) return { ok: false, reason: "not-found" };
+  if (test.published !== "TRUE" || !isEnrolledActive(enrolls, studentId, test.batch_id))
+    return { ok: false, reason: "not-available" };
+  if (attempts.some((a) => a.test_id === testId && a.student_id === studentId))
+    return { ok: false, reason: "already-done" };
+  const qs = questions
+    .filter((q) => q.test_id === testId)
+    .sort((a, b) => a.question_id.localeCompare(b.question_id))
+    .map((q) => ({
+      question_id: q.question_id,
+      text: q.text,
+      marks: Number(q.marks) || 0,
+      options: OPTION_KEYS.map((k) => ({ key: k, text: optionText(q, k) })).filter((o) => o.text !== ""),
+    }));
+  return { ok: true, test, questions: qs };
+}
+
+/** Score + persist an attempt. Re-runs every guard server-side (trust boundary):
+ *  published, enrolled, not-already-done. Appends the Attempt + one Answer per
+ *  question. Returns the attempt id, or an error reason (no partial writes). */
+export async function submitAttempt(input: {
+  testId: string;
+  studentId: string;
+  chosen: Record<string, string>; // question_id -> "A".."D" | ""
+}): Promise<{ ok: true; attemptId: string } | { ok: false; reason: "not-available" | "already-done" | "not-found" }> {
+  const [tests, questions, attempts, enrolls] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    safeReadTab<AttemptRow>("Attempts"),
+    readTab<Enrollment>("Enrollments"),
+  ]);
+  const test = tests.find((t) => t.test_id === input.testId);
+  if (!test) return { ok: false, reason: "not-found" };
+  if (test.published !== "TRUE" || !isEnrolledActive(enrolls, input.studentId, test.batch_id))
+    return { ok: false, reason: "not-available" };
+  if (attempts.some((a) => a.test_id === input.testId && a.student_id === input.studentId))
+    return { ok: false, reason: "already-done" };
+
+  const qs = questions.filter((q) => q.test_id === input.testId);
+  const chosenByQ = new Map(Object.entries(input.chosen));
+  const { score, max, perQuestion } = scoreAttempt(test, qs, chosenByQ);
+
+  const attemptId = nextId(attempts.map((a) => a.attempt_id), "ATT", 4);
+  await appendRows("Attempts", [
+    [attemptId, input.testId, input.studentId, String(score), String(max), centerTimestamp()],
+  ]);
+  await appendRows(
+    "Answers",
+    perQuestion.map((p) => [attemptId, p.question_id, p.chosen, p.isCorrect ? "TRUE" : "FALSE"]),
+  );
+  return { ok: true, attemptId };
+}
+
+export interface AttemptResult {
+  test: TestRow;
+  score: number;
+  max: number;
+  passed: boolean;
+  passPct: number;
+  questions: {
+    text: string;
+    options: { key: OptionKey; text: string }[];
+    chosen: OptionKey | "";
+    correctKey: OptionKey;
+    isCorrect: boolean;
+    marks: number;
+  }[];
+}
+
+/** A student's result for a test (their attempt only — scoped to studentId).
+ *  Null when they haven't attempted it. Shows the correct answer per question. */
+export async function getAttemptResult(testId: string, studentId: string): Promise<AttemptResult | null> {
+  const [tests, questions, attempts, answers] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    safeReadTab<AttemptRow>("Attempts"),
+    safeReadTab<AnswerRow>("Answers"),
+  ]);
+  const test = tests.find((t) => t.test_id === testId);
+  if (!test) return null;
+  const attempt = attempts.find((a) => a.test_id === testId && a.student_id === studentId);
+  if (!attempt) return null;
+  const chosenByQ = new Map(
+    answers.filter((a) => a.attempt_id === attempt.attempt_id).map((a) => [a.question_id, a.chosen]),
+  );
+  const qs = questions
+    .filter((q) => q.test_id === testId)
+    .sort((a, b) => a.question_id.localeCompare(b.question_id));
+  const score = Number(attempt.score) || 0;
+  const max = Number(attempt.max_score) || 0;
+  const passPct = Number(test.pass_pct) || 0;
+  return {
+    test,
+    score,
+    max,
+    passPct,
+    passed: max > 0 && (score / max) * 100 >= passPct,
+    questions: qs.map((q) => {
+      const raw = (chosenByQ.get(q.question_id) ?? "").toUpperCase();
+      const chosen: OptionKey | "" = isOptionKey(raw) ? raw : "";
+      const correctKey = (isOptionKey(q.correct) ? q.correct : "A") as OptionKey;
+      return {
+        text: q.text,
+        marks: Number(q.marks) || 0,
+        chosen,
+        correctKey,
+        isCorrect: chosen !== "" && chosen === correctKey,
+        options: OPTION_KEYS.map((k) => ({ key: k, text: optionText(q, k) })).filter((o) => o.text !== ""),
+      };
+    }),
+  };
+}
+
+export interface TestResultsOwner {
+  test: TestRow;
+  batchName: string;
+  max: number;
+  rosterSize: number;
+  attempted: number;
+  average: number | null; // mean score over attempts, null when none
+  passed: number;
+  rows: { studentId: string; name: string; score: number; passed: boolean; taken: boolean }[];
+}
+
+/** Owner results for a test: every roster student, their score (or "not taken"),
+ *  plus class average + pass count. Feeds the owner test detail + dashboard. */
+export async function getTestResultsOwner(testId: string): Promise<TestResultsOwner | null> {
+  const [tests, attempts, enrolls, students, batches] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<AttemptRow>("Attempts"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<Student>("Students"),
+    readTab<Batch>("Batches"),
+  ]);
+  const test = tests.find((t) => t.test_id === testId);
+  if (!test) return null;
+  const sName = new Map(students.map((s) => [s.student_id, s.name]));
+  const passPct = Number(test.pass_pct) || 0;
+  const roster = [
+    ...new Set(
+      enrolls
+        .filter((e) => e.batch_id === test.batch_id && e.status === "active" && e.end_date === "")
+        .map((e) => e.student_id),
+    ),
+  ];
+  const byStudent = new Map(attempts.filter((a) => a.test_id === testId).map((a) => [a.student_id, a]));
+  const rows = roster
+    .map((sid) => {
+      const a = byStudent.get(sid);
+      const score = a ? Number(a.score) || 0 : 0;
+      const max = a ? Number(a.max_score) || 0 : 0;
+      return {
+        studentId: sid,
+        name: sName.get(sid) ?? sid,
+        score,
+        taken: !!a,
+        passed: !!a && max > 0 && (score / max) * 100 >= passPct,
+      };
+    })
+    .sort((x, y) => Number(y.taken) - Number(x.taken) || y.score - x.score || x.name.localeCompare(y.name));
+  const taken = rows.filter((r) => r.taken);
+  const max = taken.length ? Number(byStudent.get(taken[0].studentId)!.max_score) || 0 : 0;
+  return {
+    test,
+    batchName: batches.find((b) => b.batch_id === test.batch_id)?.name ?? test.batch_id,
+    max,
+    rosterSize: roster.length,
+    attempted: taken.length,
+    average: taken.length ? Math.round((taken.reduce((s, r) => s + r.score, 0) / taken.length) * 10) / 10 : null,
+    passed: taken.filter((r) => r.passed).length,
+    rows,
+  };
+}
+
+export interface TestsDashboard {
+  publishedCount: number;
+  recent: { test_id: string; title: string; batchName: string; attempted: number; average: number | null; max: number }[];
+}
+
+/** Compact tests summary for the owner dashboard: published count + the latest
+ *  few tests with attempt count and class average. */
+export async function getTestsDashboard(): Promise<TestsDashboard> {
+  const [tests, questions, attempts, batches] = await Promise.all([
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    safeReadTab<AttemptRow>("Attempts"),
+    readTab<Batch>("Batches"),
+  ]);
+  const bName = new Map(batches.map((b) => [b.batch_id, b.name]));
+  const maxByTest = new Map<string, number>();
+  for (const q of questions)
+    maxByTest.set(q.test_id, (maxByTest.get(q.test_id) ?? 0) + (Number(q.marks) || 0));
+  const attByTest = new Map<string, AttemptRow[]>();
+  for (const a of attempts) {
+    if (!attByTest.has(a.test_id)) attByTest.set(a.test_id, []);
+    attByTest.get(a.test_id)!.push(a);
+  }
+  const recent = tests
+    .filter((t) => t.published === "TRUE")
+    .sort((a, b) => b.test_id.localeCompare(a.test_id))
+    .slice(0, 5)
+    .map((t) => {
+      const as = attByTest.get(t.test_id) ?? [];
+      return {
+        test_id: t.test_id,
+        title: t.title,
+        batchName: bName.get(t.batch_id) ?? t.batch_id,
+        attempted: as.length,
+        max: maxByTest.get(t.test_id) ?? 0,
+        average: as.length ? Math.round((as.reduce((s, a) => s + (Number(a.score) || 0), 0) / as.length) * 10) / 10 : null,
+      };
+    });
+  return { publishedCount: tests.filter((t) => t.published === "TRUE").length, recent };
 }
