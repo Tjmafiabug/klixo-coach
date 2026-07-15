@@ -51,3 +51,10 @@ screencapture-lms-skillcircle-*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local media + scratch (not for the repo)
+/video/
+/download
+/designs/
+/Screenshot*.png
+/screencapture*.png
