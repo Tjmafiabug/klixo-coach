@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "bootstrap": "node --env-file=.env.local scripts/bootstrap-sheet.mjs"
   },
   "dependencies": {
     "@googleapis/sheets": "^13.0.2",

@@ -23,6 +23,8 @@ written server-side through a service account — so a non-technical owner can s
 data in a tool they already know, while the app mediates every read and write.
 
 > Full product spec, data model, and roadmap live in **[PLAN.md](PLAN.md)** — the single source of truth.
+>
+> **Setting up a new centre?** Follow **[SETUP.md](SETUP.md)** — Google service account, one-command sheet bootstrap, seed, deploy.
 
 ## ✨ Highlights
 - **Google Sheets as the database** (10 tabs) — no DB to run; the owner's data lives where they already work
