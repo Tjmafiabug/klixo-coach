@@ -49,9 +49,6 @@ It's built as a real product, not a demo. Phone and PIN login, mobile first for 
 **Today view & timetable**
 <img src="screenshots/today.png" width="360" alt="Today view"> <img src="screenshots/timetable.png" width="360" alt="Timetable">
 
-**Mobile first for teachers**
-<img src="screenshots/mobile.png" width="300" alt="Mobile dashboard">
-
 </div>
 
 ## Built with
