@@ -91,6 +91,7 @@ import {
 } from "@/lib/data";
 import type { StaffInput } from "@/lib/data";
 import { createSession, destroySession, getSession } from "@/lib/auth";
+import { ownsSession } from "@/lib/authz";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
 import type { AttendanceStatus, PtmMode, PtmStatus, StaffAttendanceStatus } from "@/lib/types";
 
@@ -159,15 +160,17 @@ export async function logout(): Promise<void> {
 }
 
 export async function submitMarks(formData: FormData): Promise<void> {
-  const user = await getSession();
-  if (!user) redirect("/login");
+  const user = await requireStaff();
 
   const sessionId = String(formData.get("sessionId") ?? "");
   const session = await getSessionMeta(sessionId);
   if (!session) redirect("/today");
 
-  // a teacher may only mark their own (incl. substituted) sessions; owner marks all
-  if (user.role !== "owner" && session.teacher_id !== user.teacherId) {
+  // a teacher may only mark their own (incl. substituted) sessions; owner marks all.
+  // Both ids must be non-empty before comparing: readTab turns a cleared Sheet cell
+  // into "", and the Sheet is human-editable — so a blank teacher_id would otherwise
+  // equal the "" every non-teacher session carries and hand the row to anyone.
+  if (user.role !== "owner" && !ownsSession(session.teacher_id, user.teacherId)) {
     redirect("/today");
   }
 
@@ -236,15 +239,14 @@ export async function submitMarks(formData: FormData): Promise<void> {
 }
 
 export async function cancelSession(formData: FormData): Promise<void> {
-  const user = await getSession();
-  if (!user) redirect("/login");
+  const user = await requireStaff();
   const sessionId = String(formData.get("sessionId") ?? "");
   const session = await getSessionMeta(sessionId);
   if (!session) redirect("/today");
   // only the owner or the session's own (incl. substitute) teacher may cancel,
   // and only an upcoming, not-already-cancelled session
   const today = await effectiveToday();
-  const owns = user.role === "owner" || session.teacher_id === user.teacherId;
+  const owns = user.role === "owner" || ownsSession(session.teacher_id, user.teacherId);
   if (!owns || session.status === "cancelled" || session.date < today) {
     redirect("/today");
   }
@@ -253,9 +255,7 @@ export async function cancelSession(formData: FormData): Promise<void> {
 }
 
 export async function substituteTeacher(formData: FormData): Promise<void> {
-  const user = await getSession();
-  if (!user) redirect("/login");
-  if (user.role !== "owner") redirect("/today");
+  await requireOwner();
   const sessionId = String(formData.get("sessionId") ?? "");
   const teacherId = String(formData.get("teacherId") ?? "");
   // the substitute must be a real, active teacher (else the session becomes
@@ -267,17 +267,13 @@ export async function substituteTeacher(formData: FormData): Promise<void> {
 }
 
 export async function runGeneration(): Promise<void> {
-  const user = await getSession();
-  if (!user) redirect("/login");
-  if (user.role !== "owner") redirect("/today");
+  await requireOwner();
   const { added, removed } = await generateSessions();
   redirect(`/today?generated=${added}&removed=${removed}`);
 }
 
 export async function saveRule(formData: FormData): Promise<void> {
-  const user = await getSession();
-  if (!user) redirect("/login");
-  if (user.role !== "owner") redirect("/today");
+  await requireOwner();
 
   const slotId = String(formData.get("slotId") ?? "").trim();
   const days = formData.getAll("days").map((d) => String(d));
@@ -318,9 +314,7 @@ export async function saveRule(formData: FormData): Promise<void> {
 }
 
 export async function expireRuleAction(formData: FormData): Promise<void> {
-  const user = await getSession();
-  if (!user) redirect("/login");
-  if (user.role !== "owner") redirect("/today");
+  await requireOwner();
   const slotId = String(formData.get("slotId") ?? "").trim();
   const effectiveTo = String(formData.get("effectiveTo") ?? "").trim();
   if (slotId && effectiveTo) await expireRule(slotId, effectiveTo);
@@ -360,10 +354,32 @@ export async function addExtraClass(formData: FormData): Promise<void> {
 // Every action re-checks the owner role server-side (N2: never trust the UI).
 // ============================================================================
 
+/** The staff trust boundary. Every privileged action funnels through here —
+ *  never hand-roll the role check, or action #51 will be the one that forgets.
+ *
+ *  The session JWT is valid for 12h and carries `role` as a claim, so the token
+ *  alone is a *stale* answer: deactivating or demoting a staffer in the Sheet
+ *  would otherwise leave their existing token owner-valid until it expired. So
+ *  we re-read the Staff row on the privileged path (one cached-ish tab read,
+ *  owner actions only — not on every request) and confirm the token still
+ *  matches reality. Revoking access is now immediate. */
 async function requireOwner() {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
+  const staff = await getStaff(user.teacherId);
+  if (!staff || staff.active !== "TRUE" || staff.role !== "owner") redirect("/login");
+  return user;
+}
+
+/** Same boundary for actions any signed-in staffer may run (teacher or owner).
+ *  Returns the session so callers can scope to `teacherId`. */
+async function requireStaff() {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role === "student") redirect("/portal");
+  const staff = await getStaff(user.teacherId);
+  if (!staff || staff.active !== "TRUE") redirect("/login");
   return user;
 }
 
