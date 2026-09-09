@@ -125,3 +125,60 @@ export async function cleanupTestSalaryPayments(): Promise<number> {
   }
   return data.length;
 }
+
+/**
+ * Delete the attempt + answers a test run created for `studentId` on `testId`.
+ *
+ * The MCQ flow is deliberately one-attempt-per-student (submitAttempt refuses a
+ * second), so an E2E run that takes a test burns that student permanently
+ * unless it cleans up. Rows are DELETED rather than voided because Attempts has
+ * no status column — the app itself has no notion of an undone attempt.
+ */
+export async function cleanupTestAttempt(testId: string, studentId: string): Promise<number> {
+  const { sheets: sheetsApi, auth: googleAuth } = await import("@googleapis/sheets");
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON!);
+  const auth = new googleAuth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  const api = sheetsApi({ version: "v4", auth });
+  const spreadsheetId = process.env.SHEET_ID!;
+
+  const meta = await api.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const gid = (name: string) =>
+    meta.data.sheets?.find((s) => s.properties?.title === name)?.properties?.sheetId;
+
+  const res = await api.spreadsheets.values.batchGet({
+    spreadsheetId,
+    ranges: ["'Attempts'", "'Answers'"],
+  });
+  const [attempts, answers] = (res.data.valueRanges ?? []).map((v) => v.values ?? []);
+
+  // Attempts: A attempt_id, B test_id, C student_id. Answers: A attempt_id.
+  const doomed = new Set<string>();
+  const attemptRows: number[] = [];
+  attempts.slice(1).forEach((r, i) => {
+    if (r[1] === testId && r[2] === studentId) {
+      doomed.add(String(r[0]));
+      attemptRows.push(i + 2);
+    }
+  });
+  if (doomed.size === 0) return 0;
+
+  const answerRows: number[] = [];
+  answers.slice(1).forEach((r, i) => {
+    if (doomed.has(String(r[0]))) answerRows.push(i + 2);
+  });
+
+  // Delete descending so earlier deletions don't shift later indices.
+  const requests = [
+    ...answerRows.sort((a, b) => b - a).map((rn) => ({
+      deleteDimension: { range: { sheetId: gid("Answers"), dimension: "ROWS", startIndex: rn - 1, endIndex: rn } },
+    })),
+    ...attemptRows.sort((a, b) => b - a).map((rn) => ({
+      deleteDimension: { range: { sheetId: gid("Attempts"), dimension: "ROWS", startIndex: rn - 1, endIndex: rn } },
+    })),
+  ];
+  await api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+  return attemptRows.length;
+}
