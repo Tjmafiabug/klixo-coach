@@ -25,6 +25,7 @@ export function TodayDateNav({ date, today }: { date: string; today: string }) {
       </button>
       <input
         type="date"
+        aria-label="Show sessions for date"
         value={date}
         max={today}
         onChange={(e) => e.target.value && go(e.target.value)}

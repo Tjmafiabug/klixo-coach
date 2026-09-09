@@ -56,8 +56,7 @@ export default async function StudentsPage({
       ) : (
         <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {slice.map((s, i) => (
-            <Reveal key={s.student_id} delay={Math.min(i * 0.03, 0.3)} className="h-full">
-              <li className="h-full">
+            <Reveal key={s.student_id} delay={Math.min(i * 0.03, 0.3)} as="li" className="h-full">
                 <Link
                   href={`/manage/students/${s.student_id}`}
                   className="group flex h-full items-center gap-3 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
@@ -75,7 +74,6 @@ export default async function StudentsPage({
                   </div>
                   <RowChevron />
                 </Link>
-              </li>
             </Reveal>
           ))}
         </ul>

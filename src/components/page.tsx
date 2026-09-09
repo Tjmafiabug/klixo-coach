@@ -205,7 +205,7 @@ export function Pager({
           ‹ Prev
         </Link>
       ) : (
-        <span className={`${cls} cursor-not-allowed text-muted-foreground/40`}>‹ Prev</span>
+        <span aria-disabled="true" className={`${cls} cursor-not-allowed text-muted-foreground`}>‹ Prev</span>
       )}
       <span className="text-xs text-muted-foreground tabular-nums">
         {start + 1}–{Math.min(start + size, total)} of {total}
@@ -215,7 +215,7 @@ export function Pager({
           Next ›
         </Link>
       ) : (
-        <span className={`${cls} cursor-not-allowed text-muted-foreground/40`}>Next ›</span>
+        <span aria-disabled="true" className={`${cls} cursor-not-allowed text-muted-foreground`}>Next ›</span>
       )}
     </nav>
   );

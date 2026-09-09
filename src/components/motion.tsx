@@ -10,14 +10,20 @@ export function Reveal({
   children,
   delay = 0,
   className,
+  as = "div",
 }: {
   children: React.ReactNode;
   delay?: number;
   className?: string;
+  /** Element to render. Use "li" inside a <ul>: a wrapper <div> between the list
+   *  and its items breaks the list semantics, so a screen reader stops
+   *  announcing "list, N items" (axe: list / listitem, serious). */
+  as?: "div" | "li";
 }) {
   const reduce = useReducedMotion();
+  const M = as === "li" ? motion.li : motion.div;
   return (
-    <motion.div
+    <M
       className={className}
       initial={reduce ? false : { opacity: 0, y: 14 }}
       whileInView={{ opacity: 1, y: 0 }}
@@ -25,7 +31,7 @@ export function Reveal({
       transition={{ duration: 0.5, delay, ease: EASE }}
     >
       {children}
-    </motion.div>
+    </M>
   );
 }
 

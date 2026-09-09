@@ -77,21 +77,112 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
 }
 
 /**
- * Read a tab and return rows as objects keyed by the header row.
+ * The tabs a fully-provisioned centre Sheet has, per scripts/bootstrap-sheet.mjs.
  *
- * Deduped per request via React cache(): one render reaches the same tab from
- * several independent helpers — the owner dashboard alone read 20 tabs, with
- * Batches 3x and Students 2x — and each read is a ~2s round trip billed against
- * a ~60 reads/min/user quota. Six page loads in a row were enough to exhaust it
- * and push responses past 18s once withRetry started backing off.
- *
- * Per-request, NOT time-based, on purpose: within one render the Sheet cannot
- * change under us, so this is pure win with no staleness. A cross-request cache
- * would risk showing a teacher yesterday's roster or a stale attendance mark,
- * which is a correctness problem this app cannot afford. Writes are unaffected —
- * they redirect, and the next request reads fresh.
+ * Used to spend ONE request on the common path instead of two (metadata, then
+ * data). If a Sheet is missing any of these the batch 400s and allTabs falls
+ * back to asking for the real tab list — correct either way, just a request
+ * slower. sheets.test.ts asserts this stays in step with the bootstrap script.
  */
-export const readTab = cache(readTabUncached);
+const KNOWN_TABS = [
+  "Config", "Staff", "Students", "Batches", "Enrollments", "Rooms", "Timetable",
+  "Sessions", "Attendance", "Holidays", "FeeCharges", "Payments", "Courses",
+  "Chapters", "BatchProgress", "PTM", "Tests", "Questions", "Attempts", "Answers",
+  "StaffAttendance", "StaffTasks", "SalaryAdjustments", "SalaryPayments",
+];
+
+/**
+ * Tab titles that actually exist in this centre's Sheet, once per request.
+ *
+ * Needed because a batchGet naming a missing range fails the WHOLE request with
+ * `400 Unable to parse range`. The Phase-2/3 tabs (Tests, Payments, PTM, …) are
+ * optional — safeReadTab exists precisely to tolerate their absence — so the
+ * batch must ask only for tabs that are really there.
+ */
+const liveTabs = cache(async (): Promise<Set<string>> => {
+  const meta = await withRetry(() =>
+    client().spreadsheets.get({
+      spreadsheetId: sheetId(),
+      fields: "sheets.properties.title", // metadata only — no cell data
+    }),
+  );
+  return new Set(
+    (meta.data.sheets ?? [])
+      .map((s) => s.properties?.title)
+      .filter((t): t is string => Boolean(t)),
+  );
+});
+
+/**
+ * Every tab in one request, once per request.
+ *
+ * The core fix for read amplification. A page render touches many tabs — the
+ * owner dashboard alone reads 17 — and each separate values.get was a ~2s round
+ * trip costing one unit of a 60 reads/min/user quota, so ~3 dashboard loads a
+ * minute before throttling. Google counts a batch as a SINGLE request against
+ * that quota regardless of how many ranges it carries:
+ * https://developers.google.com/workspace/sheets/api/limits
+ *
+ * Measured on this Sheet: 17 sequential gets 7334ms / 17 units, versus one
+ * batchGet of all 24 tabs 2560ms / 1 unit. Whole-Sheet payload is ~345KB,
+ * well inside Google's 2MB guidance, so fetching everything and letting callers
+ * pick beats tracking which tabs each page needs.
+ */
+const allTabs = cache(async (): Promise<Map<string, string[][]>> => {
+  const batch = async (tabs: string[]) => {
+    const res = await withRetry(() =>
+      client().spreadsheets.values.batchGet({
+        spreadsheetId: sheetId(),
+        ranges: tabs.map((t) => `'${t}'`),
+      }),
+    );
+    const ranges = res.data.valueRanges ?? [];
+    // Response order matches request order (documented), so zip by index.
+    return new Map(tabs.map((t, i) => [t, ranges[i]?.values ?? []]));
+  };
+
+  // Optimistic path: assume the standard schema and spend ONE request. A Sheet
+  // provisioned by bootstrap-sheet.mjs has every tab, so this is the normal case.
+  try {
+    return await batch(KNOWN_TABS);
+  } catch (e) {
+    const err = e as { code?: number; response?: { status?: number }; message?: string };
+    const missingRange =
+      (err?.code === 400 || err?.response?.status === 400) &&
+      /Unable to parse range/i.test(err?.message ?? "");
+    if (!missingRange) throw e;
+    // A tab in KNOWN_TABS isn't provisioned (partial Phase-2/3 rollout), and one
+    // bad range fails the whole batch — so pay for metadata and retry with the
+    // tabs that really exist. Two requests, still far below one-per-tab.
+    return await batch([...(await liveTabs())]);
+  }
+});
+
+/** Rows → objects keyed by the header row. */
+function shape<T>(rows: string[][]): T[] {
+  if (rows.length === 0) return [];
+  const [header, ...body] = rows;
+  return body.map((r) => {
+    const o: Record<string, string> = {};
+    header.forEach((h, i) => (o[String(h)] = String(r[i] ?? "")));
+    return o as T;
+  });
+}
+
+/**
+ * Read a tab. Served from the single per-request batchGet above.
+ *
+ * Throws the same `400 Unable to parse range` shape as a direct read when the
+ * tab doesn't exist, so safeReadTab's existing catch still works unchanged.
+ */
+export async function readTab<T = Record<string, string>>(tab: string): Promise<T[]> {
+  const tabs = await allTabs();
+  const rows = tabs.get(tab);
+  if (rows === undefined) {
+    throw Object.assign(new Error(`Unable to parse range: '${tab}'`), { code: 400 });
+  }
+  return shape<T>(rows);
+}
 
 /**
  * Read a tab, bypassing the per-request dedupe.
@@ -110,14 +201,7 @@ export async function readTabUncached<T = Record<string, string>>(
       range: `'${tab}'`, // quote so tab names with spaces/special chars resolve
     }),
   );
-  const rows = res.data.values ?? [];
-  if (rows.length === 0) return [];
-  const [header, ...body] = rows;
-  return body.map((r) => {
-    const o: Record<string, string> = {};
-    header.forEach((h, i) => (o[String(h)] = String(r[i] ?? "")));
-    return o as T;
-  });
+  return shape<T>(res.data.values ?? []);
 }
 
 /** Append rows to the bottom of a tab (RAW so HH:mm / dates stay literal text). */

@@ -150,8 +150,7 @@ export default async function TodayPage({
       ) : (
         <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {sessions.map((s, i) => (
-            <Reveal key={s.session_id} delay={Math.min(i * 0.04, 0.3)} className="h-full">
-              <li className="h-full">
+            <Reveal key={s.session_id} delay={Math.min(i * 0.04, 0.3)} as="li" className="h-full">
                 <Link
                   href={`/mark/${s.session_id}`}
                   className="group flex h-full items-center gap-4 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-card)] transition-all hover:border-brand/30 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]"
@@ -191,7 +190,6 @@ export default async function TodayPage({
                     </span>
                   )}
                 </Link>
-              </li>
             </Reveal>
           ))}
         </ul>

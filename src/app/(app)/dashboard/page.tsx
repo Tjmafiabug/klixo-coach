@@ -143,7 +143,7 @@ export default async function DashboardPage() {
             {stats.defaulters.length === 0 ? (
               <Empty>No defaulters — everyone is above {stats.threshold}%.</Empty>
             ) : (
-              <ul className="-mx-1 h-[15rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+              <ul tabIndex={0} aria-label="Defaulters" className="-mx-1 h-[15rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
                 {stats.defaulters.map((d) => (
                   <li
                     key={d.id}
@@ -173,7 +173,7 @@ export default async function DashboardPage() {
             {stats.followups.length === 0 ? (
               <Empty>No one on an absence streak.</Empty>
             ) : (
-              <ul className="-mx-1 h-[15rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+              <ul tabIndex={0} aria-label="Absence streaks" className="-mx-1 h-[15rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
                 {stats.followups.map((f) => {
                   const wa = waLink(f.parentPhone);
                   return (
@@ -228,7 +228,7 @@ export default async function DashboardPage() {
           {rollup.batches.length === 0 ? (
             <Empty>No active batches.</Empty>
           ) : (
-            <ul className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+            <ul tabIndex={0} aria-label="Batches" className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
               {rollup.batches.map((b) => (
                 <li key={b.batch_id} className="py-2.5">
                   <Link
@@ -280,7 +280,7 @@ export default async function DashboardPage() {
           {feesRollup.top.length === 0 ? (
             <Empty>No outstanding fees.</Empty>
           ) : (
-            <ul className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+            <ul tabIndex={0} aria-label="Outstanding fees" className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
               {feesRollup.top.map((d) => (
                 <li key={d.student_id} className="flex items-center justify-between gap-3 py-2.5">
                   <Link href={`/manage/students/${d.student_id}`} className="group min-w-0 flex-1">
@@ -315,7 +315,7 @@ export default async function DashboardPage() {
           {stats.recentManual.length === 0 ? (
             <Empty>No manual marks recorded.</Empty>
           ) : (
-            <ul className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
+            <ul tabIndex={0} aria-label="Manual marks" className="-mx-1 h-[22rem] divide-y divide-border overflow-y-auto px-1 scroll-slim">
               {stats.recentManual.map((m, i) => (
                 <li
                   key={i}

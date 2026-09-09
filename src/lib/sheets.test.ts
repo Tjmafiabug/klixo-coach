@@ -109,6 +109,52 @@ describe("withRetry", () => {
   });
 });
 
+describe("batched reads", () => {
+  it("fetches every tab in ONE batchGet, not one request per tab", () => {
+    // Google counts a batch as a single request against the 60 reads/min/user
+    // quota however many ranges it carries, so this is the difference between
+    // ~3 dashboard loads a minute and ~60.
+    expect(SRC).toMatch(/values\.batchGet\(/);
+    const reads = SRC.match(/spreadsheets\.values\.get\(/g) ?? [];
+    expect(reads, "only readTabUncached may issue a single-range get").toHaveLength(1);
+  });
+
+  it("KNOWN_TABS matches the tabs bootstrap-sheet.mjs provisions", () => {
+    // Drift here is silent and permanent: a tab missing from KNOWN_TABS is never
+    // fetched on the fast path, and an extra one 400s every batch into the
+    // slower metadata fallback on every single render.
+    const bootstrap = readFileSync(join(process.cwd(), "scripts/bootstrap-sheet.mjs"), "utf8");
+    const block = bootstrap.slice(bootstrap.indexOf("const TABS = {"), bootstrap.indexOf("\n};"));
+    const provisioned = [...block.matchAll(/^\s{2}(\w+):\s*\[/gm)].map((m) => m[1]).sort();
+
+    const known = SRC.slice(SRC.indexOf("const KNOWN_TABS = ["));
+    const declared = [...known.slice(0, known.indexOf("];")).matchAll(/"(\w+)"/g)]
+      .map((m) => m[1])
+      .sort();
+
+    expect(provisioned.length).toBeGreaterThan(20);
+    expect(declared).toEqual(provisioned);
+  });
+
+  it("falls back to real tab metadata when a known tab is missing", () => {
+    // One unparseable range fails the WHOLE batch, and the Phase-2/3 tabs are
+    // genuinely optional — safeReadTab exists to tolerate their absence.
+    const fn = SRC.slice(SRC.indexOf("const allTabs = cache("));
+    expect(fn).toMatch(/Unable to parse range/i);
+    expect(fn).toMatch(/liveTabs\(\)/);
+  });
+
+  it("preserves the missing-tab error shape safeReadTab catches", () => {
+    // data.ts's safeReadTab checks code 400 + /Unable to parse range/. Serving
+    // reads from a Map would otherwise turn a missing tab into undefined and
+    // break that contract.
+    const fn = SRC.slice(SRC.indexOf("export async function readTab<"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toMatch(/Unable to parse range/);
+    expect(body).toMatch(/code: 400/);
+  });
+});
+
 describe("sheets.ts applies the retry policy everywhere", () => {
   it("routes every Sheets call through withRetry", () => {
     // Writes were originally unwrapped, so a 429 mid-attendance-submission
