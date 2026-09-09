@@ -2761,6 +2761,40 @@ export function integrityIssues(tabs: {
     if (r.room_id && !roomIds.has(r.room_id)) issues.push({ kind: "rule", detail: `${r.slot_id} → missing room ${r.room_id}` });
     if (r.teacher_id && !teacherIds.has(r.teacher_id)) issues.push({ kind: "rule", detail: `${r.slot_id} → missing teacher ${r.teacher_id}` });
   }
+
+  // An unassigned session is a hole, not a blank. The dangling-ref checks above
+  // deliberately skip empty ids (`s.teacher_id && ...`), so a cleared cell was
+  // invisible — yet ownership checks compare teacher ids, so a blank one means
+  // "belongs to nobody" and every read of it is ambiguous. Surface it.
+  for (const s of tabs.sessions) {
+    if (s.status === "cancelled") continue;
+    if (!s.teacher_id) issues.push({ kind: "session", detail: `${s.session_id} → no teacher assigned` });
+  }
+
+  // Duplicate primary keys. nextId() is max-suffix+1 over a snapshot, so two
+  // writes racing on the same tab can mint the same id — Sheets has no unique
+  // constraint to reject it. Rare at one-centre scale and cheap to detect, so
+  // detect rather than re-architect ids; row-by-id lookups take the first match
+  // and silently ignore the rest.
+  const dupes = (ids: string[], kind: string) => {
+    const seen = new Set<string>();
+    const reported = new Set<string>();
+    for (const id of ids) {
+      if (!id) continue;
+      if (seen.has(id) && !reported.has(id)) {
+        issues.push({ kind, detail: `duplicate id ${id}` });
+        reported.add(id);
+      }
+      seen.add(id);
+    }
+  };
+  dupes(tabs.sessions.map((s) => s.session_id), "session");
+  dupes(tabs.enrolls.map((e) => e.enroll_id), "enrollment");
+  dupes(tabs.students.map((s) => s.student_id), "student");
+  dupes(tabs.batches.map((b) => b.batch_id), "batch");
+  dupes(tabs.teachers.map((t) => t.teacher_id), "staff");
+  dupes(tabs.rooms.map((r) => r.room_id), "room");
+
   return issues;
 }
 
