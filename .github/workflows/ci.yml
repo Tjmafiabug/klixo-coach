@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # 02:00 UTC = 07:30 IST — after the nightly cron generates sessions, before
+    # the centre opens, so a red build is seen before anyone marks a register.
+    - cron: "0 2 * * *"
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Everything that needs no secrets and no Google quota. Target: under 2 min,
+  # so it can be a required check on every PR without slowing anyone down.
+  check:
+    name: types, lint, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        # Catches RSC/serialization errors that nothing else does. The build
+        # reads no Sheet, but the modules it imports demand these at load, so
+        # supply throwaway values rather than real credentials.
+        run: npm run build
+        env:
+          SHEET_ID: build-only-not-a-real-sheet
+          GOOGLE_SERVICE_ACCOUNT_JSON: '{"client_email":"build@example.com","private_key":"-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n"}'
+          SESSION_SECRET: build-only-secret-not-used-to-sign-anything
+          CENTER_TZ: Asia/Kolkata
+
+  # E2E writes to a real Google Sheet and spends a ~60 reads/min/user quota, so
+  # it does NOT run on every PR. Nightly, plus on demand before a merge that
+  # touches the data layer.
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Only where the Sheets credentials exist. A fork PR has no secrets, and a
+    # job that silently passes without them is worse than no job.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        # Chromium only: the users are on Android Chrome, and Firefox/WebKit
+        # would triple the run for no signal.
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E
+        run: npm run e2e
+        env:
+          # MUST point at a Sheet with disposable data. global-setup.ts aborts
+          # the run if SHEET_ID matches PROD_SHEET_ID.
+          SHEET_ID: ${{ secrets.E2E_SHEET_ID }}
+          PROD_SHEET_ID: ${{ secrets.PROD_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          CENTER_TZ: Asia/Kolkata
+          DEMO_MODE: "1"
+          NEXT_PUBLIC_DEMO_MODE: "1"
+          CI: "true"
+
+      - name: Upload report
+        # The trace/video/screenshot is the whole point of a failed E2E run.
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

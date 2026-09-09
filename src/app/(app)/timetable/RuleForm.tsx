@@ -74,7 +74,8 @@ export function RuleForm({
   function toggleDay(d: string) {
     setDays((prev) => {
       const n = new Set(prev);
-      n.has(d) ? n.delete(d) : n.add(d);
+      if (n.has(d)) n.delete(d);
+      else n.add(d);
       return n;
     });
   }

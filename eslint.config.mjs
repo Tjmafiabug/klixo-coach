@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local scratch projects — untracked, not part of the app, and not built or
+    // deployed. Linting them only produces failures CI can never see, since
+    // these directories don't exist in a fresh checkout.
+    "video/**",
+    "edmingle/**",
+    "designs/**",
   ]),
 ]);
 
