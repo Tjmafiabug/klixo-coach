@@ -44,6 +44,39 @@ test.describe("teacher cannot reach owner pages", () => {
   }
 });
 
+test.describe("teacher cannot reach owner-only dynamic routes", () => {
+  // The static sweep above covers list pages. These are the :id routes, where a
+  // guard is easiest to forget — and where checking the URL alone would lie:
+  // after a client-side redirect the address bar keeps the typed path, so the
+  // assertion has to be on the CONTENT the teacher actually receives.
+  const targets = [
+    "/manage/students/S001",
+    "/manage/batches/B001",
+    "/manage/batches/B001/register",
+    "/manage/batches/B001/progress",
+    "/manage/staff/T001",
+    "/manage/staff/payroll/T001",
+    "/manage/rooms/R001",
+    "/manage/curriculum/C001",
+    "/timetable/SL001",
+  ];
+
+  for (const path of targets) {
+    test(`${path} shows a teacher no owner data`, async ({ page }) => {
+      await login(page, "teacher");
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      const body = await page.locator("body").innerText();
+      // The teacher must land on their own day board, not the owner screen.
+      expect(body, `${path} must not render an owner screen`).toContain("Mark attendance for the day");
+      // Owner-only chrome that must never appear for a teacher.
+      for (const forbidden of ["Record payment", "Add charge", "Reset PIN", "Pay salary", "Deactivate"]) {
+        expect(body, `${path} leaked owner control: ${forbidden}`).not.toContain(forbidden);
+      }
+    });
+  }
+});
+
 test.describe("student cannot reach the staff app", () => {
   for (const path of ["/today", "/dashboard", "/manage", "/timetable"]) {
     test(`${path} bounces a student to the portal`, async ({ page }) => {
