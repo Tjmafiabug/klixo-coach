@@ -50,8 +50,15 @@ export function sheetId(): string {
 }
 
 /** Retry transient Sheets failures (429 rate-limit, 5xx) with exponential
- *  backoff + jitter. Sheets read quota is ~60/min/user, so bursts of navigation
- *  can spike a 429 — this lets them self-heal instead of erroring the screen. */
+ *  backoff + jitter. Sheets quota is ~60 reads and ~60 writes/min/user, so
+ *  bursts of navigation — or a whole batch being marked at once — can spike a
+ *  429; this lets them self-heal instead of erroring the screen.
+ *
+ *  Writes are wrapped too. A 429 is a pre-execution rejection, so retrying it
+ *  cannot double-apply; a retried 5xx theoretically could, which is the lesser
+ *  risk against a teacher losing a submitted register to a 500. Real
+ *  idempotency needs a natural key per row — see the Attendance upsert, which
+ *  already keys on (session, student). */
 async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
   let delay = 350;
   for (let attempt = 0; ; attempt++) {
@@ -91,13 +98,15 @@ export async function readTab<T = Record<string, string>>(
 /** Append rows to the bottom of a tab (RAW so HH:mm / dates stay literal text). */
 export async function appendRows(tab: string, rows: string[][]): Promise<void> {
   if (rows.length === 0) return;
-  await client().spreadsheets.values.append({
-    spreadsheetId: sheetId(),
-    range: `'${tab}'`,
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values: rows },
-  });
+  await withRetry(() =>
+    client().spreadsheets.values.append({
+      spreadsheetId: sheetId(),
+      range: `'${tab}'`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: rows },
+    }),
+  );
 }
 
 /** Overwrite a single A1 range with values (RAW). */
@@ -105,12 +114,14 @@ export async function updateValues(
   range: string,
   values: string[][],
 ): Promise<void> {
-  await client().spreadsheets.values.update({
-    spreadsheetId: sheetId(),
-    range,
-    valueInputOption: "RAW",
-    requestBody: { values },
-  });
+  await withRetry(() =>
+    client().spreadsheets.values.update({
+      spreadsheetId: sheetId(),
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values },
+    }),
+  );
 }
 
 /** Overwrite several A1 ranges in one request (RAW). */
@@ -118,10 +129,12 @@ export async function batchUpdateValues(
   data: { range: string; values: string[][] }[],
 ): Promise<void> {
   if (data.length === 0) return;
-  await client().spreadsheets.values.batchUpdate({
-    spreadsheetId: sheetId(),
-    requestBody: { valueInputOption: "RAW", data },
-  });
+  await withRetry(() =>
+    client().spreadsheets.values.batchUpdate({
+      spreadsheetId: sheetId(),
+      requestBody: { valueInputOption: "RAW", data },
+    }),
+  );
 }
 
 /** Delete rows (1-based sheet row numbers) from a tab. Deletes descending so
@@ -131,7 +144,7 @@ export async function deleteRows(
   rowNumbers: number[],
 ): Promise<void> {
   if (rowNumbers.length === 0) return;
-  const meta = await client().spreadsheets.get({ spreadsheetId: sheetId() });
+  const meta = await withRetry(() => client().spreadsheets.get({ spreadsheetId: sheetId() }));
   const sheet = meta.data.sheets?.find((s) => s.properties?.title === tab);
   const gid = sheet?.properties?.sheetId;
   if (gid == null) throw new Error(`tab not found: ${tab}`);
@@ -142,8 +155,10 @@ export async function deleteRows(
         range: { sheetId: gid, dimension: "ROWS", startIndex: rn - 1, endIndex: rn },
       },
     }));
-  await client().spreadsheets.batchUpdate({
-    spreadsheetId: sheetId(),
-    requestBody: { requests },
-  });
+  await withRetry(() =>
+    client().spreadsheets.batchUpdate({
+      spreadsheetId: sheetId(),
+      requestBody: { requests },
+    }),
+  );
 }
