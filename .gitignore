@@ -58,3 +58,9 @@ next-env.d.ts
 /designs/
 /Screenshot*.png
 /screencapture*.png
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
