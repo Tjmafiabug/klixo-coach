@@ -4,7 +4,7 @@ Two suites. Run both before anything that touches the data layer or auth.
 
 ```bash
 npm test     # 134 unit tests, ~2s, no network
-npm run e2e  # 84 browser tests, ~4min, writes to a real Sheet
+npm run e2e  # 99 browser tests, ~6min, writes to a real Sheet
 ```
 
 ## Unit — `src/lib/*.test.ts`
@@ -37,8 +37,10 @@ Playwright, Chromium only (the users are on Android Chrome).
 | Spec | Tests | Covers |
 |---|---|---|
 | `auth.spec.ts` | 18 | login for all 3 roles, parent↔child scoping, cookie flags, tampered tokens |
-| `authz.spec.ts` | 28 | 15 owner pages vs a teacher, API role checks, **direct-POST attack** |
+| `authz.spec.ts` | 37 | 15 owner pages + 9 dynamic :id routes vs a teacher, API role checks, **direct-POST attack** |
 | `features.spec.ts` | 38 | all 31 pages render, attendance write, fee arithmetic, CSV export |
+| `generation.spec.ts` | 3 | the nightly cron converges, is owner-only, spares ad-hoc classes |
+| `payroll.spec.ts` | 3 | board renders, salaries hidden from teachers, paying reduces due |
 
 E2E exists because **Vitest cannot render async Server Components**, and nearly
 every page here is one.
@@ -65,7 +67,7 @@ E2E writes real rows. Two things make that safe:
 1. **`e2e/global-setup.ts` refuses to run when `SHEET_ID === PROD_SHEET_ID`.**
    Set `PROD_SHEET_ID` in `.env.local` once a real centre is live — the guard
    can only protect what it knows about, and it warns when unset.
-2. **`cleanupTestPayments()` soft-voids the rows the suite created**, matching
+2. **`cleanupTestPayments()` / `cleanupTestSalaryPayments()` soft-void the rows the suite created**, matching
    what the app does. Without it the ledger drifts every run and the next run
    starts from a different balance — which presents as flakiness, not as the
    data bug it is.
@@ -87,6 +89,26 @@ Both were measured, and both shape how tests must be written:
 Tests run **serially** (`workers: 1`). One Sheet is a single mutable global with
 no transactions and a ~60 reads/min/user quota; parallel workers would corrupt
 each other's fixtures and exhaust quota, then present as flakiness.
+
+## Quota pressure looks like flakiness
+
+A full E2E run makes hundreds of Sheet reads. Google's ~60 reads/min/user quota
+throttles well before the suite finishes, `withRetry` starts backing off, and a
+run that takes ~6 minutes cold can take ~13 under pressure.
+
+That surfaces as tests which pass alone and fail in a full run — the classic
+flake signature, and easy to misread as a product bug. Two rules follow:
+
+- **Assert convergence, not a single outcome.** The generation test does not
+  demand that the very next run be clean; it retries until generation settles,
+  because under eventual consistency a second run can still observe rows the
+  first appended moments earlier. What it actually guards against is a cron that
+  never settles — one churning rows every night.
+- **Never leave a test write behind.** A failed run that skips its own cleanup
+  shifts the baseline for every later run. The payroll test flaked exactly this
+  way: a failed run left an active ₹1 salary payment, so the next full run
+  computed a different due figure. Cleanup must run out of band (targeting rows
+  by value), not by clicking a "Void" button, which a failure can skip past.
 
 ## Traps that produce confidently wrong results
 
@@ -127,10 +149,10 @@ Until those are set, the E2E job is skipped rather than silently green.
 
 Honest gaps, roughly by value:
 
-- **Timetable generation** (`generateSessions`) — idempotency is unverified.
-- **Payroll arithmetic** — `getPayrollBoard` is untested; the `Math.max(0, due)`
-  in its totals is deliberate and worth pinning.
 - **The MCQ flow end to end** — scoring is unit-tested, taking a test is not.
+- **Payroll totals** — a staffer's row is covered, but the `Math.max(0, due)` in
+  the board totals (one person's credit must not offset another's arrears) is
+  not yet pinned.
 - **Concurrency** — two teachers marking the same session simultaneously.
   `nextId()` can mint duplicate ids under load; `integrityIssues()` now detects
   that but nothing prevents it.

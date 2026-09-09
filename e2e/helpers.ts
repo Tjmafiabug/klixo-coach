@@ -88,3 +88,40 @@ export async function cleanupTestPayments(): Promise<number> {
   }
   return data.length;
 }
+
+/**
+ * Void the ₹1 salary payments this suite creates.
+ *
+ * Same reasoning as cleanupTestPayments: the Sheet has no rollback, so a test
+ * that writes must undo its own row. Targets by amount + period rather than by
+ * clicking "Void" in the UI — those buttons sit against real salary payments
+ * too, and picking one by position risks voiding a genuine ₹10,000 payout.
+ */
+export async function cleanupTestSalaryPayments(): Promise<number> {
+  const { sheets: sheetsApi, auth: googleAuth } = await import("@googleapis/sheets");
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON!);
+  const auth = new googleAuth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  const api = sheetsApi({ version: "v4", auth });
+  const spreadsheetId = process.env.SHEET_ID!;
+
+  const res = await api.spreadsheets.values.get({ spreadsheetId, range: "'SalaryPayments'" });
+  const rows = res.data.values ?? [];
+  // SalaryPayments: A pay_id, B staff_id, C period, D amount, E date, F method,
+  // G note, H timestamp, I status.
+  const data: { range: string; values: string[][] }[] = [];
+  rows.slice(1).forEach((r, i) => {
+    if (String(r[3] ?? "") === "1" && r[8] !== "void") {
+      data.push({ range: `SalaryPayments!I${i + 2}`, values: [["void"]] });
+    }
+  });
+  if (data.length) {
+    await api.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: "RAW", data },
+    });
+  }
+  return data.length;
+}
