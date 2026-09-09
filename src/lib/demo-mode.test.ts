@@ -38,6 +38,20 @@ describe("DEMO_MODE gates", () => {
     expect(src).toMatch(/DEMO_MODE === "1"/);
   });
 
+  it("the login page only shows the credentials hint in demo mode", () => {
+    // The worst of the three: it published a working owner phone AND PIN on the
+    // sign-in form itself. Client component, so it needs the NEXT_PUBLIC_ copy.
+    const src = read("src/app/login/page.tsx");
+    if (!/Demo — phone/.test(src)) return; // removed entirely — also fine
+    expect(src).toMatch(/NEXT_PUBLIC_DEMO_MODE === "1"/);
+  });
+
+  it("does not put a real login phone in the input placeholder", () => {
+    const src = read("src/app/login/page.tsx");
+    const placeholder = src.match(/placeholder="([^"]*)"/)?.[1] ?? "";
+    expect(placeholder, "a seeded phone number here is a credentials hint too").not.toMatch(/^\d{6,}$/);
+  });
+
   it("never claims a real payment was taken", () => {
     // The old copy read "Secure online payment · UPI, card & netbanking" next
     // to a button that takes no money — a parent would reasonably believe they

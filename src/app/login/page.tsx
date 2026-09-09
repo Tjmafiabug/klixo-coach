@@ -53,7 +53,7 @@ export default function LoginPage() {
             type="tel"
             inputMode="numeric"
             autoComplete="username"
-            placeholder="9876500001"
+            placeholder="10-digit mobile number"
             className={fieldClass}
             aria-invalid={state.error ? true : undefined}
           />
@@ -93,10 +93,15 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-5 text-center text-xs text-muted-foreground">
-          Demo — phone <span className="font-semibold text-foreground">9876500001–06</span>,
-          PIN <span className="font-semibold text-foreground">1234</span>
-        </p>
+        {/* Working credentials on the sign-in form — demo deployments only.
+            This is a client component, so it needs the NEXT_PUBLIC_ copy; the
+            server-side gates use DEMO_MODE. Both default to off. */}
+        {process.env.NEXT_PUBLIC_DEMO_MODE === "1" && (
+          <p className="mt-5 text-center text-xs text-muted-foreground">
+            Demo — phone <span className="font-semibold text-foreground">9876500001–06</span>,
+            PIN <span className="font-semibold text-foreground">1234</span>
+          </p>
+        )}
       </motion.div>
     </main>
   );
