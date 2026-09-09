@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { sheets as sheetsApi, auth as googleAuth } from "@googleapis/sheets";
 
 /**
@@ -75,8 +76,32 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
   }
 }
 
-/** Read a tab and return rows as objects keyed by the header row. */
-export async function readTab<T = Record<string, string>>(
+/**
+ * Read a tab and return rows as objects keyed by the header row.
+ *
+ * Deduped per request via React cache(): one render reaches the same tab from
+ * several independent helpers — the owner dashboard alone read 20 tabs, with
+ * Batches 3x and Students 2x — and each read is a ~2s round trip billed against
+ * a ~60 reads/min/user quota. Six page loads in a row were enough to exhaust it
+ * and push responses past 18s once withRetry started backing off.
+ *
+ * Per-request, NOT time-based, on purpose: within one render the Sheet cannot
+ * change under us, so this is pure win with no staleness. A cross-request cache
+ * would risk showing a teacher yesterday's roster or a stale attendance mark,
+ * which is a correctness problem this app cannot afford. Writes are unaffected —
+ * they redirect, and the next request reads fresh.
+ */
+export const readTab = cache(readTabUncached);
+
+/**
+ * Read a tab, bypassing the per-request dedupe.
+ *
+ * Use ONLY when re-reading after a write in the same request — after
+ * deleteRows, row numbers shift, and the cached copy still describes the old
+ * layout, so resequencing against it writes to the wrong rows. Everywhere else
+ * use readTab.
+ */
+export async function readTabUncached<T = Record<string, string>>(
   tab: string,
 ): Promise<T[]> {
   const res = await withRetry(() =>

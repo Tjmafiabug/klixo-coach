@@ -5,7 +5,9 @@ import {
   updateValues,
   batchUpdateValues,
   deleteRows,
+  readTabUncached,
 } from "@/lib/sheets";
+import { cache } from "react";
 import { centerToday, centerTimestamp } from "@/lib/time";
 import type {
   Student,
@@ -43,10 +45,23 @@ import type {
 
 type ConfigRow = { key: string; value: string };
 
-async function config(): Promise<Map<string, string>> {
+/**
+ * Centre config, deduped per request.
+ *
+ * A Sheets read is ~2s, and config() is reached from effectiveToday() — which
+ * nearly every page and action calls, several times over during one render.
+ * React's cache() collapses those to a single read per request.
+ *
+ * Deliberately per-request rather than a timed `use cache`: config carries
+ * demo_today, which overrides the app's notion of "today". A stale value there
+ * would silently date attendance wrongly, and no page is slow enough to justify
+ * that risk. Settings changes also take effect on the very next request, so
+ * saveSettings needs no invalidation.
+ */
+const config = cache(async (): Promise<Map<string, string>> => {
   const rows = await readTab<ConfigRow>("Config");
   return new Map(rows.map((r) => [r.key, r.value]));
-}
+});
 
 /** Centre-local today, with an optional Config `demo_today` override (demo determinism). */
 export async function effectiveToday(): Promise<string> {
@@ -3056,8 +3071,10 @@ export async function deleteChapter(id: string): Promise<void> {
   if (idx < 0) return;
   const target = chapters[idx];
   await deleteRows("Chapters", [idx + 2]);
-  // re-read (row numbers shift after the delete) and resequence the siblings
-  const remaining = await readTab<Chapter>("Chapters");
+  // Re-read UNCACHED: row numbers shift after the delete, and the per-request
+  // cache still holds the pre-delete layout — resequencing against that would
+  // write order values to the wrong rows.
+  const remaining = await readTabUncached<Chapter>("Chapters");
   const updates = remaining
     .map((c, i) => ({ ...c, row: i + 2 }))
     .filter((c) => c.course_id === target.course_id)
