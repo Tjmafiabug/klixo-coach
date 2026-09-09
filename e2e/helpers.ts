@@ -45,3 +45,46 @@ export async function expectPageOk(page: Page, path: string): Promise<void> {
   expect(res?.status(), `${path} should render`).toBeLessThan(400);
   await expect(page.locator("body")).not.toContainText("Application error");
 }
+
+/** Marker written into the note of every payment an E2E test creates. */
+export const E2E_NOTE = "E2E test payment";
+
+/**
+ * Void the payment rows this suite created, by their note text.
+ *
+ * The Sheet is the real database with no transactions and no rollback, so a
+ * test that writes must undo its own row or the ledger drifts a little further
+ * on every run — and the next run then starts from a different balance, which
+ * looks exactly like flakiness.
+ *
+ * Voids rather than deletes: that's what the app itself does (soft-void in
+ * column H), so the row stays auditable and row indices don't shift.
+ */
+export async function cleanupTestPayments(): Promise<number> {
+  const { sheets: sheetsApi, auth: googleAuth } = await import("@googleapis/sheets");
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON!);
+  const auth = new googleAuth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  const api = sheetsApi({ version: "v4", auth });
+  const spreadsheetId = process.env.SHEET_ID!;
+
+  const res = await api.spreadsheets.values.get({ spreadsheetId, range: "'Payments'" });
+  const rows = res.data.values ?? [];
+  // Payments columns: A payment_id, B student_id, C amount, D date, E method,
+  // F note, G timestamp, H status.
+  const data: { range: string; values: string[][] }[] = [];
+  rows.slice(1).forEach((r, i) => {
+    if (String(r[5] ?? "").includes(E2E_NOTE) && r[7] !== "void") {
+      data.push({ range: `Payments!H${i + 2}`, values: [["void"]] });
+    }
+  });
+  if (data.length) {
+    await api.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: "RAW", data },
+    });
+  }
+  return data.length;
+}
