@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Klixo Coach — Product Demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      body { margin: 0; background: #0a0a12; }
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+      #root > div[data-composition-src] { position: absolute; inset: 0; }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-v1yu" id="root" data-composition-id="root" data-start="0" data-width="1920" data-height="1080" data-duration="70">
+      <div data-hf-id="hf-5h6n" id="el-01-hook-a" data-composition-id="01-hook-a" data-composition-src="compositions/01-hook-a.html" data-start="0" data-duration="8" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-uiyd" id="el-02-hook-b" data-composition-id="02-hook-b" data-composition-src="compositions/02-hook-b.html" data-start="8" data-duration="8" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-cyp3" id="el-03-login" data-composition-id="03-login" data-composition-src="compositions/03-login.html" data-start="16" data-duration="7" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-5mc6" id="el-04-teacher-today" data-composition-id="04-teacher-today" data-composition-src="compositions/04-teacher-today.html" data-start="23" data-duration="6" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-72ch" id="el-05-teacher-mark" data-composition-id="05-teacher-mark" data-composition-src="compositions/05-teacher-mark.html" data-start="29" data-duration="6" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-fxvg" id="el-06-owner-dashboard" data-composition-id="06-owner-dashboard" data-composition-src="compositions/06-owner-dashboard.html" data-start="35" data-duration="9" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-hx3s" id="el-07-timetable" data-composition-id="07-timetable" data-composition-src="compositions/07-timetable.html" data-start="44" data-duration="7" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-by4b" id="el-08-manage-hub" data-composition-id="08-manage-hub" data-composition-src="compositions/08-manage-hub.html" data-start="51" data-duration="7" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-p49i" id="el-09-m-dashboard" data-composition-id="09-m-dashboard" data-composition-src="compositions/09-m-dashboard.html" data-start="58" data-duration="5" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-49ll" id="el-10-closing" data-composition-id="10-closing" data-composition-src="compositions/10-closing.html" data-start="63" data-duration="7" data-track-index="1" data-width="1920" data-height="1080"></div>
+
+      <audio data-hf-id="hf-th33" id="voiceover" src="assets/voiceover.mp3" data-start="0" data-duration="69.85" data-track-index="10" data-volume="1"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["root"] = gsap.timeline({ paused: true });
+    </script>
+  </body>
+</html>

@@ -1109,7 +1109,14 @@ export async function submitTestAction(formData: FormData): Promise<void> {
 export async function mockPayFeesAction(): Promise<void> {
   const user = await getSession();
   if (!user) redirect("/login");
-  if (user.role !== "student") redirect("/today");
+  if (user.role !== "student") redirect("/portal");
+
+  // Kill switch. This credits a full payment to the ledger without any money
+  // moving, and the button above it says "Secure online payment" — so on a real
+  // centre it would let a parent settle their dues for free and believe they
+  // had paid. Opt-in via DEMO_MODE, so shipping to a live centre disables it by
+  // default rather than requiring someone to remember to remove it.
+  if (process.env.DEMO_MODE !== "1") redirect("/portal/fees?error=unavailable");
 
   const outstanding = await currentNetOutstanding(user.studentId);
   if (outstanding <= 0) redirect("/portal/fees"); // nothing to pay

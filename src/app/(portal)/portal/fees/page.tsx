@@ -40,10 +40,17 @@ export default async function PortalFees({
           <>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Outstanding</p>
             <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-danger">{rupees(fees.outstanding)}</p>
-            <form action={mockPayFeesAction} className="mt-4">
-              <SubmitButton pendingText="Processing…">Pay {rupees(fees.outstanding)} now</SubmitButton>
-            </form>
-            <p className="mt-2 text-xs text-muted-foreground">Secure online payment · UPI, card &amp; netbanking</p>
+            {/* Online payment is a mock: it credits the ledger without taking
+                money, so it only appears on demo deployments. The action refuses
+                too — this just avoids showing a button that would error. */}
+            {process.env.DEMO_MODE === "1" && (
+              <>
+                <form action={mockPayFeesAction} className="mt-4">
+                  <SubmitButton pendingText="Processing…">Pay {rupees(fees.outstanding)} now</SubmitButton>
+                </form>
+                <p className="mt-2 text-xs text-muted-foreground">Demo payment · no money is taken</p>
+              </>
+            )}
           </>
         ) : fees.credit > 0 ? (
           <>

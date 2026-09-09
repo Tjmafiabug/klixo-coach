@@ -39,9 +39,15 @@ export default function Home() {
           >
             Open the app
           </Link>
-          <span className="text-sm text-muted-foreground">
-            Demo PIN <span className="font-semibold text-foreground">1234</span>
-          </span>
+          {/* Demo only. Publishing a working PIN next to the login link is fine
+              while the Sheet holds fake data and harmful the moment it doesn't,
+              so it's opt-in: set DEMO_MODE=1 on demo deployments, never on a
+              real centre's. */}
+          {process.env.DEMO_MODE === "1" && (
+            <span className="text-sm text-muted-foreground">
+              Demo PIN <span className="font-semibold text-foreground">1234</span>
+            </span>
+          )}
         </div>
 
         <ul className="mt-14 grid w-full max-w-3xl gap-4 text-left sm:grid-cols-3">
