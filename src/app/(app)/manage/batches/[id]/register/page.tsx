@@ -16,7 +16,9 @@ const CELL: Record<RegisterState, { ch: string; cls: string; sr: string }> = {
   late: { ch: "L", cls: "bg-warning-subtle text-warning", sr: "late" },
   absent: { ch: "A", cls: "bg-danger-subtle text-danger", sr: "absent" },
   unmarked: { ch: "·", cls: "bg-muted text-muted-foreground", sr: "not marked" },
-  cancelled: { ch: "✕", cls: "text-muted-foreground/40", sr: "cancelled" },
+  // The glyph carries the meaning, so it has to be readable — /40 renders at
+  // 1.69:1. ("not-enrolled" draws no character, so contrast doesn't apply.)
+  cancelled: { ch: "✕", cls: "text-muted-foreground", sr: "cancelled" },
   "not-enrolled": { ch: "", cls: "text-muted-foreground/20", sr: "not enrolled" },
   upcoming: { ch: "", cls: "", sr: "upcoming" },
 };

@@ -229,11 +229,11 @@ export function CalendarGrid({
                   <p className={`truncate text-[0.78rem] font-semibold leading-tight ${cancelled ? "line-through opacity-60" : ""}`}>
                     {session.batchName}
                   </p>
-                  <p className="truncate text-[0.68rem] tabular-nums opacity-80">
+                  <p className="truncate text-[0.68rem] tabular-nums">
                     {session.start}–{session.end}
                   </p>
                   {blockH > 56 ? (
-                    <p className="truncate text-[0.68rem] opacity-70">
+                    <p className="truncate text-[0.68rem]">
                       {session.roomName} · {session.teacherName}
                     </p>
                   ) : null}

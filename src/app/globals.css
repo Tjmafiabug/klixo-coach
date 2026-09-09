@@ -11,7 +11,12 @@
   --surface: #ffffff; /* forms, tables, cards */
   --surface-2: #f7f7f8; /* sidebar, raised panels (slightly warmer) */
   --muted: #f7f7f8; /* hover fills, empty-state backgrounds */
-  --muted-foreground: #6b7280;
+  /* gray-500 (#6b7280) measures 4.83:1 on pure white but only 4.52:1 on the
+     tinted surface, and less again wherever it overlaps a subtle background —
+     axe measured 4.25-4.44:1 across the dashboard, students list and timetable,
+     all under the 4.5:1 WCAG AA minimum. Darkened to clear it everywhere
+     (6.13:1 on white, 5.73:1 on the tint) while still reading as muted. */
+  --muted-foreground: #5b6270;
   --border: #e6e7eb; /* hairline */
 
   /* Brand = indigo (replaces near-black as the action colour). --brand aliases

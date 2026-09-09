@@ -55,7 +55,10 @@ export function MiniCalendar({
                     ? "bg-accent-subtle font-medium text-accent"
                     : c.inMonth
                       ? "text-foreground hover:bg-muted"
-                      : "text-muted-foreground/40 hover:bg-muted"
+                      // Not /40: that renders at 1.69:1, far below the 4.5:1
+                      // minimum. Out-of-month days should be de-emphasised,
+                      // not unreadable.
+                      : "text-muted-foreground hover:bg-muted"
               }`}
             >
               {c.dayNum}

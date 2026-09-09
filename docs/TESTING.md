@@ -4,7 +4,7 @@ Two suites. Run both before anything that touches the data layer or auth.
 
 ```bash
 npm test     # 134 unit tests, ~2s, no network
-npm run e2e  # 99 browser tests, ~6min, writes to a real Sheet
+npm run e2e  # 114 browser tests, ~7min, writes to a real Sheet
 ```
 
 ## Unit — `src/lib/*.test.ts`
@@ -24,6 +24,7 @@ answer is expensive:
 | `integrity.test.ts` | dangling refs, blank teacher, duplicate ids |
 | `read-after-write.test.ts` | a re-read after a write must bypass the per-request cache |
 | `demo-mode.test.ts` | demo affordances fail closed |
+| `payroll.test.ts` | due = base + adjustments − paid; a credit must not offset another's arrears |
 
 Several assert against **source text** rather than behaviour — the guard scan,
 `KNOWN_TABS`, the retry coverage. That is deliberate: they encode invariants the
@@ -41,6 +42,8 @@ Playwright, Chromium only (the users are on Android Chrome).
 | `features.spec.ts` | 38 | all 31 pages render, attendance write, fee arithmetic, CSV export |
 | `generation.spec.ts` | 3 | the nightly cron converges, is owner-only, spares ad-hoc classes |
 | `payroll.spec.ts` | 3 | board renders, salaries hidden from teachers, paying reduces due |
+| `mcq.spec.ts` | 3 | taking a test, the answer key never reaching the client, one attempt only |
+| `a11y.spec.ts` | 9 | axe on 9 pages, failing on serious + critical only |
 
 E2E exists because **Vitest cannot render async Server Components**, and nearly
 every page here is one.
@@ -134,7 +137,10 @@ The build step uses throwaway env values — `sheets.ts` and `auth.ts` throw at
 module load without them, but the build reads no Sheet.
 
 `e2e` runs **nightly and on demand only**, because it needs Sheets credentials
-and spends quota. Required secrets:
+and spends quota. The accessibility suite runs with it (`a11y.spec.ts`), so
+contrast and keyboard regressions are caught nightly rather than on every PR —
+they need a running app and a real session, which the fast `check` job has not
+got. Required secrets:
 
 | Secret | Value |
 |---|---|
@@ -149,12 +155,11 @@ Until those are set, the E2E job is skipped rather than silently green.
 
 Honest gaps, roughly by value:
 
-- **The MCQ flow end to end** — scoring is unit-tested, taking a test is not.
-- **Payroll totals** — a staffer's row is covered, but the `Math.max(0, due)` in
-  the board totals (one person's credit must not offset another's arrears) is
-  not yet pinned.
+
 - **Concurrency** — two teachers marking the same session simultaneously.
   `nextId()` can mint duplicate ids under load; `integrityIssues()` now detects
   that but nothing prevents it.
-- **Accessibility in CI** — axe was run manually and the findings fixed; it is
-  not yet a gate.
+- **Concurrency** remains the main one — see above.
+- **Dark mode** — the palette has no dark variant, so contrast is only verified
+  in light mode.
+- **Real devices** — Chromium desktop only; no actual Android testing.

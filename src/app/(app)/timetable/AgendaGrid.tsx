@@ -57,13 +57,13 @@ export function AgendaGrid({
                   };
                   const inner = (
                     <>
-                      <p className="tabular-nums text-[0.68rem] font-semibold opacity-80">
+                      <p className="tabular-nums text-[0.68rem] font-semibold">
                         {s.start}–{s.end}
                       </p>
                       <p className={`truncate text-[0.8rem] font-semibold leading-tight ${cancelled ? "line-through opacity-60" : ""}`}>
                         {s.batchName}
                       </p>
-                      <p className="truncate text-[0.68rem] opacity-70">
+                      <p className="truncate text-[0.68rem]">
                         {s.roomName} · {s.teacherName}
                       </p>
                       {s.status === "extra" ? (
