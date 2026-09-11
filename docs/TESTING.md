@@ -3,7 +3,7 @@
 Two suites. Run both before anything that touches the data layer or auth.
 
 ```bash
-npm test     # 134 unit tests, ~2s, no network
+npm test     # 142 unit tests, ~2s, no network
 npm run e2e  # 114 browser tests, ~7min, writes to a real Sheet
 ```
 
@@ -155,11 +155,11 @@ Until those are set, the E2E job is skipped rather than silently green.
 
 Honest gaps, roughly by value:
 
-
-- **Concurrency** — two teachers marking the same session simultaneously.
-  `nextId()` can mint duplicate ids under load; `integrityIssues()` now detects
-  that but nothing prevents it.
-- **Concurrency** remains the main one — see above.
-- **Dark mode** — the palette has no dark variant, so contrast is only verified
-  in light mode.
-- **Real devices** — Chromium desktop only; no actual Android testing.
+- **Concurrency** — the main one. Two teachers marking the same session at once,
+  or two writes racing on a tab: `nextId()` is max-suffix+1 over a snapshot, so
+  it can mint duplicate ids and Sheets has no unique constraint to reject them.
+  `integrityIssues()` now *detects* that; nothing prevents it.
+- **Dark mode** — the palette has no dark variant, so contrast is verified in
+  light mode only.
+- **Real devices** — Chromium desktop only. The users are on cheap Android
+  phones, which is where slow networks and small tap targets actually bite.

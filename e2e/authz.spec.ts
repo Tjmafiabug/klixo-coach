@@ -39,7 +39,14 @@ test.describe("teacher cannot reach owner pages", () => {
       await page.goto(path);
       // Every owner page repeats `role !== "owner" → redirect("/today")`
       // inline. A page that forgets the line would render here instead.
-      await expect(page, `${path} must not render for a teacher`).toHaveURL(/\/today/);
+      //
+      // The redirect lands on /today, one of the slowest pages in the app (it
+      // reads the day board from the Sheet), so under quota pressure the
+      // default expect timeout is not enough. That produces a failure that
+      // reads like an authorization hole and is not one.
+      await expect(page, `${path} must not render for a teacher`).toHaveURL(/\/today/, {
+        timeout: 30_000,
+      });
     });
   }
 });

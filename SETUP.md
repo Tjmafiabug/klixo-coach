@@ -8,6 +8,36 @@ one-time Google setup; step 5 builds the sheet automatically.
 
 ---
 
+## Step -1 — Which Google account owns all this ⚠️
+
+Before anything else: the Sheets and the GCP project holding the service account
+should live on a **Google Workspace** account, not a personal @gmail.com one.
+
+A consumer Gmail account has no admin above it. If it is suspended, compromised,
+or the recovery phone is lost, nobody can restore it — and the GCP project, the
+service account and every centre's data become unreachable at the same moment.
+Workspace gives you an admin who can reset access, audit logs for "who can see
+our student data?", enforceable 2FA, and the data-processing terms that matter
+once real children's names and fee records are involved.
+
+Any Workspace account on a domain you control is enough. A dedicated product
+identity (`klixo@yourdomain`) is tidier than a personal one if KLiXO ever moves
+to its own domain — one transfer instead of untangling an account — but it is a
+convenience, not a safeguard.
+
+Whatever you choose, do these two:
+
+1. **Add a second Owner** to the GCP project (IAM → Grant access → Owner). One
+   locked-out account should never be able to take the product down.
+2. **2FA with two recovery methods** on the owning account.
+
+Moving later is low-risk but ordered: **GCP project first, Sheets second** — a
+Sheet is data you can re-copy, the service account is the credential everything
+authenticates with. `SHEET_ID` survives an ownership transfer, so no code or env
+changes; just re-confirm the service account still has Editor afterwards.
+
+---
+
 ## Step 0 — Clone + install ⌨️
 ```bash
 git clone https://github.com/Tjmafiabug/klixo-coach.git

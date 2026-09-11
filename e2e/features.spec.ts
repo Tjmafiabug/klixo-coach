@@ -142,9 +142,18 @@ test.describe("attendance", () => {
     await page.waitForURL(/\/today/);
 
     await page.goto(href!);
-    // mark/[sessionId] restricts a teacher to their own sessions.
-    const denied = /\/today/.test(page.url()) || (await page.locator("body").innerText()).includes("404");
-    expect(denied, "a teacher must not open a colleague's register").toBe(true);
+    // mark/[sessionId] restricts a teacher to their own sessions — but reading
+    // page.url() straight after goto() races the redirect and catches it only
+    // if it has already happened. Assert on what the teacher actually receives:
+    // either bounced to their own board, or a not-found. Never the register.
+    await page.waitForLoadState("networkidle");
+    const body = await page.locator("body").innerText();
+    const bounced = /\/today/.test(page.url()) || /404|not found/i.test(body);
+    expect(bounced, "a teacher must not open a colleague's register").toBe(true);
+    expect(
+      body,
+      "the roster of another teacher's session must not render",
+    ).not.toMatch(/Attendance for/);
   });
 });
 
