@@ -187,3 +187,49 @@ centres with human think time never saturate.
 - **Not measured:** sustained load across a full teaching day (every test is a
   burst with quota cooldown), and a Sheet that has actually accumulated a year
   of data at 200 students rather than a bloat-test approximation of one.
+
+## Archiving: measured, not assumed
+
+The archive job (`/api/cron/archive`, nightly at 01:30) moves attendance and
+sessions older than `retention_months` into `_Archive` tabs in the same
+workbook. Four things were measured on the E2E Sheet before it shipped, because
+each one could have invalidated the design.
+
+**A large sibling tab does not slow the main read.** This decided same-workbook
+versus a separate archive spreadsheet:
+
+| | batchGet p50 |
+|---|---|
+| 24 tabs, no sibling | **563 ms** |
+| 24 tabs + a 100,000-row (~10 MB) sibling tab | **562 ms** |
+
+`values.batchGet` reads only the ranges it names, so a tab absent from
+`KNOWN_TABS` costs nothing at all — not bytes, not latency. **Same workbook is
+correct**: no second read unit per cold access, and the owner keeps one file.
+
+**Coalescing consecutive deletes is worth 41×:**
+
+| | wall |
+|---|---|
+| 5,000 rows as one coalesced run | **466 ms** |
+| 500 rows as 500 separate sub-requests | **19,314 ms** |
+
+A register submit appends contiguous marks, which is exactly the shape that
+collapses well. Without coalescing a full run would have taken minutes and
+risked the function timeout.
+
+**A 5,000-row append (~500 KB) succeeds in one request:** 4,923 ms.
+
+**A full capped run takes 8.7 s** against a 300 s `maxDuration` — 35× headroom,
+so the cap is bounded by prudence rather than by the platform.
+
+### What this changes about the ceilings above
+
+Retention stops being a property of the data and becomes a setting. The
+"max students" table is then a statement about `retention_months`: a centre
+keeping 6 months runs ~170 students whether it opened last year or five years
+ago, because the live tab stops growing once the archive is running.
+
+History is not lost — it moves to a tab in the same Sheet the owner can open,
+and the cold paths (register back-navigation, CSV exports, a student's full
+record) still read it.
