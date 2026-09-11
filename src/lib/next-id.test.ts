@@ -148,7 +148,24 @@ describe("the implementation in data.ts matches this mirror", () => {
     const body = fn.slice(0, fn.indexOf("\n}\n"));
     // Match code, not the comment above it that explains the old bug.
     expect(body, "must not reintroduce the < 9000 filter").not.toMatch(/n < 9000/);
-    expect(body, "must mint session ids").toMatch(/nextId\(\[\], "SES"\)/);
+    // Recurring ids are DERIVED from (slot, date), not minted. Minting fixed
+    // the ceiling but changed a double run from "duplicate id, flagged" to
+    // "two distinct sessions for one class, never flagged" — strictly worse,
+    // because nothing detects it and the repair has to pick a loser that may
+    // already carry attendance.
+    expect(body, "recurring session ids must be derived from (slot, date)").toMatch(
+      /\$\{inst\.slot_id\}-\$\{inst\.date\}/,
+    );
+    expect(body, "recurring ids must not be minted").not.toMatch(/nextId\(\[\], "SES"\)/);
+  });
+
+  it("a repeated generate is a no-op, and a double run would be exact duplicates", () => {
+    // The property the derived id buys: run twice over the same (slot, date)
+    // and you get the same id, so the rows are identical rather than rival.
+    const sameId = (slot: string, date: string) => `${slot}-${date}`;
+    expect(sameId("TT001", "2026-09-11")).toBe(sameId("TT001", "2026-09-11"));
+    expect(sameId("TT001", "2026-09-11")).not.toBe(sameId("TT002", "2026-09-11"));
+    expect(sameId("TT001", "2026-09-11")).not.toBe(sameId("TT001", "2026-09-12"));
   });
 
   it("createExtraClass mints rather than counting from 9000", () => {

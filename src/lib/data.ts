@@ -6,6 +6,7 @@ import {
   batchUpdateValues,
   deleteRows,
   readTabUncached,
+  rowOf,
 } from "@/lib/sheets";
 import { cache } from "react";
 import { centerToday, centerTimestamp } from "@/lib/time";
@@ -792,12 +793,28 @@ export async function generateSessions(): Promise<{
   // ad-hoc range), so once the recurring series reached SES8999 the next run
   // minted SES9000 and the run after that ignored it, recomputed max = 8999 and
   // minted SES9000 AGAIN for a different (slot, date) — and session_id is the
-  // key attendance rows hang off, so two classes' registers merged. The 9000
-  // split is no longer needed: minted ids never collide with the ad-hoc series.
+  // key attendance rows hang off, so two classes' registers merged.
+  //
+  // A recurring session's id is now DERIVED from what makes it unique, rather
+  // than minted. This series is the one minting path that runs unattended and
+  // concurrently (the nightly cron plus five action paths), and minting only
+  // changed the shape of a double run's damage rather than removing it:
+  //
+  //   minted  — two runs produce two DISTINCT sessions for one class. Both are
+  //             "desired", so neither is an orphan, nothing flags them, and
+  //             both accumulate attendance. Cleaning up means choosing a loser
+  //             that may already carry marks.
+  //   derived — two runs produce two IDENTICAL rows. Attendance attaches to
+  //             both equally and the repair is "delete exact duplicates", which
+  //             needs no judgement.
+  //
+  // Ad-hoc classes keep minted ids: they have no natural key (two extra classes
+  // for the same batch on the same day are genuinely different sessions).
+  // Nothing validates the id format, and legacy SES#### rows stay valid.
   const appends: string[][] = [];
   for (const inst of instances) {
     if (existing.has(`${inst.slot_id}|${inst.date}`)) continue;
-    const id = nextId([], "SES");
+    const id = `${inst.slot_id}-${inst.date}`;
     appends.push([
       id, inst.date, inst.batch_id, inst.start, inst.end, inst.room_id, inst.teacher_id,
       "scheduled", "recurring", inst.slot_id,
@@ -1717,10 +1734,14 @@ export async function updateStaff(id: string, input: StaffInput): Promise<void> 
   ]);
 }
 
+/** Set a staffer's PIN hash (Staff col D).
+ *
+ *  Uses rowOf rather than a snapshot index: this is a credential write, so a
+ *  mis-targeted row hands one staffer another's PIN — the worst outcome of the
+ *  positional-write race, and the cheapest place to spend an extra read. */
 export async function setStaffPin(id: string, pinHash: string): Promise<void> {
-  const staff = await readTab<Staff>("Staff");
-  const idx = staff.findIndex((s) => s.teacher_id === id);
-  if (idx >= 0) await updateValues(`Staff!D${idx + 2}`, [[pinHash]]);
+  const row = await rowOf("Staff", "A", id);
+  if (row) await updateValues(`Staff!D${row}`, [[pinHash]]);
 }
 
 export async function setStaffActive(id: string, active: boolean): Promise<void> {
@@ -2316,9 +2337,10 @@ export async function getStudent(id: string): Promise<Student | null> {
  *  change-PIN flow and by owner-side provisioning. Writes only col H, so it
  *  cannot clobber the other fields the way a whole-row write would. */
 export async function setStudentPin(id: string, pinHash: string): Promise<void> {
-  const students = await readTab<Student>("Students");
-  const idx = students.findIndex((s) => s.student_id === id);
-  if (idx >= 0) await updateValues(`Students!H${idx + 2}`, [[pinHash]]);
+  // rowOf, not a snapshot index: see setStaffPin. A mis-targeted PIN write
+  // would let one family sign in to another's portal.
+  const row = await rowOf("Students", "A", id);
+  if (row) await updateValues(`Students!H${row}`, [[pinHash]]);
 }
 
 /** Portal login lookup: an active student whose own phone OR parent_phone matches.
@@ -2802,6 +2824,19 @@ export function integrityIssues(tabs: {
   teachers: Staff[];
   students: Student[];
   rules?: TimetableRule[];
+  // Optional so existing callers (the owner dashboard) keep compiling. The
+  // nightly scan passes all of them — see checkIntegrity.
+  charges?: FeeChargeRow[];
+  payments?: PaymentRow[];
+  ptm?: PtmRow[];
+  tests?: TestRow[];
+  questions?: QuestionRow[];
+  attempts?: AttemptRow[];
+  courses?: Course[];
+  chapters?: Chapter[];
+  tasks?: StaffTaskRow[];
+  adjustments?: SalaryAdjustmentRow[];
+  salaryPayments?: SalaryPaymentRow[];
 }): IntegrityIssue[] {
   const batchIds = new Set(tabs.batches.map((b) => b.batch_id));
   const roomIds = new Set(tabs.rooms.map((r) => r.room_id));
@@ -2857,8 +2892,108 @@ export function integrityIssues(tabs: {
   dupes(tabs.batches.map((b) => b.batch_id), "batch");
   dupes(tabs.teachers.map((t) => t.teacher_id), "staff");
   dupes(tabs.rooms.map((r) => r.room_id), "room");
+  // The rest of the series. These were unscanned, which mattered most for the
+  // money tabs: voidCharge and voidPayment find by id and void the FIRST match,
+  // so a duplicated charge could never be fully voided. Optional because the
+  // dashboard caller does not load them; the nightly scan does.
+  if (tabs.rules) dupes(tabs.rules.map((r) => r.slot_id), "rule");
+  if (tabs.charges) dupes(tabs.charges.map((c) => c.charge_id), "charge");
+  if (tabs.payments) dupes(tabs.payments.map((p) => p.payment_id), "payment");
+  if (tabs.ptm) dupes(tabs.ptm.map((p) => p.ptm_id), "ptm");
+  if (tabs.tests) dupes(tabs.tests.map((t) => t.test_id), "test");
+  if (tabs.questions) dupes(tabs.questions.map((q) => q.question_id), "question");
+  if (tabs.attempts) dupes(tabs.attempts.map((a) => a.attempt_id), "attempt");
+  if (tabs.courses) dupes(tabs.courses.map((c) => c.course_id), "course");
+  if (tabs.chapters) dupes(tabs.chapters.map((c) => c.chapter_id), "chapter");
+  if (tabs.tasks) dupes(tabs.tasks.map((t) => t.task_id), "task");
+  if (tabs.adjustments) dupes(tabs.adjustments.map((a) => a.adj_id), "adjustment");
+  if (tabs.salaryPayments) dupes(tabs.salaryPayments.map((p) => p.pay_id), "salary payment");
+
+  // Natural-key duplicates: rows that are not duplicate ids but still mean the
+  // same real-world thing twice. A double generateSessions run, a retried
+  // charge, two attempts at one test — each is invisible to the id scan above
+  // because the ids differ.
+  const dupeKeys = (keys: string[], kind: string, label: (k: string) => string) => {
+    const seen = new Set<string>();
+    const reported = new Set<string>();
+    for (const k of keys) {
+      if (!k) continue;
+      if (seen.has(k) && !reported.has(k)) {
+        issues.push({ kind, detail: label(k) });
+        reported.add(k);
+      }
+      seen.add(k);
+    }
+  };
+  dupeKeys(
+    tabs.sessions
+      .filter((s) => s.source === "recurring" && s.slot_id && s.status !== "cancelled")
+      .map((s) => `${s.slot_id}|${s.date}`),
+    "session",
+    (k) => `two sessions for the same slot and date (${k.replace("|", " on ")})`,
+  );
+  if (tabs.attempts) {
+    dupeKeys(
+      tabs.attempts.map((a) => `${a.test_id}|${a.student_id}`),
+      "attempt",
+      (k) => `student attempted one test twice (${k.replace("|", " by ")})`,
+    );
+  }
+  if (tabs.charges) {
+    dupeKeys(
+      tabs.charges
+        .filter((c) => c.kind === "monthly" && c.status === "active")
+        .map((c) => `${c.student_id}|${c.batch_id}|${c.period}`),
+      "charge",
+      (k) => `billed twice for the same month (${k.replace(/\|/g, " / ")})`,
+    );
+  }
 
   return issues;
+}
+
+/**
+ * Full integrity scan over every tab, for the nightly cron.
+ *
+ * `integrityIssues` is pure but its only caller is the owner dashboard, which
+ * loads seven tabs — so twelve of the eighteen id series were never scanned,
+ * and any corruption nobody happened to look at was never recorded at all.
+ *
+ * This reads the whole Sheet (one batchGet, already how every render works) and
+ * scans everything. It reports; it does not repair. Auto-repairing a ledger is
+ * how a visible mistake becomes an invisible one — the owner fixes their own
+ * Sheet, which is the product.
+ */
+export async function fullIntegrityScan(): Promise<IntegrityIssue[]> {
+  const [
+    sessions, enrolls, batches, rooms, teachers, students, rules,
+    charges, payments, ptm, tests, questions, attempts, courses, chapters,
+    tasks, adjustments, salaryPayments,
+  ] = await Promise.all([
+    readTab<Session>("Sessions"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<Batch>("Batches"),
+    readTab<Room>("Rooms"),
+    readTab<Staff>("Staff"),
+    readTab<Student>("Students"),
+    safeReadTab<TimetableRule>("Timetable"),
+    safeReadTab<FeeChargeRow>("FeeCharges"),
+    safeReadTab<PaymentRow>("Payments"),
+    safeReadTab<PtmRow>("PTM"),
+    safeReadTab<TestRow>("Tests"),
+    safeReadTab<QuestionRow>("Questions"),
+    safeReadTab<AttemptRow>("Attempts"),
+    safeReadTab<Course>("Courses"),
+    safeReadTab<Chapter>("Chapters"),
+    safeReadTab<StaffTaskRow>("StaffTasks"),
+    safeReadTab<SalaryAdjustmentRow>("SalaryAdjustments"),
+    safeReadTab<SalaryPaymentRow>("SalaryPayments"),
+  ]);
+  return integrityIssues({
+    sessions, enrolls, batches, rooms, teachers, students, rules,
+    charges, payments, ptm, tests, questions, attempts, courses, chapters,
+    tasks, adjustments, salaryPayments,
+  });
 }
 
 // ---------------- Manage hub counts ----------------
@@ -4252,10 +4387,10 @@ export async function addCharge(input: {
 /** Soft-void a charge by ID (fresh read → findIndex → single-cell update).
  *  Matched by charge_id so a concurrent append can't shift the wrong row. */
 export async function voidCharge(chargeId: string): Promise<void> {
-  const charges = await safeReadTab<FeeChargeRow>("FeeCharges");
-  const idx = charges.findIndex((c) => c.charge_id === chargeId);
-  if (idx < 0) return;
-  await updateValues(`FeeCharges!H${idx + 2}`, [["void"]]);
+  // rowOf, not a snapshot index: voiding the wrong row writes off money that
+  // is still owed, or keeps a charge the owner meant to cancel.
+  const row = await rowOf("FeeCharges", "A", chargeId);
+  if (row) await updateValues(`FeeCharges!H${row}`, [["void"]]);
 }
 
 /** Append a payment record. `amount` is a validated positive integer. */
@@ -4275,10 +4410,10 @@ export async function recordPayment(input: {
 
 /** Soft-void a payment by ID (fresh read → findIndex → single-cell update). */
 export async function voidPayment(paymentId: string): Promise<void> {
-  const payments = await safeReadTab<PaymentRow>("Payments");
-  const idx = payments.findIndex((p) => p.payment_id === paymentId);
-  if (idx < 0) return;
-  await updateValues(`Payments!H${idx + 2}`, [["void"]]);
+  // rowOf, not a snapshot index — see voidCharge. This one un-credits a
+  // payment a parent actually made.
+  const row = await rowOf("Payments", "A", paymentId);
+  if (row) await updateValues(`Payments!H${row}`, [["void"]]);
 }
 
 // ============================================================================
@@ -4910,13 +5045,29 @@ export async function submitAttempt(input: {
   const { score, max, perQuestion } = scoreAttempt(test, qs, chosenByQ);
 
   const attemptId = nextId(attempts.map((a) => a.attempt_id), "ATT");
-  await appendRows("Attempts", [
-    [attemptId, input.testId, input.studentId, String(score), String(max), centerTimestamp()],
-  ]);
+
+  // Answers FIRST, Attempts second. These are two API calls with no transaction
+  // between them, so one of them can land alone. The order decides which
+  // half-write a student is left with:
+  //
+  //   Attempts first (what this used to do) — a failure in between leaves a
+  //   scored Attempts row with no answers. getTestForTaking gates re-entry on
+  //   that row, so the student is locked out permanently, and the review screen
+  //   shows every question blank against a real score. Unrecoverable in the UI.
+  //
+  //   Answers first — a failure in between leaves orphan Answers rows, which
+  //   nothing reads (every lookup goes Attempts -> attempt_id -> Answers) and
+  //   which the next submit simply adds to. The student can retake. Invisible.
+  //
+  // So the Attempts row is the commit marker, and the sequence is crash-safe
+  // without a transaction Sheets cannot give us.
   await appendRows(
     "Answers",
     perQuestion.map((p) => [attemptId, p.question_id, p.chosen, p.isCorrect ? "TRUE" : "FALSE"]),
   );
+  await appendRows("Attempts", [
+    [attemptId, input.testId, input.studentId, String(score), String(max), centerTimestamp()],
+  ]);
   return { ok: true, attemptId };
 }
 

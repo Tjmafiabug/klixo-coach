@@ -27,6 +27,28 @@ const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 async function scan(page: import("@playwright/test").Page, path: string) {
   await page.goto(path);
   await page.waitForLoadState("networkidle");
+  // Wait for the Reveal fade-ins to finish before scanning.
+  //
+  // Reveal (components/motion.tsx) animates opacity 0 -> 1 over 0.5s with a
+  // stagger. networkidle fires long before that, so axe was sampling text
+  // mid-fade and computing contrast against a partially transparent colour:
+  // muted-foreground #5b6270 (a real 5.73:1) was reported as #7a808b at 3.7:1
+  // and #9ea2ab at 2.55:1, on five staff pages, serially reproducible.
+  //
+  // Those were measurement artifacts, not colour defects — verified by
+  // rescanning under prefers-reduced-motion, which Reveal honours, where all
+  // five pages are clean. Waiting for the animations keeps the scan honest
+  // without disabling the thing being shipped.
+  await page
+    .waitForFunction(
+      () => document.getAnimations().every((a) => a.playState !== "running"),
+      undefined,
+      { timeout: 5_000 },
+    )
+    .catch(() => {
+      // A looping animation would never settle; fall through and scan anyway
+      // rather than fail the test for the wrong reason.
+    });
   const { violations } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   const blocking = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   return blocking.map((v) => ({

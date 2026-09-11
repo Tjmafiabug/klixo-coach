@@ -32,6 +32,17 @@ test.describe("MCQ", () => {
   test.afterEach(async () => {
     // Always, even on failure — a stranded attempt makes the next run skip.
     await cleanupTestAttempt(TEST_ID, STUDENT.id);
+    // cleanupTestAttempt writes through the Google API directly, so the running
+    // app never learns to drop its cached copy of the Sheet and keeps serving
+    // the just-deleted attempt for up to CACHE_TTL_MS. The next test in this
+    // file then loads the result view instead of the form and hunts for option
+    // labels that are not there. Wait the window out.
+    //
+    // This is the app's documented second-writer trade (see the cache comment
+    // in src/lib/sheets.ts) showing up in the harness: any writer that bypasses
+    // the app is invisible to it for one TTL. Kept as a sleep rather than a
+    // shorter TTL because the TTL is what makes 500 concurrent readers work.
+    await new Promise((r) => setTimeout(r, 6_000));
   });
 
   test("a student takes a test and sees a score matching their answers", async ({ page }) => {

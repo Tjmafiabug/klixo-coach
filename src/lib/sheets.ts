@@ -262,6 +262,51 @@ export async function readTabUncached<T = Record<string, string>>(
   return shape<T>(res.data.values ?? []);
 }
 
+/**
+ * The 1-based sheet row holding `id`, read fresh immediately before use.
+ *
+ * Every positional write in this app computes its row number as `findIndex` + 2
+ * over a snapshot, then writes to that index. Appends never move existing rows,
+ * but **sorting a tab, inserting above, or deleting above all do** — and the
+ * Sheet is deliberately owner-editable, so a human doing exactly that is a
+ * supported workflow, not misuse. Between the snapshot and the write, the row
+ * at that index may be someone else's.
+ *
+ * What that costs, by write shape:
+ *   - whole-row overwrite → replaces another record with a copy of this one;
+ *     the result is internally consistent, so nothing can detect it afterwards
+ *   - single-cell update → flips a flag on the wrong record. `Students!H` and
+ *     `Staff!D` are PIN writes: one person gets another's PIN
+ *   - delete by index → removes a different record outright
+ *
+ * The per-request snapshot was already ~0.6-2 s old; the cross-request cache
+ * widened that to ~7 s. This reads just the id column (a fraction of a full
+ * read) right before the index is used, shrinking the window to one round trip.
+ *
+ * It does NOT make the write atomic. Sheets has no compare-and-swap — verified
+ * against the v4 discovery document — so a sort landing inside that round trip
+ * still mis-targets. This narrows the window by an order of magnitude; it does
+ * not close it. The nightly integrity scan is what catches what slips through.
+ *
+ * Returns null when the id is absent (deleted meanwhile), so callers can skip
+ * rather than write to a guessed row.
+ */
+export async function rowOf(tab: string, idColumn: string, id: string): Promise<number | null> {
+  if (!id) return null;
+  const res = await withRetry(() =>
+    client().spreadsheets.values.get({
+      spreadsheetId: sheetId(),
+      range: `'${tab}'!${idColumn}:${idColumn}`,
+    }),
+  );
+  const col = res.data.values ?? [];
+  // col[0] is the header; data starts at sheet row 2.
+  for (let i = 1; i < col.length; i++) {
+    if (String(col[i]?.[0] ?? "") === id) return i + 1;
+  }
+  return null;
+}
+
 /** Append rows to the bottom of a tab (RAW so HH:mm / dates stay literal text). */
 export async function appendRows(tab: string, rows: string[][]): Promise<void> {
   if (rows.length === 0) return;

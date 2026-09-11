@@ -3,8 +3,23 @@ import { getStudentTests } from "@/lib/data";
 import { PortalTitle, Tile } from "@/components/portal-ui";
 import { Pill } from "@/components/ui";
 
-export default async function PortalTests() {
+/** Why a submission was refused, in words a parent can act on. submitAttempt
+ *  writes nothing in these cases, so the student's answers are genuinely gone —
+ *  say so plainly rather than implying the test was saved. */
+const SUBMIT_ERROR: Record<string, string> = {
+  "already-done": "You have already submitted this test, so this attempt was not saved.",
+  "not-available":
+    "This test is no longer open to you, so your answers were not saved. Ask your teacher.",
+  "not-found": "That test no longer exists, so your answers were not saved.",
+};
+
+export default async function PortalTests({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { studentId } = await requireStudent();
+  const { error } = await searchParams;
   const tests = await getStudentTests(studentId);
   const todo = tests.filter((t) => !t.attempt);
   const done = tests.filter((t) => t.attempt);
@@ -12,6 +27,15 @@ export default async function PortalTests() {
   return (
     <div>
       <PortalTitle title="Tests" sub="Take your assigned tests and see your scores." />
+
+      {error && SUBMIT_ERROR[error] ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-danger/30 bg-danger-subtle px-4 py-3 text-sm text-danger"
+        >
+          {SUBMIT_ERROR[error]}
+        </div>
+      ) : null}
 
       {tests.length === 0 ? (
         <Tile>

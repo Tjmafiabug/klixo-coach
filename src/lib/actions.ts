@@ -1105,7 +1105,13 @@ export async function submitTestAction(formData: FormData): Promise<void> {
   for (const [k, v] of formData.entries()) {
     if (k.startsWith("chosen_")) chosen[k.slice("chosen_".length)] = String(v);
   }
-  await submitAttempt({ testId, studentId: user.studentId, chosen });
+  // submitAttempt re-runs every guard server-side and writes NOTHING when one
+  // fails. Discarding that result told the student their test was submitted
+  // when it was not: enrollment ended mid-test, or the owner unpublished it,
+  // and they landed on a page that re-rendered a blank form with their answers
+  // gone and no explanation.
+  const res = await submitAttempt({ testId, studentId: user.studentId, chosen });
+  if (!res.ok) redirect(`/portal/tests?error=${res.reason}`);
   redirect(`/portal/tests/${testId}`);
 }
 
