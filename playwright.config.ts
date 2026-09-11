@@ -9,6 +9,12 @@ try {
   // absent in CI, where the env comes from the runner
 }
 
+// Point the suite at the disposable Sheet when one is configured, so `npm run
+// e2e` never writes to whichever Sheet the app itself is using. The dev server
+// Playwright starts inherits this, and global-setup still refuses to run if it
+// ever resolves to PROD_SHEET_ID.
+if (process.env.E2E_SHEET_ID) process.env.SHEET_ID = process.env.E2E_SHEET_ID;
+
 /**
  * E2E against a real dev server and a real Sheet.
  *
