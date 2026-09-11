@@ -20,7 +20,9 @@ try {
  * transactions and a ~60 reads/min quota. Parallel workers would corrupt each
  * other's fixtures and exhaust the quota, then look like flakiness.
  */
-const PORT = process.env.E2E_PORT ?? "3001";
+// 3000 is Next's default; set E2E_PORT when another project already holds it
+// (the webServer below reuses a running dev server rather than starting one).
+const PORT = process.env.E2E_PORT ?? "3000";
 const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 
 export default defineConfig({
