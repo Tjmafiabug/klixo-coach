@@ -1,8 +1,14 @@
 # Scaling analysis
 
-Measured 2026-09-11 against the E2E Sheet. Numbers here are either **measured**
-or **derived** — each is labelled, because the two should not be mixed when
-deciding anything.
+Measured 2026-09-11 against the **production** Sheet (`1fA4V…`), read-only.
+Numbers here are either **measured** or **derived** — each is labelled, because
+the two should not be mixed when deciding anything.
+
+(An earlier revision of this line said "the E2E Sheet". It was wrong: the
+889 KB / 7,652-row figures below match production, not E2E, which holds 348 KB
+and 2,412 attendance rows. The measurements are unaffected — every read here is
+non-mutating — but the source mattered enough to correct. Sessions that
+**write** must use the E2E Sheet; see `docs/SCALE-LIMITS.md`.)
 
 ## What binds first
 
