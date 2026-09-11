@@ -346,6 +346,59 @@ export async function readArchiveTab<T = Record<string, string>>(
 }
 
 /**
+ * A tab's raw rows, header included, bypassing every cache.
+ *
+ * The archive job needs the grid exactly as it is right now — a cached copy
+ * describes a row layout that may already be stale, and the job turns row
+ * positions into deletions. Returns [] for a tab that does not exist, which is
+ * the normal state of an archive tab before the first run.
+ */
+export async function rawRows(tab: string): Promise<string[][]> {
+  try {
+    const res = await withRetry(() =>
+      client().spreadsheets.values.get({ spreadsheetId: sheetId(), range: `'${tab}'` }),
+    );
+    return res.data.values ?? [];
+  } catch (e) {
+    const err = e as { code?: number; response?: { status?: number }; message?: string };
+    const missing =
+      (err?.code === 400 || err?.response?.status === 400) &&
+      /Unable to parse range/i.test(err?.message ?? "");
+    if (missing) return [];
+    throw e;
+  }
+}
+
+/**
+ * Create `tab` with `header` if it does not exist. No-op when it does, and it
+ * never rewrites an existing header — a mismatch is something the integrity
+ * scan should report, not something a job should silently "fix" by overwriting
+ * a column the owner added.
+ */
+export async function ensureTab(tab: string, header: string[]): Promise<void> {
+  const meta = await withRetry(() =>
+    client().spreadsheets.get({ spreadsheetId: sheetId(), fields: "sheets.properties.title" }),
+  );
+  const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === tab);
+  if (exists) return;
+  await withRetry(() =>
+    client().spreadsheets.batchUpdate({
+      spreadsheetId: sheetId(),
+      requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
+    }),
+  );
+  await withRetry(() =>
+    client().spreadsheets.values.update({
+      spreadsheetId: sheetId(),
+      range: `'${tab}'!A1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [header] },
+    }),
+  );
+  invalidateSheetCache();
+}
+
+/**
  * The 1-based sheet row holding `id`, read fresh immediately before use.
  *
  * Every positional write in this app computes its row number as `findIndex` + 2
@@ -442,15 +495,32 @@ export async function deleteRows(
   rowNumbers: number[],
 ): Promise<void> {
   if (rowNumbers.length === 0) return;
-  const meta = await withRetry(() => client().spreadsheets.get({ spreadsheetId: sheetId() }));
+  // fields mask: without it this returns the whole spreadsheet's metadata,
+  // which grows with every tab the owner adds.
+  const meta = await withRetry(() =>
+    client().spreadsheets.get({ spreadsheetId: sheetId(), fields: "sheets.properties" }),
+  );
   const sheet = meta.data.sheets?.find((s) => s.properties?.title === tab);
   const gid = sheet?.properties?.sheetId;
   if (gid == null) throw new Error(`tab not found: ${tab}`);
-  const requests = [...rowNumbers]
-    .sort((a, b) => b - a)
-    .map((rn) => ({
+
+  // Coalesce consecutive rows into runs before building requests. Deleting one
+  // row at a time is correct but emits one sub-request per row, and the archive
+  // job deletes thousands at once — a batch of contiguous marks appended by a
+  // single register submit is exactly the shape that collapses well. Descending
+  // so each deletion cannot shift the rows still to be deleted.
+  const sorted = [...new Set(rowNumbers)].sort((a, b) => a - b);
+  const runs: { start: number; end: number }[] = [];
+  for (const rn of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && rn === last.end + 1) last.end = rn;
+    else runs.push({ start: rn, end: rn });
+  }
+  const requests = runs
+    .sort((a, b) => b.start - a.start)
+    .map((r) => ({
       deleteDimension: {
-        range: { sheetId: gid, dimension: "ROWS", startIndex: rn - 1, endIndex: rn },
+        range: { sheetId: gid, dimension: "ROWS", startIndex: r.start - 1, endIndex: r.end },
       },
     }));
   await withRetry(() =>

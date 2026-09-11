@@ -65,6 +65,12 @@ const config = cache(async (): Promise<Map<string, string>> => {
   return new Map(rows.map((r) => [r.key, r.value]));
 });
 
+/** The centre's Config map. Exported for the cron routes, which need the
+ *  retention setting without reaching into the module-private accessor. */
+export async function centreConfig(): Promise<Map<string, string>> {
+  return config();
+}
+
 /** Centre-local today, with an optional Config `demo_today` override (demo determinism). */
 export async function effectiveToday(): Promise<string> {
   const demo = (await config()).get("demo_today")?.trim();

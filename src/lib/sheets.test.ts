@@ -125,12 +125,15 @@ describe("batched reads", () => {
     //   readArchiveTab — reads a tab deliberately absent from KNOWN_TABS, so it
     //     cannot come from the batch. Cold paths only; the whole point is that
     //     archived history never joins the render-path read.
+    //   rawRows — the archive job's view of the grid as it is right now. It
+    //     turns row positions into deletions, so a cached copy is exactly the
+    //     wrong input. Runs once a night from the cron, never from a render.
     // Anything else reintroduces the read amplification this batching exists to
     // prevent: a per-tab get is one quota unit each, against 60/min/user.
     expect(
       reads,
-      "only readTabUncached, rowOf and readArchiveTab may issue a single-range get",
-    ).toHaveLength(3);
+      "only readTabUncached, rowOf, readArchiveTab and rawRows may issue a single-range get",
+    ).toHaveLength(4);
     expect(SRC, "rowOf must read a single column, not the whole tab").toMatch(
       /range: `'\$\{tab\}'!\$\{idColumn\}:\$\{idColumn\}`/,
     );
