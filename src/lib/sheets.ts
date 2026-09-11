@@ -272,6 +272,79 @@ export async function readTabUncached<T = Record<string, string>>(
   return shape<T>(res.data.values ?? []);
 }
 
+/** Tabs that may have an `_Archive` sibling. Attendance and Sessions are 92.9%
+ *  of payload between them; everything else is a live join that has to stay
+ *  whole (the fee ledger especially — Payments carries no batch_id, so a
+ *  student's balance is one running total that must not be split). */
+export type ArchivableTab = "Attendance" | "Sessions";
+
+/** Archive tab name for a live tab. Kept in one place so the job, the readers
+ *  and the integrity scan cannot disagree about it. */
+export const archiveTabName = (tab: ArchivableTab): string => `${tab}_Archive`;
+
+/**
+ * Cold-path cache for an archive tab. Longer TTL than the hot sheet cache: the
+ * archive changes once a night, and a minute of staleness on history nobody has
+ * touched in months is not a risk worth a read unit.
+ */
+const ARCHIVE_TTL_MS = 60_000;
+const archiveCache = new Map<string, { at: number; rows: Promise<string[][]> }>();
+
+/** Drop cached archive tabs for the current Sheet — the archive job calls this
+ *  after it moves rows, so the next cold read sees the new boundary. */
+export function invalidateArchiveCache(): void {
+  const prefix = `${sheetId()}|`;
+  for (const k of archiveCache.keys()) if (k.startsWith(prefix)) archiveCache.delete(k);
+}
+
+/**
+ * Read an archive tab. Returns [] when it does not exist yet.
+ *
+ * Deliberately NOT part of `allTabs`, and its name is deliberately absent from
+ * KNOWN_TABS: being outside that list is the entire mechanism by which archived
+ * history stays off the read that every page render performs. A cold path pays
+ * one request for it; the hot path never sees it.
+ *
+ * The missing-tab case is normal, not exceptional — a centre that has never run
+ * the archive job has no archive tab — so a 400 "Unable to parse range" resolves
+ * to an empty list rather than throwing, exactly as safeReadTab does.
+ */
+export async function readArchiveTab<T = Record<string, string>>(
+  tab: ArchivableTab,
+): Promise<T[]> {
+  const name = archiveTabName(tab);
+  const key = `${sheetId()}|${name}`;
+  const hit = archiveCache.get(key);
+  const rows =
+    hit && Date.now() - hit.at < ARCHIVE_TTL_MS
+      ? hit.rows
+      : (() => {
+          const p = withRetry(() =>
+            client().spreadsheets.values.get({
+              spreadsheetId: sheetId(),
+              range: `'${name}'`,
+            }),
+          )
+            .then((res) => res.data.values ?? [])
+            .catch((e: unknown) => {
+              const err = e as { code?: number; response?: { status?: number }; message?: string };
+              const missing =
+                (err?.code === 400 || err?.response?.status === 400) &&
+                /Unable to parse range/i.test(err?.message ?? "");
+              if (missing) return [] as string[][];
+              throw e;
+            });
+          archiveCache.set(key, { at: Date.now(), rows: p });
+          // Never cache a failure: one transient 5xx would otherwise blank the
+          // archive for a whole minute, and a report would silently omit history.
+          p.catch(() => {
+            if (archiveCache.get(key)?.rows === p) archiveCache.delete(key);
+          });
+          return p;
+        })();
+  return shape<T>(await rows);
+}
+
 /**
  * The 1-based sheet row holding `id`, read fresh immediately before use.
  *

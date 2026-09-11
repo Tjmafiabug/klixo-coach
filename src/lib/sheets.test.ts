@@ -116,15 +116,21 @@ describe("batched reads", () => {
     // ~3 dashboard loads a minute and ~60.
     expect(SRC).toMatch(/values\.batchGet\(/);
     const reads = SRC.match(/spreadsheets\.values\.get\(/g) ?? [];
-    // Exactly two single-range readers are allowed, and each earns it:
+    // Exactly three single-range readers are allowed, and each earns it:
     //   readTabUncached — re-reads after a write in the same request, where the
     //     cached copy still describes the pre-write row layout.
     //   rowOf — reads one id column immediately before a positional write, so a
     //     human sorting or deleting rows cannot make that write land on someone
     //     else's row.
+    //   readArchiveTab — reads a tab deliberately absent from KNOWN_TABS, so it
+    //     cannot come from the batch. Cold paths only; the whole point is that
+    //     archived history never joins the render-path read.
     // Anything else reintroduces the read amplification this batching exists to
     // prevent: a per-tab get is one quota unit each, against 60/min/user.
-    expect(reads, "only readTabUncached and rowOf may issue a single-range get").toHaveLength(2);
+    expect(
+      reads,
+      "only readTabUncached, rowOf and readArchiveTab may issue a single-range get",
+    ).toHaveLength(3);
     expect(SRC, "rowOf must read a single column, not the whole tab").toMatch(
       /range: `'\$\{tab\}'!\$\{idColumn\}:\$\{idColumn\}`/,
     );

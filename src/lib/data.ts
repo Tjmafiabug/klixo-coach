@@ -6,6 +6,7 @@ import {
   batchUpdateValues,
   deleteRows,
   readTabUncached,
+  readArchiveTab,
   rowOf,
 } from "@/lib/sheets";
 import { cache } from "react";
@@ -501,6 +502,84 @@ export function addDays(dateStr: string, n: number): string {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
+/** Default months of attendance history kept in the live tab. Six puts a centre
+ *  in the ~170-student band (docs/SIZING.md) with the current term and the one
+ *  before it always live, which is what the register's back-navigation reaches
+ *  for. Owners override it with a `retention_months` row in Config. */
+export const DEFAULT_RETENTION_MONTHS = 6;
+
+/**
+ * First day of the oldest month kept live. Rows dated before this are eligible
+ * for the archive; everything from this date on stays in the hot tab.
+ *
+ * Month-aligned on purpose. `getBatchRegister` renders one month at a time, so
+ * a cutoff on the 1st means any month it shows is wholly on one side of the
+ * line — no query ever has to stitch a month together from two tabs. A cutoff
+ * mid-month would split the register's own unit of work.
+ *
+ * Clamped to at least 2 months, which guarantees the cutoff is always further
+ * back than BACKLOG_DAYS (14) — so `getDayBoard`, `getRoster`,
+ * `submitAttendance` and `generateSessions` can never reach past it and stay
+ * live-tab-only. A centre that sets 1 would otherwise archive marks a teacher
+ * is still allowed to backfill.
+ *
+ * Pure, so the boundary arithmetic is testable without a Sheet.
+ */
+export function archiveCutoff(
+  cfg: Map<string, string>,
+  today: string,
+): string {
+  // A number the owner typed is a number they meant: clamp it. Only a value
+  // that is not a number at all ("", "six months") falls back to the default —
+  // otherwise "0" would silently mean six months rather than "as little as you
+  // allow", which is the opposite of what someone typing 0 intends.
+  const text = (cfg.get("retention_months") ?? "").trim();
+  const raw = text === "" ? NaN : Number(text);
+  const months = Number.isFinite(raw) ? Math.floor(raw) : DEFAULT_RETENTION_MONTHS;
+  const clamped = Math.min(Math.max(months, 2), 120);
+  const [y, m] = today.split("-").map(Number);
+  // Keep `clamped` months INCLUDING the current one, so the cutoff is the 1st
+  // of the month (clamped - 1) back.
+  const d = new Date(Date.UTC(y, m - 1 - (clamped - 1), 1));
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Attendance for a query starting at `from`, reaching into the archive only
+ * when `from` predates the cutoff.
+ *
+ * `from === undefined` means "all of history" (a full export), which always
+ * reads the archive. A `from` on or after the cutoff reads the live tab alone
+ * and costs nothing extra — which is every hot path, by construction.
+ *
+ * Overlap is deliberately tolerated rather than prevented. The archive job
+ * copies before it deletes, so for a moment a row exists in both tabs; every
+ * consumer resolves (session, student) through latestPerSessionStudent, so a
+ * duplicate collapses. That tolerance is what lets the job be interruptible
+ * without a reader ever seeing a gap.
+ */
+async function attendanceSince(from: string | undefined): Promise<AttendanceRow[]> {
+  const live = await readTab<AttendanceRow>("Attendance");
+  const cutoff = archiveCutoff(await config(), await effectiveToday());
+  if (from !== undefined && from >= cutoff) return live;
+  const archived = await readArchiveTab<AttendanceRow>("Attendance");
+  return archived.length ? [...archived, ...live] : live;
+}
+
+/** Sessions for a query starting at `from`. Same rule as attendanceSince.
+ *  Deduped by session_id because, unlike attendance, no downstream consumer
+ *  does it — the register and the calendar both key straight off the id. */
+async function sessionsSince(from: string | undefined): Promise<Session[]> {
+  const live = await readTab<Session>("Sessions");
+  const cutoff = archiveCutoff(await config(), await effectiveToday());
+  if (from !== undefined && from >= cutoff) return live;
+  const archived = await readArchiveTab<Session>("Sessions");
+  if (!archived.length) return live;
+  const byId = new Map<string, Session>();
+  for (const s of [...archived, ...live]) byId.set(s.session_id, s); // live wins
+  return [...byId.values()];
+}
+
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** Monday (YYYY-MM-DD) of the week containing `iso`. */
@@ -611,7 +690,8 @@ function expandRecurring(
  *  gaps; cancelled are kept (rendered struck-through). */
 export async function getSessionsInRange(start: string, end: string): Promise<SessionView[]> {
   const [sessions, batches, rooms, teachers, rules, holidaysTab] = await Promise.all([
-    readTab<Session>("Sessions"),
+    // Calendar back-navigation past the cutoff.
+    sessionsSince(start),
     readTab<Batch>("Batches"),
     readTab<Room>("Rooms"),
     readTab<Staff>("Staff"),
@@ -3493,20 +3573,26 @@ export async function getBatchRegister(
   batchId: string,
   monthAnchor: string,
 ): Promise<BatchRegister | null> {
-  const [batches, enrolls, students, sessions, attendance, cfgMap] = await Promise.all([
-    readTab<Batch>("Batches"),
-    readTab<Enrollment>("Enrollments"),
-    readTab<Student>("Students"),
-    readTab<Session>("Sessions"),
-    readTab<AttendanceRow>("Attendance"),
-    config(),
-  ]);
-  const batch = batches.find((b) => b.batch_id === batchId);
-  if (!batch) return null;
+  // The month has to be known before the reads, so they can tell whether this
+  // query reaches past the archive cutoff. It needs only the anchor and today,
+  // both of which come from config — which is per-request cached, so resolving
+  // it first costs nothing.
+  const cfgMap = await config();
   const today = todayFromCfg(cfgMap);
   // default to the current centre month when no valid YYYY-MM is given (one
   // config read serves today + threshold + the anchor fallback)
   const month = monthRange(/^\d{4}-(0[1-9]|1[0-2])$/.test(monthAnchor) ? monthAnchor : today.slice(0, 7));
+
+  const [batches, enrolls, students, sessions, attendance] = await Promise.all([
+    readTab<Batch>("Batches"),
+    readTab<Enrollment>("Enrollments"),
+    readTab<Student>("Students"),
+    // Cold path: back-navigating to an archived month must still render.
+    sessionsSince(month.start),
+    attendanceSince(month.start),
+  ]);
+  const batch = batches.find((b) => b.batch_id === batchId);
+  if (!batch) return null;
   const threshold = parseInt(cfgMap.get("attendance_threshold") ?? "75", 10);
 
   // Columns: this batch's sessions in the month (cancelled kept, struck in the UI).
@@ -3736,7 +3822,8 @@ export async function reportAttendance(opts: {
   batchId?: string;
 }): Promise<string[][]> {
   const [attendance, students, batches, teachers] = await Promise.all([
-    readTab<AttendanceRow>("Attendance"),
+    // An export with no `from` means all of history, so it reads the archive.
+    attendanceSince(opts.from),
     readTab<Student>("Students"),
     readTab<Batch>("Batches"),
     readTab<Staff>("Staff"),
@@ -3806,7 +3893,8 @@ export async function reportBatches(): Promise<string[][]> {
 export async function reportStudent(studentId: string): Promise<string[][] | null> {
   const [students, attendance, batches] = await Promise.all([
     readTab<Student>("Students"),
-    readTab<AttendanceRow>("Attendance"),
+    // "An export must be complete" — always reaches the archive.
+    attendanceSince(undefined),
     readTab<Batch>("Batches"),
   ]);
   if (!students.some((s) => s.student_id === studentId)) return null;
