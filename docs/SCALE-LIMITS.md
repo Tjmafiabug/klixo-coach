@@ -149,7 +149,13 @@ nothing to show while it waits.
 The caution in `SCALING.md` stands. The mechanism is different from the one
 assumed: plan around latency variance, not around a 503.
 
-## 4. `nextId()` collides every time, not occasionally
+## 4. `nextId()` collided every time, not occasionally — since fixed
+
+> **Fixed.** Ids are now minted from a clock instead of counted, so there is
+> nothing to race. Verified against the live API: the 30-way concurrent submit
+> below now yields 30 distinct ids. The measurements are kept because they are
+> why the change was made, and because the duplicate-id audit still guards
+> legacy rows and owner edits.
 
 `nextId()` (`src/lib/data.ts:1405`) is max-suffix+1 over a read snapshot.
 Concurrent creates — **measured**:
@@ -182,11 +188,10 @@ sharing a service account.
 
 ## What binds, in order
 
-1. **`nextId()`** — fires at *any* concurrency, not at scale. Fix before a second
-   admin or a second centre. Cheapest correct fix: derive the id from something
-   already unique (timestamp + random suffix), or read-back-and-verify after
-   append. **Derived**: a natural-key upsert like Attendance's would also work,
-   but these rows have no natural key.
+1. ~~**`nextId()`**~~ — **fixed.** Ids are minted from a clock (prefix + base-36
+   centisecond timestamp + random tail), so concurrent creates cannot agree on an
+   id. Fixed width and lexicographic-order-equals-creation-order were preserved
+   deliberately; see the commit and `src/lib/next-id.test.ts`.
 2. **Service-account quota** — 60/min/user shared across every centre on that
    account. Fix by provisioning one service account per centre; `currentCenter()`
    is already the seam.

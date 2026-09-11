@@ -8,9 +8,11 @@ centre with 100-200 students.** `SCALING.md` measured staff-side reads,
 `BROWSER-PERF.md` the browser, `SCALE-LIMITS.md` writes and multi-tenancy. This
 one asks whether the product holds at the size it is actually for.
 
-**Short answer: yes for reads, yes for payload, no for test submission.** The
-blocker is `nextId()`, and it is a correctness bug rather than a scaling limit —
-it corrupts data at 60 students too, just less often.
+**Short answer: yes.** Reads and payload clear 200 with headroom. Test
+submission did not — `nextId()` corrupted results on every test — but that is
+now **fixed**: ids are minted from a clock rather than counted, verified against
+the live API. The measurements below are kept because they are why the change
+was made.
 
 ## Reads: 100 comfortable, 200 with a caveat
 
@@ -55,7 +57,7 @@ It is what blocks 300. The attendance-retention fix in `SCALING.md` is the
 remedy and its timing is unchanged: before ~150 students, ahead of the curve
 rather than in response to it.
 
-## Test submission: the blocker
+## Test submission: what the blocker was (now fixed)
 
 `submitAttempt` (`src/lib/data.ts:4846`) reads the Attempts tab, computes
 `nextId(...)` for `attempt_id`, then appends to Attempts and Answers. A test is
@@ -111,11 +113,10 @@ At 100-200 students with batches of 40-60, this fires on **every test**.
 
 ## What blocks what
 
-1. **`nextId()` — blocks tests at any size.** Not a scaling limit: it collides
-   100% of the time whenever two creates overlap (`SCALE-LIMITS.md`), which at 60
-   students means "whenever two people act at once" and at 200 means "every
-   test". This is a correctness bug and it is the one thing that must be fixed
-   before growing.
+1. ~~**`nextId()`**~~ — **fixed.** It collided 100% of the time whenever two
+   creates overlapped, which at 200 students meant every test. Ids are now minted
+   from a clock; the 30-way concurrent submit that produced 28 duplicates now
+   produces none.
 2. **Read arrival rate — blocks 200 simultaneous, not 200 students.** Spread over
    5 minutes, 200/200 succeed. Only a synchronised broadcast breaks it.
 3. **Payload — blocks 300, not 200.** The retention fix in `SCALING.md` handles
@@ -129,9 +130,9 @@ At 100-200 students with batches of 40-60, this fires on **every test**.
 with measured headroom, and the owner-editable-Sheet property — the product's
 differentiator — survives intact. Nothing here argues for Postgres.
 
-What does not hold is `nextId()`. It is ~10 lines, it is not architectural, and
-it is the difference between the product working at 200 students and silently
-mixing up test results. Fix that and the 100-200 target is met.
+What did not hold was `nextId()` — ~10 lines, not architectural, and the
+difference between the product working at 200 students and silently mixing up
+test results. It is fixed, so the 100-200 target is met.
 
 ## Not verified
 

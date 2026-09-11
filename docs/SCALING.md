@@ -110,11 +110,15 @@ the later mark is the intended one. Verified that `getOwnerStats` — where
 attendance % is actually computed — dedupes before counting, so duplicate rows
 cannot inflate a percentage.
 
-**It is not fine for `nextId()`**, which is max-suffix+1 over a snapshot. Two
-overlapping creates mint the same id and nothing rejects it; row-by-id lookups
-then take the first match and silently ignore the second record. Deliberately
-detected rather than prevented — see `src/lib/next-id.test.ts` for the reasoning
-and the conditions to revisit.
+**It was not fine for `nextId()`** — now fixed. It was max-suffix+1 over a
+snapshot, so two overlapping creates minted the same id and nothing rejected it;
+row-by-id lookups took the first match and silently ignored the rest. Later
+measurement showed this was not rare but **certain** under any concurrency, and
+severe during tests: see `docs/STUDENT-SCALE.md`.
+
+Ids are now minted from a clock rather than counted (`src/lib/data.ts`), so
+there is nothing to race. The duplicate-id audit in `checkData` stays, because
+the Sheet is owner-editable and legacy rows predate the change.
 
 ## The load cliff, measured
 
@@ -171,9 +175,11 @@ Attendance by date range rather than whole-tab. That buys roughly an order of
 magnitude and keeps the owner-editable-Sheet property intact, which is the whole
 point of the design.
 
-**Before a second centre shares a deployment**, revisit `nextId()`. Duplicate
-ids are tolerable when creates are rare and manual; they are not when two
-centres' staff create records concurrently through one service account.
+**Before a second centre shares a deployment**, give it its own **service
+account**, not just its own Sheet. Quota follows the service account — measured
+in `docs/SCALE-LIMITS.md` — so a Sheet per centre buys no headroom.
+
+(`nextId()` used to be the item here. It is fixed.)
 
 ### What I would not do
 
