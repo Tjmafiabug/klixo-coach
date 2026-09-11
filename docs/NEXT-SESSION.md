@@ -10,6 +10,8 @@ committed:
 - `docs/SCALE-LIMITS.md` — writes, multi-tenancy, the 503 that isn't, and
   `nextId()`. The one open item is there: `nextId()` collides 100% of the time
   under any concurrency.
+- `docs/STUDENT-SCALE.md` — the 100-200 student target. Reads and payload clear
+  it; test submission does not, because of `nextId()`.
 
 Read both before proposing performance work. Between them they already rule out
 most of the obvious suggestions, with measurements and with the reasoning for
