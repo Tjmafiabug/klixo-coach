@@ -1,4 +1,5 @@
 import { fullIntegrityScan, generateSessions } from "@/lib/data";
+import { reportError } from "@/lib/report-error";
 
 // Nightly session generation (see vercel.json crons). Vercel sends
 // `Authorization: Bearer ${CRON_SECRET}` when CRON_SECRET is configured.
@@ -33,13 +34,13 @@ export async function GET(req: Request) {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "unknown error";
-      console.error("[cron/generate] integrity scan failed:", e);
+      reportError(e, { scope: "cron/generate", step: "integrity-scan" });
       integrity = { error: message };
     }
 
     return Response.json({ ok: true, ...result, integrity });
   } catch (err) {
-    console.error("[cron/generate] failed:", err);
+    reportError(err, { scope: "cron/generate" });
     const message = err instanceof Error ? err.message : "unknown error";
     return Response.json({ ok: false, error: message }, { status: 500 });
   }

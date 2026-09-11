@@ -1,5 +1,6 @@
 import { archiveRows } from "@/lib/archive";
 import { archiveCutoff, centreConfig, effectiveToday } from "@/lib/data";
+import { reportError } from "@/lib/report-error";
 
 /**
  * Nightly archive sweep (see vercel.json crons).
@@ -54,7 +55,7 @@ export async function GET(req: Request) {
 
     return Response.json({ ok: true, cutoff, reports });
   } catch (err) {
-    console.error("[cron/archive] failed:", err);
+    reportError(err, { scope: "cron/archive" });
     const message = err instanceof Error ? err.message : "unknown error";
     return Response.json({ ok: false, error: message }, { status: 500 });
   }

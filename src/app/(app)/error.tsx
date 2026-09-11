@@ -1,6 +1,7 @@
 "use client"; // Error boundaries must be Client Components
 
 import { useEffect } from "react";
+import { reportError } from "@/lib/report-error";
 
 // Wraps the authenticated app segment: a recoverable error within any /today,
 // /dashboard, /manage, /timetable, /mark screen renders here with a retry.
@@ -12,7 +13,7 @@ export default function AppError({
   unstable_retry: () => void;
 }) {
   useEffect(() => {
-    console.error("[app-error]", error);
+    reportError(error, { scope: "app" });
   }, [error]);
 
   return (

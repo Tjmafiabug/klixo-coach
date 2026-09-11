@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import "./globals.css";
+import { reportError } from "@/lib/report-error";
 
 // Catches errors thrown in the root layout/template. Must render its own
 // <html>/<body> (it replaces the root layout when active).
@@ -13,7 +14,7 @@ export default function GlobalError({
   unstable_retry: () => void;
 }) {
   useEffect(() => {
-    console.error("[global-error]", error);
+    reportError(error, { scope: "global" });
   }, [error]);
 
   return (

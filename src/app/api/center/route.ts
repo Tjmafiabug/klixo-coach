@@ -1,5 +1,6 @@
 import { readTab } from "@/lib/sheets";
 import { getSession } from "@/lib/auth";
+import { reportError } from "@/lib/report-error";
 
 // Reads the Config tab to prove the Sheets pipeline end-to-end.
 // Node runtime (googleapis needs Node, not Edge); dynamic (live read).
@@ -21,7 +22,7 @@ export async function GET() {
       attendance_threshold: map.attendance_threshold ?? null,
     });
   } catch (err) {
-    console.error("[/api/center] failed:", err);
+    reportError(err, { scope: "api/center" });
     const message = err instanceof Error ? err.message : "unknown error";
     return Response.json({ ok: false, error: message }, { status: 500 });
   }

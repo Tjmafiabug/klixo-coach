@@ -1,4 +1,5 @@
 import { getSession } from "@/lib/auth";
+import { reportError } from "@/lib/report-error";
 import {
   toCsv,
   reportAttendance,
@@ -71,7 +72,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (err) {
-    console.error(`[/api/export] kind=${kind} failed:`, err);
+    reportError(err, { scope: "api/export", kind });
     return new Response("Export failed", { status: 500 });
   }
 }
