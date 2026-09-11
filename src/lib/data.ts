@@ -1032,7 +1032,7 @@ function ruleRow(slotId: string, r: RuleInput): string[] {
 
 export async function createRule(r: RuleInput): Promise<string> {
   const rules = await readTab<TimetableRule>("Timetable");
-  const slotId = nextId(rules.map((x) => x.slot_id), "TT", 3);
+  const slotId = nextId(rules.map((x) => x.slot_id), "TT");
   await appendRows("Timetable", [ruleRow(slotId, r)]);
   await generateSessions(); // create its future sessions
   return slotId;
@@ -1397,18 +1397,53 @@ export async function getOwnerDashboard(): Promise<{
 // ============================================================================
 // Milestone C — owner data management (self-service CRUD)
 // All writes are positional: every tab's column order equals its type's field
-// order (verified against the Sheet). IDs keep the existing format: a letter
-// prefix + zero-padded counter (T001 / S001 / B001 / E001 / R001).
+// order (verified against the Sheet). IDs are a letter prefix + a time-ordered
+// suffix (see nextId). Rows created before that change keep their zero-padded
+// counter ids (T001 / S001 / B001) and stay valid.
 // ============================================================================
 
-/** Next id for a tab: max numeric suffix among `ids`, +1, `prefix` + `pad`-wide. */
-function nextId(ids: string[], prefix: string, pad: number): string {
-  let max = 0;
-  for (const id of ids) {
-    const n = parseInt(id.replace(/\D/g, ""), 10);
-    if (!Number.isNaN(n) && n > max) max = n;
-  }
-  return `${prefix}${String(max + 1).padStart(pad, "0")}`;
+/**
+ * Next id for a tab.
+ *
+ * Counter ids (max-suffix+1 over a snapshot) collided 100% of the time whenever
+ * two creates overlapped: Sheets has no unique constraint, so both writes
+ * succeed and one record becomes unreachable. Measured — 30 students submitting
+ * one test produced 2 distinct ids and 28 duplicates, and because Answers rows
+ * are keyed by attempt_id, 25 students' answers merged into one unseparable set.
+ * See docs/STUDENT-SCALE.md.
+ *
+ * So ids are now minted, not counted: `prefix` + base-36 centisecond timestamp +
+ * base-36 random tail. No read, nothing to race.
+ *
+ * Three properties the callers depend on, all preserved:
+ *  - **Fixed width.** Ids are compared as strings throughout, so a varying width
+ *    would sort "S10" before "S9". The timestamp is base-36 padded to 7 chars,
+ *    which stays 7 wide until 2081.
+ *  - **Lexicographic order == creation order.** getTests/getQuestions sort by id
+ *    with localeCompare; a time-ordered prefix keeps that meaning. A purely
+ *    random id would have silently scrambled question order.
+ *  - **Prefix retained**, so the per-series scoping in createStaff still works
+ *    and existing ids keep resolving.
+ *
+ * `ids` is still taken (and ignored) so every call site keeps documenting which
+ * series it belongs to; dropping the parameter would touch 18 call sites to no
+ * benefit. The old `pad` argument is gone — width is fixed by the format now,
+ * and leaving a dead knob invites someone to "fix" it later.
+ *
+ * Legacy counter ids (S001, ATT0001) remain valid — they are shorter, so they
+ * sort before every minted id, which is correct: they are older.
+ */
+function nextId(_ids: string[], prefix: string): string {
+  // Centiseconds, not ms: 7 base-36 chars covers to 2081 (ms would need 8 and
+  // overflow to 9 sooner). Two creates in the same centisecond fall back to the
+  // random tail, which is where the real collision resistance lives.
+  const t = Math.floor(Date.now() / 10)
+    .toString(36)
+    .padStart(7, "0");
+  const rand = Math.floor(Math.random() * 36 ** 4)
+    .toString(36)
+    .padStart(4, "0");
+  return `${prefix}${t}${rand}`.toUpperCase();
 }
 
 // ---------------- C5 Rooms ----------------
@@ -1443,7 +1478,7 @@ export async function createRoom(input: {
   capacity: string;
 }): Promise<string> {
   const rooms = await readTab<Room>("Rooms");
-  const id = nextId(rooms.map((r) => r.room_id), "R", 3);
+  const id = nextId(rooms.map((r) => r.room_id), "R");
   await appendRows("Rooms", [[id, input.name, input.capacity]]);
   return id;
 }
@@ -1661,7 +1696,6 @@ export async function createStaff(
   const id = nextId(
     staff.filter((s) => s.teacher_id.startsWith(prefix)).map((s) => s.teacher_id),
     prefix,
-    3,
   );
   await appendRows("Staff", [staffRow(id, input, input.pinHash, "TRUE")]);
   return id;
@@ -1972,7 +2006,7 @@ export async function createStaffTask(input: {
 }): Promise<string> {
   const today = await effectiveToday();
   const tasks = await safeReadTab<StaffTaskRow>("StaffTasks");
-  const id = nextId(tasks.map((t) => t.task_id), "TSK", 4);
+  const id = nextId(tasks.map((t) => t.task_id), "TSK");
   await appendRows("StaffTasks", [
     [
       id,
@@ -2187,7 +2221,7 @@ export async function addSalaryAdjustment(input: {
   const signed =
     input.kind === "deduction" ? -Math.abs(input.amount) : Math.abs(input.amount);
   const adjs = await safeReadTab<SalaryAdjustmentRow>("SalaryAdjustments");
-  const id = nextId(adjs.map((a) => a.adj_id), "SADJ", 4);
+  const id = nextId(adjs.map((a) => a.adj_id), "SADJ");
   const created = await effectiveToday();
   await appendRows("SalaryAdjustments", [
     [id, input.staffId, input.period, input.kind, String(signed), input.note, "active", created],
@@ -2209,7 +2243,7 @@ export async function recordSalaryPayment(input: {
   note: string;
 }): Promise<void> {
   const pays = await safeReadTab<SalaryPaymentRow>("SalaryPayments");
-  const id = nextId(pays.map((p) => p.pay_id), "SPAY", 4);
+  const id = nextId(pays.map((p) => p.pay_id), "SPAY");
   await appendRows("SalaryPayments", [
     [
       id,
@@ -2298,7 +2332,7 @@ export async function createStudent(input: {
   notes: string;
 }): Promise<string> {
   const students = await readTab<Student>("Students");
-  const id = nextId(students.map((s) => s.student_id), "S", 3);
+  const id = nextId(students.map((s) => s.student_id), "S");
   await appendRows("Students", [
     [id, input.name, input.phone, input.parent_phone, input.join_date, "active", input.notes],
   ]);
@@ -2463,7 +2497,7 @@ export async function createBatch(input: {
   expected_end_date: string;
 }): Promise<string> {
   const batches = await readTab<Batch>("Batches");
-  const id = nextId(batches.map((b) => b.batch_id), "B", 3);
+  const id = nextId(batches.map((b) => b.batch_id), "B");
   await appendRows("Batches", [
     [
       id, input.name, input.subject, input.teacher_id, input.room_id, input.fee,
@@ -2667,7 +2701,7 @@ export async function createEnrollment(input: {
   start_date: string;
 }): Promise<string> {
   const enrolls = await readTab<Enrollment>("Enrollments");
-  const id = nextId(enrolls.map((e) => e.enroll_id), "E", 3);
+  const id = nextId(enrolls.map((e) => e.enroll_id), "E");
   await appendRows("Enrollments", [
     [id, input.student_id, input.batch_id, input.start_date, "", "active"],
   ]);
@@ -2786,11 +2820,11 @@ export function integrityIssues(tabs: {
     if (!s.teacher_id) issues.push({ kind: "session", detail: `${s.session_id} → no teacher assigned` });
   }
 
-  // Duplicate primary keys. nextId() is max-suffix+1 over a snapshot, so two
-  // writes racing on the same tab can mint the same id — Sheets has no unique
-  // constraint to reject it. Rare at one-centre scale and cheap to detect, so
-  // detect rather than re-architect ids; row-by-id lookups take the first match
-  // and silently ignore the rest.
+  // Duplicate primary keys. nextId() no longer counts, so new writes cannot
+  // race into the same id — but Sheets still has no unique constraint, rows
+  // predating that change were minted by the old counter, and the Sheet is
+  // owner-editable (a copy-pasted row duplicates its id). Row-by-id lookups
+  // take the first match and silently ignore the rest, so keep detecting.
   const dupes = (ids: string[], kind: string) => {
     const seen = new Set<string>();
     const reported = new Set<string>();
@@ -2993,7 +3027,7 @@ export async function createCourse(input: {
   description: string;
 }): Promise<string> {
   const courses = await readTab<Course>("Courses");
-  const id = nextId(courses.map((c) => c.course_id), "C", 3);
+  const id = nextId(courses.map((c) => c.course_id), "C");
   await appendRows("Courses", [
     [id, input.subject, input.level, input.name, input.description, "TRUE"],
   ]);
@@ -3032,7 +3066,7 @@ export async function createChapter(input: {
   resource_url: string;
 }): Promise<string> {
   const chapters = await readTab<Chapter>("Chapters");
-  const id = nextId(chapters.map((c) => c.chapter_id), "CH", 3);
+  const id = nextId(chapters.map((c) => c.chapter_id), "CH");
   const maxOrder = chapters
     .filter((c) => c.course_id === input.course_id)
     .reduce((m, c) => Math.max(m, Number(c.order) || 0), 0);
@@ -4198,7 +4232,7 @@ export async function addCharge(input: {
   const signed =
     input.kind === "discount" ? -Math.abs(input.amount) : Math.abs(input.amount);
   const charges = await safeReadTab<FeeChargeRow>("FeeCharges");
-  const id = nextId(charges.map((c) => c.charge_id), "FC", 4);
+  const id = nextId(charges.map((c) => c.charge_id), "FC");
   const created = await effectiveToday();
   await appendRows("FeeCharges", [
     [id, input.studentId, input.batchId, input.period || "", input.kind, String(signed), input.note, "active", created],
@@ -4223,7 +4257,7 @@ export async function recordPayment(input: {
   note: string;
 }): Promise<void> {
   const payments = await safeReadTab<PaymentRow>("Payments");
-  const id = nextId(payments.map((p) => p.payment_id), "PMT", 4);
+  const id = nextId(payments.map((p) => p.payment_id), "PMT");
   await appendRows("Payments", [
     [id, input.studentId, String(input.amount), input.date, input.method, input.note, centerTimestamp(), "active"],
   ]);
@@ -4284,7 +4318,7 @@ export async function appendPtm(input: {
   status: PtmStatus;
 }): Promise<void> {
   const ptms = await safeReadTab<PtmRow>("PTM");
-  const id = nextId(ptms.map((p) => p.ptm_id), "PTM", 4);
+  const id = nextId(ptms.map((p) => p.ptm_id), "PTM");
   await appendRows("PTM", [
     ptmRow({
       ptm_id: id,
@@ -4637,7 +4671,7 @@ export async function createTest(input: {
   durationMin: number;
 }): Promise<string> {
   const tests = await safeReadTab<TestRow>("Tests");
-  const id = nextId(tests.map((t) => t.test_id), "TST", 4);
+  const id = nextId(tests.map((t) => t.test_id), "TST");
   await appendRows("Tests", [
     [
       id,
@@ -4662,7 +4696,7 @@ export async function addQuestion(input: {
   marks: number;
 }): Promise<string> {
   const questions = await safeReadTab<QuestionRow>("Questions");
-  const id = nextId(questions.map((q) => q.question_id), "QST", 4);
+  const id = nextId(questions.map((q) => q.question_id), "QST");
   await appendRows("Questions", [
     questionRowArr({
       question_id: id,
@@ -4865,7 +4899,7 @@ export async function submitAttempt(input: {
   const chosenByQ = new Map(Object.entries(input.chosen));
   const { score, max, perQuestion } = scoreAttempt(test, qs, chosenByQ);
 
-  const attemptId = nextId(attempts.map((a) => a.attempt_id), "ATT", 4);
+  const attemptId = nextId(attempts.map((a) => a.attempt_id), "ATT");
   await appendRows("Attempts", [
     [attemptId, input.testId, input.studentId, String(score), String(max), centerTimestamp()],
   ]);
