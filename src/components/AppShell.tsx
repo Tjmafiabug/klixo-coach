@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { logout } from "@/lib/actions";
 import { Wordmark } from "@/components/Logo";
+import { CommandPalette, type Command } from "@/components/CommandPalette";
 
 type Role = "owner" | "teacher";
 
@@ -94,6 +95,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
+  const [palette, setPalette] = useState(false);
   const reduce = useReducedMotion();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -109,6 +111,9 @@ export function AppShell({
   // a teacher has only Today — the drawer would hold nothing else, so drop "More"
   const hasMore = flat.length > tabs.length;
   const showTabs = tabs.length + (hasMore ? 1 : 0) > 1;
+  const commands: Command[] = sections.flatMap((sec) =>
+    sec.items.map((i) => ({ href: i.href, label: i.label, desc: i.desc, group: sec.title })),
+  );
   // header title/subtitle: matched item, the /manage overview, or the first item
   const active =
     flat.find((i) => isMatch(pathname, i)) ??
@@ -178,6 +183,7 @@ export function AppShell({
           name={name}
           role={role}
           reduce={!!reduce}
+          onSearch={() => setPalette(true)}
         />
       </aside>
 
@@ -252,6 +258,8 @@ export function AppShell({
         </main>
       </div>
 
+      <CommandPalette commands={commands} open={palette} setOpen={setPalette} />
+
       {/* ---- Mobile bottom tab bar (thumb zone) ----
            Only when there is somewhere to go: a teacher's nav is just /today, and
            a single tab pointing at the current page is chrome, not navigation. */}
@@ -303,6 +311,7 @@ function SidebarBody({
   role,
   reduce,
   onNavigate,
+  onSearch,
 }: {
   sections: NavSection[];
   pathname: string;
@@ -310,6 +319,9 @@ function SidebarBody({
   role: Role;
   reduce: boolean;
   onNavigate?: () => void;
+  /** Opens the command palette. Omitted in the mobile drawer, which is itself
+   *  the navigation surface — a search row inside it would be redundant. */
+  onSearch?: () => void;
 }) {
   let idx = 0; // running index → stagger animation flows across both groups
   return (
@@ -322,6 +334,20 @@ function SidebarBody({
       >
         <Wordmark size={26} />
       </Link>
+
+      {onSearch ? (
+        <button
+          type="button"
+          onClick={onSearch}
+          className="mt-4 flex h-10 w-full cursor-pointer items-center gap-2 rounded-xl border border-border bg-surface px-3 text-sm text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <SearchIcon className="h-4 w-4 shrink-0" />
+          <span className="flex-1 text-left">Jump to…</span>
+          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold">
+            ⌘K
+          </kbd>
+        </button>
+      ) : null}
 
       <nav className="mt-6 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto scroll-slim">
         {sections.map((section, si) => (
@@ -546,6 +572,15 @@ function PtmIcon({ className }: IconProps) {
     </svg>
   );
 }
+function SearchIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
 function MenuIcon({ className }: IconProps) {
   return (
     <svg {...base(className)}>
