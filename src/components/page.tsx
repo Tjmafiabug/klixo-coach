@@ -257,11 +257,15 @@ export function FilterTabs({
   active,
   baseHref,
   params = {},
+  paramName = "filter",
 }: {
   /** `key: undefined` is the "all" tab. `count` is shown when known. */
   filters: { key?: string; label: string; count?: number }[];
   active?: string;
   baseHref: string;
+  /** Query param carrying the filter. Defaults to "filter"; staff predates
+   *  that name and uses "type", and changing it would break existing links. */
+  paramName?: string;
   /** Other query params to preserve (search, etc). `page` is deliberately
    *  dropped: changing the filter changes the result set, so page 3 of the old
    *  one is meaningless. */
@@ -270,7 +274,7 @@ export function FilterTabs({
   const href = (key?: string) => {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
-    if (key) qs.set("filter", key);
+    if (key) qs.set(paramName, key);
     const q = qs.toString();
     return q ? `${baseHref}?${q}` : baseHref;
   };

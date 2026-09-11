@@ -102,7 +102,7 @@ test.describe("attendance", () => {
     // Target the register's own save button by name. `button[type=submit]`
     // .first() is the app shell's "Sign out" — a generic selector here logs the
     // teacher out and the test then "fails" for the wrong reason.
-    const save = page.getByRole("button", { name: /^(Submit|Saving…)$/ });
+    const save = page.getByRole("button", { name: /^(Submit(\s\d+)?|Saving)$/ });
     await expect(save, "a real change must enable the save button").toBeEnabled();
     await save.click();
     // submitMarks redirects to /today on success (?marked= or ?nochange=1).

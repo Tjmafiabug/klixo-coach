@@ -5,17 +5,12 @@ import { listStaff } from "@/lib/data";
 import { paginate } from "@/lib/format";
 import { Avatar, RoleChip, ActiveChip, Banner } from "@/components/ui";
 import { Reveal } from "@/components/motion";
-import { PageHeader, PrimaryLink, SecondaryLink, RowChevron, SearchBox, Pager } from "@/components/page";
+import { PageHeader, PrimaryLink, SecondaryLink, RowChevron, SearchBox, Pager, FilterTabs } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
-type Filter = "all" | "teaching" | "non_teaching";
+type Filter = "all" | "teaching" | "non_teaching" | "inactive";
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "teaching", label: "Teaching" },
-  { key: "non_teaching", label: "Non-teaching" },
-];
 
 export default async function StaffPage({
   searchParams,
@@ -28,11 +23,16 @@ export default async function StaffPage({
   const [staff, sp] = await Promise.all([listStaff(), searchParams]);
 
   const type: Filter =
-    sp.type === "teaching" || sp.type === "non_teaching" ? sp.type : "all";
+    sp.type === "teaching" || sp.type === "non_teaching" || sp.type === "inactive"
+      ? sp.type
+      : "all";
   const q = (sp.q ?? "").trim();
   const ql = q.toLowerCase();
 
-  const byType = type === "all" ? staff : staff.filter((s) => s.staff_type === type);
+  const byType =
+    type === "all" ? staff
+    : type === "inactive" ? staff.filter((s) => !s.active)
+    : staff.filter((s) => s.staff_type === type && s.active);
   const matches = q
     ? byType.filter(
         (s) =>
@@ -71,29 +71,18 @@ export default async function StaffPage({
         </div>
       ) : null}
 
-      {/* type filter — preserves the active search */}
-      <div className="mt-4 flex flex-wrap gap-2">
-        {FILTERS.map((f) => {
-          const params = new URLSearchParams();
-          if (q) params.set("q", q);
-          if (f.key !== "all") params.set("type", f.key);
-          const href = `/manage/staff${params.toString() ? `?${params}` : ""}`;
-          const on = f.key === type;
-          return (
-            <Link
-              key={f.key}
-              href={href}
-              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                on
-                  ? "border-brand/30 bg-brand/10 text-brand"
-                  : "border-border bg-surface text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {f.label}
-            </Link>
-          );
-        })}
-      </div>
+      <FilterTabs
+        filters={[
+          { label: "All", count: staff.length },
+          { key: "teaching", label: "Teaching", count: staff.filter((s) => s.staff_type === "teaching" && s.active).length },
+          { key: "non_teaching", label: "Non-teaching", count: staff.filter((s) => s.staff_type === "non_teaching" && s.active).length },
+          { key: "inactive", label: "Inactive", count: staff.filter((s) => !s.active).length },
+        ]}
+        active={type === "all" ? undefined : type}
+        baseHref="/manage/staff"
+        params={{ q: q || undefined }}
+        paramName="type"
+      />
 
       {total === 0 ? (
         <div className="mt-6 grid h-[160px] place-items-center rounded-2xl border border-dashed border-border bg-surface-2">
