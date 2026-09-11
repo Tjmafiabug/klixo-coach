@@ -30,8 +30,8 @@ const SECTIONS: NavSection[] = [
   {
     title: "Workspace",
     items: [
-      { href: "/today", label: "Today", desc: "Mark attendance for the day", icon: TodayIcon, match: ["/today", "/mark", "/new-session"], ownerOnly: false },
       { href: "/dashboard", label: "Dashboard", desc: "Attendance health across the centre", icon: DashIcon, match: ["/dashboard"], ownerOnly: true },
+      { href: "/today", label: "Today", desc: "Mark attendance for the day", icon: TodayIcon, match: ["/today", "/mark", "/new-session"], ownerOnly: false },
       { href: "/timetable", label: "Timetable", desc: "Recurring schedule & clashes", icon: ClockIcon, match: ["/timetable"], ownerOnly: true },
     ],
   },
@@ -74,8 +74,8 @@ const SECTION_HUE: { prefix: string; hue: string }[] = [
 // hamburger for returning users. The drawer stays for the long Manage tail.
 // Owners get their 4 most-used destinations; teachers only ever have Today.
 const TABS: { href: string; label: string; icon: (p: IconProps) => React.ReactElement; ownerOnly: boolean }[] = [
-  { href: "/today", label: "Today", icon: TodayIcon, ownerOnly: false },
   { href: "/dashboard", label: "Dashboard", icon: DashIcon, ownerOnly: true },
+  { href: "/today", label: "Today", icon: TodayIcon, ownerOnly: false },
   { href: "/manage/students", label: "Students", icon: UsersIcon, ownerOnly: true },
   { href: "/manage/fees", label: "Fees", icon: FeesIcon, ownerOnly: true },
 ];
@@ -327,7 +327,7 @@ function SidebarBody({
   return (
     <>
       <Link
-        href="/today"
+        href={role === "owner" ? "/dashboard" : "/today"}
         onClick={onNavigate}
         className="flex items-center gap-2 rounded-xl px-2 py-1.5"
         aria-label="KLiXO Coach home"
