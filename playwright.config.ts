@@ -9,11 +9,31 @@ try {
   // absent in CI, where the env comes from the runner
 }
 
-// Point the suite at the disposable Sheet when one is configured, so `npm run
-// e2e` never writes to whichever Sheet the app itself is using. The dev server
-// Playwright starts inherits this, and global-setup still refuses to run if it
-// ever resolves to PROD_SHEET_ID.
-if (process.env.E2E_SHEET_ID) process.env.SHEET_ID = process.env.E2E_SHEET_ID;
+// Point the suite at the disposable Sheet, so `npm run e2e` never writes to
+// whichever Sheet the app itself is using. The dev server Playwright starts
+// inherits this.
+//
+// Fails CLOSED on purpose. A conditional `if (E2E_SHEET_ID)` reads as harmless
+// but defaults to SHEET_ID when the variable is missing or misspelled — and
+// SHEET_ID is routinely the production Sheet during local development. A typo
+// in a variable name should not silently point a suite that appends payments
+// and deletes rows at real data.
+const e2eSheet = process.env.E2E_SHEET_ID;
+if (!e2eSheet) {
+  throw new Error(
+    "E2E_SHEET_ID is not set. These tests write real rows, so they refuse to " +
+      "fall back to SHEET_ID (which is usually the production Sheet).\n" +
+      "Make a copy of the centre Sheet, share it with the service account as " +
+      "Editor, and put its id in .env.local — see docs/TESTING.md.",
+  );
+}
+if (e2eSheet === process.env.PROD_SHEET_ID) {
+  throw new Error(
+    `E2E_SHEET_ID must not be the production Sheet (${e2eSheet.slice(0, 8)}…). ` +
+      "Point it at a disposable copy.",
+  );
+}
+process.env.SHEET_ID = e2eSheet;
 
 /**
  * E2E against a real dev server and a real Sheet.
