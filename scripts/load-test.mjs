@@ -4,12 +4,21 @@
 // Measured 2026-09-11 against the E2E Sheet (24 tabs, ~960 sessions, ~7.6k
 // attendance rows), one page render = one batchGet = one quota unit:
 //
-//   users  think   views  p50     p95      max     >5s   errors
-//   9      1500ms  29     784ms   1148ms   1.2s    0     0
-//   12     0       38     1132ms  2311ms   2.4s    0     0
-//   18     1500ms  57     1108ms  1528ms   1.7s    0     0
-//   25     0       80     2015ms  17931ms  24.7s   6     0
-//   40     0       127    3352ms  23419ms  28.2s   50    0
+//   users  think   views  wall    p50     p95      >5s   errors
+//   9      1500ms  29     9.1s    784ms   1148ms   0     0
+//   12     0       38     4.2s    1132ms  2311ms   0     0
+//   18     1500ms  57     10.4s   1108ms  1528ms   0     0
+//   20     0       64     55.6s   1588ms  20594ms  16    0   <- cliff
+//   25     0       80     37.6s   2015ms  17931ms  6     0
+//   40     0       127    50.5s   3352ms  23419ms  50    0
+//
+// The cliff sits between 12 and 20 users with zero think time: 38 views in
+// 4.2s, then 64 views in 55.6s. 1.7x the load, 13x the wall clock — the
+// signature of a hard rate limit rather than gradual saturation.
+//
+// Think time is what saves you: 18 users WITH think time run clean at p95
+// 1.5s, while 20 WITHOUT hit p95 20.6s. The quota is per-minute, so human
+// pauses spread the requests. Nine real staff are far inside the envelope.
 //
 // The finding is the ERRORS column. Nothing sheds load: withRetry absorbs every
 // 429 (295 of them at 40 users) and converts a quota breach into queueing, so
