@@ -6,6 +6,7 @@ import { shortDate } from "@/lib/format";
 import { runGeneration } from "@/lib/actions";
 import { Reveal } from "@/components/motion";
 import { TodayDateNav } from "./TodayDateNav";
+import { Notice } from "./Notice";
 
 export const dynamic = "force-dynamic";
 
@@ -98,9 +99,9 @@ export default async function TodayPage({
       </div>
 
       {notice ? (
-        <p className="mt-4 flex items-center gap-2 rounded-xl border border-success/20 bg-success-subtle px-3 py-2.5 text-sm font-medium text-success">
+        <Notice>
           <CheckIcon /> {notice}
-        </p>
+        </Notice>
       ) : null}
 
       {sp.warn === "student" ? (

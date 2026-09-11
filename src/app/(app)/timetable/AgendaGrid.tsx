@@ -1,5 +1,7 @@
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import type { SessionView, WeekDay } from "@/lib/data";
+import { ENTRANCE, EXIT, SLIDE } from "@/components/motion";
 
 /* Week agenda — the "All" overview. Seven date columns, each a sorted list of
    that day's class chips. No time axis, so dense evenings don't cram and empty
@@ -16,6 +18,7 @@ export function AgendaGrid({
   hueOf: (batchId: string) => number;
   today: string;
 }) {
+  const reduce = useReducedMotion();
   const byDay = dates.map((d) => ({
     d,
     items: sessions
@@ -46,6 +49,7 @@ export function AgendaGrid({
               </div>
 
               <ul className="space-y-1.5 p-1.5">
+                <AnimatePresence initial={false} mode="popLayout">
                 {items.map((s) => {
                   const hue = hueOf(s.batch_id);
                   const cancelled = s.status === "cancelled";
@@ -79,7 +83,14 @@ export function AgendaGrid({
                   );
                   const base = "block overflow-hidden rounded-lg border border-l-[3px] px-2 py-1.5";
                   return (
-                    <li key={s.session_id}>
+                    <motion.li
+                      key={s.session_id}
+                      layout={reduce ? false : "position"}
+                      initial={reduce ? false : { opacity: 0, y: -SLIDE }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+                      transition={{ layout: ENTRANCE, ...ENTRANCE, opacity: EXIT }}
+                    >
                       {s.projected ? (
                         <div
                           title="Planned — generated closer to the date"
@@ -97,9 +108,10 @@ export function AgendaGrid({
                           {inner}
                         </Link>
                       )}
-                    </li>
+                    </motion.li>
                   );
                 })}
+                </AnimatePresence>
 
                 {items.length === 0 ? (
                   <li className="px-1 py-2 text-center text-[0.7rem] text-muted-foreground/60">—</li>
