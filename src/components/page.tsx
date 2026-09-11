@@ -242,3 +242,62 @@ export function RowChevron() {
     </svg>
   );
 }
+
+/**
+ * Horizontal filter tabs for a list page.
+ *
+ * A bar, not a faceted panel: these pages filter on a handful of attributes the
+ * owner already knows they want, which is what a bar is for. The active filter
+ * lives in the URL so a view survives navigation and can be bookmarked — the
+ * most-cited frustration with SaaS list views is a filter that silently resets
+ * when you click into a record and come back.
+ */
+export function FilterTabs({
+  filters,
+  active,
+  baseHref,
+  params = {},
+}: {
+  /** `key: undefined` is the "all" tab. `count` is shown when known. */
+  filters: { key?: string; label: string; count?: number }[];
+  active?: string;
+  baseHref: string;
+  /** Other query params to preserve (search, etc). `page` is deliberately
+   *  dropped: changing the filter changes the result set, so page 3 of the old
+   *  one is meaningless. */
+  params?: Record<string, string | undefined>;
+}) {
+  const href = (key?: string) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
+    if (key) qs.set("filter", key);
+    const q = qs.toString();
+    return q ? `${baseHref}?${q}` : baseHref;
+  };
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2">
+      {filters.map((f) => {
+        const on = f.key === active || (!active && f.key === undefined);
+        return (
+          <Link
+            key={f.label}
+            href={href(f.key)}
+            aria-current={on ? "page" : undefined}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+              on
+                ? "border-brand bg-brand-subtle text-brand"
+                : "border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            {f.label}
+            {f.count !== undefined ? (
+              <span className={`font-mono tabular-nums ${on ? "text-brand" : "text-muted-foreground"}`}>
+                {f.count}
+              </span>
+            ) : null}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}

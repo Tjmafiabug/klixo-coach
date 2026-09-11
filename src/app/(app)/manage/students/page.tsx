@@ -3,13 +3,13 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { listStudents, getOwnerDashboard } from "@/lib/data";
 import { paginate } from "@/lib/format";
-import { Avatar, ActiveChip, Banner, PctBadge, Pill } from "@/components/ui";
+import { Avatar, ActiveChip, Banner, PctBadge } from "@/components/ui";
 import { Reveal } from "@/components/motion";
-import { PageHeader, PrimaryLink, RowChevron, SearchBox, Pager } from "@/components/page";
+import { PageHeader, PrimaryLink, RowChevron, SearchBox, Pager, FilterTabs } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
-const FILTERS: { key?: "defaulters" | "followups"; label: string }[] = [
+const FILTERS: { key?: string; label: string }[] = [
   { key: undefined, label: "All students" },
   { key: "defaulters", label: "Below minimum" },
   { key: "followups", label: "Absence streak" },
@@ -82,36 +82,15 @@ export default async function StudentsPage({
         </div>
       ) : null}
 
-      {/* Roster filters. Counts are only known once the stats are loaded, which
-          only happens on a filtered view — so the tabs carry labels, not counts,
-          and stay honest either way. */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {FILTERS.map((f) => {
-          const on = filter === f.key || (!filter && f.key === undefined);
-          const href = f.key
-            ? `/manage/students?filter=${f.key}${q ? `&q=${encodeURIComponent(q)}` : ""}`
-            : `/manage/students${q ? `?q=${encodeURIComponent(q)}` : ""}`;
-          return (
-            <Link
-              key={f.label}
-              href={href}
-              aria-current={on ? "page" : undefined}
-              className={`inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold transition-colors ${
-                on
-                  ? "border-brand bg-brand-subtle text-brand"
-                  : "border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {f.label}
-            </Link>
-          );
-        })}
-        {filterLabel ? (
-          <span className="ml-1 inline-flex items-center gap-2">
-            <Pill tone={filter === "followups" ? "danger" : "warning"}>{filterLabel}</Pill>
-          </span>
-        ) : null}
-      </div>
+      <FilterTabs
+        filters={FILTERS}
+        active={filter}
+        baseHref="/manage/students"
+        params={{ q: q || undefined }}
+      />
+      {filterLabel ? (
+        <p className="mt-2 text-xs text-muted-foreground">{filterLabel}</p>
+      ) : null}
 
       {total === 0 ? (
         <div className="mt-6 grid h-[160px] place-items-center rounded-2xl border border-dashed border-border bg-surface-2">

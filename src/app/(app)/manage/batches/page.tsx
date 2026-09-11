@@ -5,7 +5,7 @@ import { listBatches, effectiveToday } from "@/lib/data";
 import { paginate } from "@/lib/format";
 import { ActiveChip, Banner } from "@/components/ui";
 import { Reveal } from "@/components/motion";
-import { PageHeader, PrimaryLink, RowChevron, SearchBox, Pager } from "@/components/page";
+import { PageHeader, PrimaryLink, RowChevron, SearchBox, Pager, FilterTabs } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ const daysBetween = (from: string, to: string) => {
 export default async function BatchesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; q?: string; page?: string }>;
+  searchParams: Promise<{ saved?: string; q?: string; page?: string; filter?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
@@ -40,7 +40,25 @@ export default async function BatchesPage({
           b.teacherName.toLowerCase().includes(ql),
       )
     : batches;
-  const { slice, page, pages, total, start, size } = paginate(matches, Number(sp.page));
+
+  // Active/inactive is the split an owner actually works in, and "empty" catches
+  // the batch that exists but nobody is enrolled in — a scheduling mistake that
+  // otherwise hides in a long roster.
+  const filter = ["active", "inactive", "empty"].includes(sp.filter ?? "") ? sp.filter : undefined;
+  const filtered =
+    filter === "active" ? matches.filter((b) => b.active)
+    : filter === "inactive" ? matches.filter((b) => !b.active)
+    : filter === "empty" ? matches.filter((b) => b.active && b.enrolled === 0)
+    : matches;
+
+  const counts = {
+    all: matches.length,
+    active: matches.filter((b) => b.active).length,
+    inactive: matches.filter((b) => !b.active).length,
+    empty: matches.filter((b) => b.active && b.enrolled === 0).length,
+  };
+
+  const { slice, page, pages, total, start, size } = paginate(filtered, Number(sp.page));
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
@@ -57,6 +75,18 @@ export default async function BatchesPage({
         }
       />
 
+      <FilterTabs
+        filters={[
+          { label: "All", count: counts.all },
+          { key: "active", label: "Active", count: counts.active },
+          { key: "inactive", label: "Inactive", count: counts.inactive },
+          { key: "empty", label: "No students", count: counts.empty },
+        ]}
+        active={filter}
+        baseHref="/manage/batches"
+        params={{ q: q || undefined }}
+      />
+
       {sp.saved ? (
         <div className="mt-4">
           <Banner tone="success">Batch saved.</Banner>
@@ -66,7 +96,15 @@ export default async function BatchesPage({
       {total === 0 ? (
         <div className="mt-6 grid h-[160px] place-items-center rounded-2xl border border-dashed border-border bg-surface-2">
           <p className="px-4 text-center text-sm text-muted-foreground">
-            {q ? `No batches match “${q}”.` : "No batches yet."}
+            {q
+              ? `No batches match “${q}”.`
+              : filter === "empty"
+                ? "Every active batch has students enrolled."
+                : filter === "inactive"
+                  ? "No inactive batches."
+                  : filter === "active"
+                    ? "No active batches."
+                    : "No batches yet."}
           </p>
         </div>
       ) : (
@@ -120,7 +158,7 @@ export default async function BatchesPage({
         start={start}
         size={size}
         baseHref="/manage/batches"
-        params={{ q: q || undefined }}
+        params={{ q: q || undefined, filter }}
       />
     </div>
   );
