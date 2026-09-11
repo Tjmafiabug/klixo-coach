@@ -339,10 +339,13 @@ function latestPerSessionStudent(
 
 /**
  * Save attendance. Each mark carries its own method/reason (the action layer
- * decides app vs manual per student). In-place: existing (session, student)
- * rows are updated; only new students are appended — never duplicates.
- * Pass only the students that should be written (unchanged ones are omitted
- * and left untouched).
+ * decides app vs manual per student).
+ *
+ * Append-only: a correction adds a row rather than rewriting one, and readers
+ * resolve (session, student) to the newest row. Pass only the students that
+ * should be written — submitMarks omits unchanged ones, so every row this adds
+ * is a real mark or a real correction. See the body for why in-place updates
+ * were removed.
  */
 export async function submitAttendance(params: {
   sessionId: string;
@@ -357,54 +360,47 @@ export async function submitAttendance(params: {
   }[];
 }): Promise<number> {
   if (params.marks.length === 0) return 0;
-  const attendance = await readTab<AttendanceRow>("Attendance");
 
-  // sheet row number (1-based, +2 for header) of the latest row per student in this session
-  const rowByStudent = new Map<string, number>();
-  const logByStudent = new Map<string, string>();
-  let max = 0;
-  attendance.forEach((a, i) => {
-    const n = parseInt(a.log_id.replace(/\D/g, ""), 10);
-    if (!Number.isNaN(n) && n > max) max = n;
-    if (a.session_id === params.sessionId) {
-      rowByStudent.set(a.student_id, i + 2);
-      logByStudent.set(a.student_id, a.log_id);
-    }
-  });
-
+  // APPEND-ONLY. A correction adds a row; it never rewrites one.
+  //
+  // This used to update the existing (session, student) row in place, which
+  // meant computing a sheet row number from a snapshot and writing to it. That
+  // is the positional-write race, on the largest and most-sorted tab in the
+  // Sheet, on the hottest write path in the app: if the owner sorted or deleted
+  // rows in the seconds between the read and the write — a supported workflow,
+  // the Sheet is theirs — the write landed on another student's row and
+  // replaced it wholesale. Nothing could detect that afterwards, because the
+  // row it produced was internally consistent.
+  //
+  // Appending is safe by construction: appends never move existing rows, so
+  // there is no index to be wrong about. It costs one extra row per correction
+  // (~98 bytes) and corrections are rare — 14 of 7,665 rows in production.
+  //
+  // Every reader already resolves (session, student) to the newest row via
+  // latestPerSessionStudent / latestPerStudent, and the few that do not are
+  // duplicate-insensitive by construction: generateSessions and regenSlotFuture
+  // build a Set of session_id ("does this session have any marks"), and the
+  // dashboard and PTM board delegate to getOwnerStats, which dedupes. Verified
+  // across all twelve call sites.
+  //
+  // submitMarks (actions.ts) already skips unchanged marks, so the only rows
+  // this adds are genuine corrections — and a visible correction history is the
+  // audit trail the register is supposed to have.
   const ts = centerTimestamp();
-  const updates: { range: string; values: string[][] }[] = [];
-  const appends: string[][] = [];
-  let next = max;
-
-  for (const m of params.marks) {
-    const existingRow = rowByStudent.get(m.studentId);
-    const logId = existingRow
-      ? logByStudent.get(m.studentId)!
-      : `A${String(++next).padStart(4, "0")}`;
-    const row = [
-      logId,
-      params.sessionId,
-      params.date,
-      params.batchId,
-      m.studentId,
-      m.status,
-      params.markedBy,
-      m.method,
-      ts,
-      m.method === "manual" ? m.reason.trim() : "",
-    ];
-    if (existingRow) {
-      updates.push({ range: `Attendance!A${existingRow}:J${existingRow}`, values: [row] });
-    } else {
-      appends.push(row);
-    }
-  }
-
-  await Promise.all([
-    batchUpdateValues(updates),
-    appendRows("Attendance", appends),
+  const rows = params.marks.map((m) => [
+    nextId([], "A"),
+    params.sessionId,
+    params.date,
+    params.batchId,
+    m.studentId,
+    m.status,
+    params.markedBy,
+    m.method,
+    ts,
+    m.method === "manual" ? m.reason.trim() : "",
   ]);
+
+  await appendRows("Attendance", rows);
   return params.marks.length;
 }
 
