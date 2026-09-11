@@ -25,6 +25,12 @@ identity (`klixo@yourdomain`) is tidier than a personal one if KLiXO ever moves
 to its own domain — one transfer instead of untangling an account — but it is a
 convenience, not a safeguard.
 
+Watch for **split ownership**, which is easy to end up with by accident: if the
+GCP project lives on one account and the Sheets on another, you have two single
+points of failure rather than one. Losing the project's account means the app
+cannot authenticate at all; losing the Sheets' account means the data is
+unreachable. Put both under the same Workspace account.
+
 Whatever you choose, do these two:
 
 1. **Add a second Owner** to the GCP project (IAM → Grant access → Owner). One
