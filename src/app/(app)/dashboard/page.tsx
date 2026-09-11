@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getOwnerDashboard, getCurriculumRollup, getFeesRollup, getTestsDashboard } from "@/lib/data";
+import {
+  getOwnerDashboard,
+  getCurriculumRollup,
+  getFeesRollup,
+  getTestsDashboard,
+  getDayBoard,
+  effectiveToday,
+} from "@/lib/data";
 import { PctBadge, StatusPill, OnTrackChip } from "@/components/ui";
 import { ExportButton } from "@/components/ExportButton";
 import { Reveal, CountUp } from "@/components/motion";
@@ -9,6 +16,7 @@ import { AttendanceDonut } from "@/components/charts/AttendanceDonut";
 import { BatchAttendancePicker } from "@/components/charts/BatchAttendancePicker";
 import { AttendanceTrend } from "@/components/charts/AttendanceTrend";
 import { shortDate, rupees } from "@/lib/format";
+import { NeedsYou, type NeedItem } from "./NeedsYou";
 
 export const dynamic = "force-dynamic";
 
@@ -17,14 +25,74 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
   if (user.role !== "owner") redirect("/today");
 
-  const [{ stats, health, integrity }, rollup, feesRollup, tests] = await Promise.all([
+  const today = await effectiveToday();
+  // getDayBoard reads the same tabs as the rest of this page, and readTab is
+  // served from one per-request batchGet — so the backlog costs no extra
+  // Sheets round-trip (see sheets.ts readTab).
+  const [{ stats, health, integrity }, rollup, feesRollup, tests, board] = await Promise.all([
     getOwnerDashboard(),
     getCurriculumRollup(),
     getFeesRollup(),
     getTestsDashboard(),
+    getDayBoard(today, today, user.teacherId, true),
   ]);
   const blocking = health.clashes.filter((c) => c.blocking).length;
   const healthy = health.clashes.length === 0;
+
+  // The queue: signal paired with the screen that resolves it, worst first.
+  // Everything here is already computed above — no extra work to surface it.
+  const unmarkedToday = board.sessions.filter((s) => !s.marked).length;
+  const needs: NeedItem[] = [
+    {
+      tone: "danger",
+      count: board.backlog.length,
+      label: "past sessions still unmarked",
+      action: "Mark",
+      href: "/today",
+    },
+    {
+      tone: "warning",
+      count: unmarkedToday,
+      label: "classes to mark today",
+      action: "Mark",
+      href: "/today",
+    },
+    {
+      tone: "danger",
+      count: stats.followups.length,
+      label: `students on a ${stats.followupStreak}+ absence streak`,
+      action: "Call",
+      href: "/manage/students",
+    },
+    {
+      tone: "warning",
+      count: stats.defaulters.length,
+      label: `students below ${stats.threshold}% attendance`,
+      action: "Review",
+      href: "/manage/students",
+    },
+    {
+      tone: "warning",
+      count: feesRollup.studentsWithDues,
+      label: "students with fees outstanding",
+      action: "Collect",
+      href: "/manage/fees",
+    },
+    {
+      tone: "danger",
+      count: blocking,
+      label: "blocking timetable clashes",
+      action: "Resolve",
+      href: "/timetable",
+    },
+    {
+      tone: "info",
+      count: integrity.length,
+      label: "data integrity issues",
+      action: "Inspect",
+      href: "/manage/settings",
+    },
+  ];
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
@@ -62,6 +130,8 @@ export default async function DashboardPage() {
           </div>
         </div>
       </Reveal>
+
+      <NeedsYou items={needs} />
 
       {integrity.length > 0 ? (
         <Reveal delay={0.05}>
