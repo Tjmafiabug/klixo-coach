@@ -24,6 +24,28 @@ export interface Session {
   studentId: string;
   role: "teacher" | "owner" | "student";
   name: string;
+  /** PIN fingerprint (see pinVersion). Absent on tokens minted before this
+   *  existed — those are treated as stale by the guards, so everyone signs in
+   *  again once. That is the correct side effect of shipping a revocation fix. */
+  pv?: string;
+}
+
+/**
+ * Short fingerprint of a bcrypt hash, carried in the token so a PIN change can
+ * invalidate sessions minted with the old one.
+ *
+ * Without it, resetting a PIN — the only remediation the UI offers, and the
+ * obvious thing to do when a teacher leaves or a PIN is shared — left the old
+ * holder's cookie valid for up to 12h. The owner believed access was revoked
+ * and it was not.
+ *
+ * A prefix of the hash is enough: bcrypt hashes embed a per-row random salt, so
+ * two rows with the same PIN still differ here. It is not a secret (it never
+ * leaves the server except inside a signed token, and it is not reversible to
+ * the PIN), and 16 chars keeps the cookie small.
+ */
+export function pinVersion(pinHash: string): string {
+  return pinHash.slice(-16);
 }
 
 const asRole = (r: unknown): Session["role"] =>
@@ -56,6 +78,7 @@ export async function getSession(): Promise<Session | null> {
       studentId: String(payload.studentId ?? ""),
       role: asRole(payload.role),
       name: String(payload.name),
+      pv: payload.pv === undefined ? undefined : String(payload.pv),
     };
   } catch {
     return null;

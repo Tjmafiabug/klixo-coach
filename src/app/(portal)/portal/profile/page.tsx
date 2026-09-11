@@ -4,6 +4,7 @@ import { getStudentProfile, getStudentPtm } from "@/lib/data";
 import { PortalTitle, Tile } from "@/components/portal-ui";
 import { Pill, Avatar } from "@/components/ui";
 import { shortDate } from "@/lib/format";
+import { ChangePinForm } from "./ChangePinForm";
 
 const PTM_TONE: Record<string, "info" | "success" | "warning" | "neutral"> = {
   scheduled: "info",
@@ -65,6 +66,8 @@ export default async function PortalProfile() {
           ))}
         </ul>
       )}
+
+      <ChangePinForm />
 
       <form action={logout}>
         <button

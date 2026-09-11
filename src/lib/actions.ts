@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import {
   getTeacherByPhone,
+  getStudent,
   getStudentByPhone,
+  setStudentPin,
   getSessionMeta,
   getRoster,
   submitAttendance,
@@ -90,7 +92,7 @@ import {
   isOptionKey,
 } from "@/lib/data";
 import type { StaffInput } from "@/lib/data";
-import { createSession, destroySession, getSession } from "@/lib/auth";
+import { createSession, destroySession, getSession, pinVersion } from "@/lib/auth";
 import { ownsSession } from "@/lib/authz";
 import { lockRemainingMs, recordFailure, recordSuccess } from "@/lib/rate-limit";
 import type { AttendanceStatus, PtmMode, PtmStatus, StaffAttendanceStatus } from "@/lib/types";
@@ -129,7 +131,13 @@ export async function login(
     if (await bcrypt.compare(pin, teacher.pin_hash)) {
       recordSuccess(phone);
       const role = teacher.role === "owner" ? "owner" : "teacher";
-      await createSession({ teacherId: teacher.teacher_id, studentId: "", role, name: teacher.name });
+      await createSession({
+        teacherId: teacher.teacher_id,
+        studentId: "",
+        role,
+        name: teacher.name,
+        pv: pinVersion(teacher.pin_hash),
+      });
       redirect(role === "owner" ? "/dashboard" : "/today");
     }
     recordFailure(phone);
@@ -146,6 +154,7 @@ export async function login(
       studentId: student.student_id,
       role: "student",
       name: student.name,
+      pv: pinVersion(student.pin_hash),
     });
     redirect("/portal");
   }
@@ -369,6 +378,9 @@ async function requireOwner() {
   if (user.role !== "owner") redirect("/today");
   const staff = await getStaff(user.teacherId);
   if (!staff || staff.active !== "TRUE" || staff.role !== "owner") redirect("/login");
+  // The PIN changed (or this token predates pv) → the session is stale. The row
+  // is already read above, so this costs nothing.
+  if (user.pv !== pinVersion(staff.pin_hash)) redirect("/login?error=stale");
   return user;
 }
 
@@ -380,6 +392,7 @@ async function requireStaff() {
   if (user.role === "student") redirect("/portal");
   const staff = await getStaff(user.teacherId);
   if (!staff || staff.active !== "TRUE") redirect("/login");
+  if (user.pv !== pinVersion(staff.pin_hash)) redirect("/login?error=stale");
   return user;
 }
 
@@ -1094,6 +1107,67 @@ export async function submitTestAction(formData: FormData): Promise<void> {
   }
   await submitAttempt({ testId, studentId: user.studentId, chosen });
   redirect(`/portal/tests/${testId}`);
+}
+
+/**
+ * A student/parent changes their own portal PIN.
+ *
+ * This exists because without it there is no way for a portal user to change
+ * their PIN at all: every other pin_hash write is owner-only, so a centre
+ * provisioned by scripts/seed-student-pins.mjs leaves every student sharing one
+ * PIN, and any student who knows a classmate's phone number can read their fees,
+ * attendance and results. A self-service change is the only thing that makes
+ * per-student PINs survive first contact with a real centre.
+ *
+ * Requires the current PIN: a shared device (the portal is phone-first and often
+ * a parent's handset) must not let whoever picks it up lock the family out.
+ * Re-mints the session on success, because requireStudent now rejects a token
+ * whose pv no longer matches — without this the user would change their PIN and
+ * immediately be signed out.
+ */
+export async function changePortalPinAction(
+  _prev: { error?: string; ok?: boolean },
+  formData: FormData,
+): Promise<{ error?: string; ok?: boolean }> {
+  const user = await getSession();
+  if (!user) redirect("/login");
+  if (user.role !== "student") redirect("/today");
+
+  const current = String(formData.get("current") ?? "").trim();
+  const next = String(formData.get("next") ?? "").trim();
+  const confirm = String(formData.get("confirm") ?? "").trim();
+
+  if (!isPin(next)) return { error: "New PIN must be 4-6 digits." };
+  if (next !== confirm) return { error: "The two new PINs do not match." };
+
+  // Check the lockout BEFORE verifying, or it never brakes anything: this
+  // endpoint is an online PIN oracle for an already-open session otherwise.
+  const key = `portal-pin:${user.studentId}`;
+  if (lockRemainingMs(key) > 0) {
+    return { error: "Too many attempts. Try again later." };
+  }
+
+  const row = await getStudent(user.studentId);
+  if (!row || !row.pin_hash) redirect("/login");
+  if (!(await bcrypt.compare(current, row.pin_hash))) {
+    recordFailure(key);
+    return { error: "Current PIN is incorrect." };
+  }
+  if (next === current) return { error: "Choose a PIN you have not used here." };
+
+  const hash = bcrypt.hashSync(next, 10);
+  await setStudentPin(user.studentId, hash);
+  recordSuccess(key);
+  // Re-mint with the new fingerprint so this session survives; every OTHER
+  // session for this student is now stale, which is the point.
+  await createSession({
+    teacherId: "",
+    studentId: user.studentId,
+    role: "student",
+    name: user.name,
+    pv: pinVersion(hash),
+  });
+  return { ok: true };
 }
 
 // ============================================================================

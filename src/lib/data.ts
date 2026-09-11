@@ -2307,6 +2307,15 @@ export async function getStudent(id: string): Promise<Student | null> {
   return students.find((s) => s.student_id === id) ?? null;
 }
 
+/** Set a student's portal PIN hash (col H). Used by the portal's own
+ *  change-PIN flow and by owner-side provisioning. Writes only col H, so it
+ *  cannot clobber the other fields the way a whole-row write would. */
+export async function setStudentPin(id: string, pinHash: string): Promise<void> {
+  const students = await readTab<Student>("Students");
+  const idx = students.findIndex((s) => s.student_id === id);
+  if (idx >= 0) await updateValues(`Students!H${idx + 2}`, [[pinHash]]);
+}
+
 /** Portal login lookup: an active student whose own phone OR parent_phone matches.
  *  Both keys resolve to the same student, so student and parent share one portal
  *  scoped to that studentId. Returns null if no login (no/placeholder pin_hash). */

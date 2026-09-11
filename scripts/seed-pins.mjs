@@ -1,10 +1,23 @@
-// One-off seed: set every teacher's PIN to the demo value and ensure
-// Config.demo_today exists. Run: node --env-file=.env.local scripts/seed-pins.mjs
+// One-off seed for DEMO deployments: set every login staffer's PIN to the demo
+// value and ensure Config.demo_today exists.
+// Run: node --env-file=.env.local scripts/seed-pins.mjs
+//
+// This gives every owner/teacher the SAME PIN, which on a real centre means one
+// leaked number is full admin access. It therefore refuses to run against
+// PROD_SHEET_ID. On a live centre, set staff PINs individually through
+// Manage → Staff → Reset PIN, which is the supported path.
 import { google } from "googleapis";
 import bcrypt from "bcryptjs";
 
 const DEMO_PIN = "1234";
 const DEMO_TODAY = "2026-06-24";
+
+if (process.env.SHEET_ID && process.env.SHEET_ID === process.env.PROD_SHEET_ID) {
+  throw new Error(
+    "Refusing to run: SHEET_ID is the production Sheet. This script sets one shared " +
+      "PIN for every login staffer. Use Manage → Staff → Reset PIN instead.",
+  );
+}
 
 const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
 const auth = new google.auth.GoogleAuth({
