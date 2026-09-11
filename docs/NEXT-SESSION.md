@@ -18,6 +18,7 @@ Constraints that matter, all measured rather than assumed:
 - A single `spreadsheets.values.get` round trip is ~2 seconds.
 - Google's quota is ~60 read requests/min/user and ~60 writes/min/user, PROJECT-wide 300/min. A batch counts as ONE request regardless of how many ranges it carries.
 - `readTab` is now a single `values.batchGet` of all 24 tabs per request, deduped per request with React `cache()`. So one page render = ~1 read request, but it transfers the WHOLE sheet (~345KB today).
+- The read-quota cliff has already been measured — see "Already answered" below. Do not re-derive it.
 - Writes are read-whole-tab → findIndex → `values.update`, or append. Not transactional. `withRetry` gives 4 attempts with exponential backoff + jitter on 429/5xx, and now wraps writes as well as reads.
 - Login throttle is an in-memory Map: 5 failures per phone in a 15-minute sliding window, then a 15-minute lock. It is PER LAMBDA INSTANCE, so it resets on cold start and is bypassable across instances.
 - Session generation cron expands timetable rules 30 days ahead (`HORIZON_DAYS = 30`).
@@ -59,16 +60,55 @@ I want numbers, not impressions:
 - **Bundle analysis** — what JavaScript ships, what's unused (use coverage), whether recharts/framer-motion are worth their weight on the pages that load them.
 - **Memory** — take heap snapshots on the heaviest pages; the dashboard holds a lot of rows.
 
-## Part 3 — the concurrency question I actually care about
+## Already answered — do not redo these
 
-Simulate the 6pm scenario: **all 9 staff hitting the app simultaneously**, then scale up. I want to know:
+A previous session measured the concurrency questions. Read
+`scripts/load-test.mjs` (the harness and its recorded results) and
+`src/lib/next-id.test.ts` before planning anything here.
 
-- At how many concurrent users does the Sheets quota start throttling, and what does the user actually see when it does — a slow page, an error, or a wrong page?
-- What happens to `withRetry`'s backoff under sustained load? Earlier in testing, a burst of six page loads degraded responses to 18 seconds. Find the cliff.
-- **Do concurrent writes corrupt anything?** Two teachers marking different sessions at the same time; two marking the SAME session. `nextId()` is max-suffix+1 over a snapshot, so it can mint duplicate ids and Sheets has no unique constraint. `integrityIssues()` detects duplicates but nothing prevents them. I want this either demonstrated or ruled out with evidence.
-- Does the per-instance login throttle behave sanely under concurrency, or does a lambda spread let an attacker past it?
+**The quota cliff is measured.** Between 12 and 20 concurrent users with zero
+think time: 38 views in 4.2s, then 64 views in 55.6s. 1.7x the load for 13x the
+wall clock — a hard rate limit engaging, not gradual saturation. Think time is
+the variable that matters: 18 users WITH 1.5s pauses run clean at p95 1.5s.
+Nine real staff browsing normally are far inside the envelope.
 
-Write to the E2E Sheet (`E2E_SHEET_ID` in `.env.local`), never production. Clean up what you write.
+**Errors were zero at every level, including 40 users.** That is the finding.
+`withRetry` absorbed 295 rate-limit errors and converted a quota breach into
+queueing, so the user gets a 28-second page rather than a failure. There is no
+circuit breaker and no load shedding.
+
+**Duplicate ids are documented, not fixed.** `nextId()` is max-suffix+1 over a
+snapshot, so overlapping creates mint the same id and Sheets has no unique
+constraint. Deliberately left alone: both honest fixes cost a ~2s round trip on
+every create, and `integrityIssues()` already detects duplicates. See the
+skipped test in `next-id.test.ts` for the reasoning and the revisit conditions.
+
+**The login throttle is bypassable by construction**, and the docstring concedes
+it — `store` is a module-scope Map, so it is per-instance. Roughly 5 attempts
+per warm instance per window, resetting on deploy and cold start. This is not
+reproducible on a single-process dev server; do not try to test it there.
+
+## Part 3 — what is actually left
+
+One open question, and one decision that needs a human:
+
+1. **Is the missing circuit breaker worth fixing?** The app currently trades a
+   fast failure for a slow success — 28 seconds of queueing instead of "busy,
+   try again". Silent degradation is harder to diagnose than an honest error.
+   Measure what a capped retry would actually change, then make the case either
+   way. This is a judgement call about failure modes, not a bug.
+
+2. **Where does the data volume ceiling sit?** The load tests used ~960 sessions
+   and ~7.6k attendance rows. Sheets has documented limits (cells per
+   spreadsheet, per-request payload) and the whole-sheet batchGet is ~345KB
+   today. Work out how many students, and how many months of attendance
+   history, before the payload or the cell count becomes the binding constraint
+   rather than the request quota. Derive it from the documented limits and say
+   plainly that it is derived, not observed.
+
+If you do run anything that writes, use the E2E Sheet (`E2E_SHEET_ID` in
+`.env.local`; `playwright.config.ts` now fails closed if it is missing) and
+clean up after yourself.
 
 ## Part 4 — tell me what to do
 
