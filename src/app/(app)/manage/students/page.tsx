@@ -1,18 +1,24 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { listStudents } from "@/lib/data";
+import { listStudents, getOwnerDashboard } from "@/lib/data";
 import { paginate } from "@/lib/format";
-import { Avatar, ActiveChip, Banner } from "@/components/ui";
+import { Avatar, ActiveChip, Banner, PctBadge, Pill } from "@/components/ui";
 import { Reveal } from "@/components/motion";
 import { PageHeader, PrimaryLink, RowChevron, SearchBox, Pager } from "@/components/page";
 
 export const dynamic = "force-dynamic";
 
+const FILTERS: { key?: "defaulters" | "followups"; label: string }[] = [
+  { key: undefined, label: "All students" },
+  { key: "defaulters", label: "Below minimum" },
+  { key: "followups", label: "Absence streak" },
+];
+
 export default async function StudentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; q?: string; page?: string }>;
+  searchParams: Promise<{ saved?: string; q?: string; page?: string; filter?: string }>;
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
@@ -20,10 +26,39 @@ export default async function StudentsPage({
   const [students, sp] = await Promise.all([listStudents(), searchParams]);
   const active = students.filter((s) => s.active).length;
 
+  // Attendance-based filters need the dashboard's stats. Both read through the
+  // same per-request batchGet (sheets.ts readTab), so this costs no extra
+  // Sheets round-trip — and only runs when such a filter is actually asked for.
+  const filter = sp.filter === "defaulters" || sp.filter === "followups" ? sp.filter : undefined;
+  const stats = filter ? (await getOwnerDashboard()).stats : null;
+
   const q = (sp.q ?? "").trim();
-  const matches = q
+  let matches = q
     ? students.filter((s) => s.name.toLowerCase().includes(q.toLowerCase()))
     : students;
+
+  let filterLabel: string | null = null;
+  if (stats && filter === "defaulters") {
+    const ids = new Set(stats.defaulters.map((d) => d.id));
+    matches = matches.filter((s) => ids.has(s.student_id));
+    filterLabel = `Below ${stats.threshold}% attendance`;
+  } else if (stats && filter === "followups") {
+    const ids = new Set(stats.followups.map((f) => f.id));
+    matches = matches.filter((s) => ids.has(s.student_id));
+    filterLabel = `${stats.followupStreak}+ absences in a row`;
+  }
+
+  // Attendance % per student, so a filtered list shows the number it filtered on
+  // rather than making the owner open each card to find it.
+  const pctById = new Map<string, number>();
+  if (stats) {
+    for (const d of stats.defaulters) pctById.set(d.id, d.pct);
+  }
+  const streakById = new Map<string, number>();
+  if (stats) {
+    for (const f of stats.followups) streakById.set(f.id, f.streak);
+  }
+
   const { slice, page, pages, total, start, size } = paginate(matches, Number(sp.page));
 
   return (
@@ -47,10 +82,45 @@ export default async function StudentsPage({
         </div>
       ) : null}
 
+      {/* Roster filters. Counts are only known once the stats are loaded, which
+          only happens on a filtered view — so the tabs carry labels, not counts,
+          and stay honest either way. */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {FILTERS.map((f) => {
+          const on = filter === f.key || (!filter && f.key === undefined);
+          const href = f.key
+            ? `/manage/students?filter=${f.key}${q ? `&q=${encodeURIComponent(q)}` : ""}`
+            : `/manage/students${q ? `?q=${encodeURIComponent(q)}` : ""}`;
+          return (
+            <Link
+              key={f.label}
+              href={href}
+              aria-current={on ? "page" : undefined}
+              className={`inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                on
+                  ? "border-brand bg-brand-subtle text-brand"
+                  : "border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {f.label}
+            </Link>
+          );
+        })}
+        {filterLabel ? (
+          <span className="ml-1 inline-flex items-center gap-2">
+            <Pill tone={filter === "followups" ? "danger" : "warning"}>{filterLabel}</Pill>
+          </span>
+        ) : null}
+      </div>
+
       {total === 0 ? (
         <div className="mt-6 grid h-[160px] place-items-center rounded-2xl border border-dashed border-border bg-surface-2">
           <p className="px-4 text-center text-sm text-muted-foreground">
-            {q ? `No students match “${q}”.` : "No students yet."}
+            {q
+              ? `No students match “${q}”.`
+              : filterLabel
+                ? `No students ${filter === "followups" ? "on an absence streak" : "below the attendance minimum"}.`
+                : "No students yet."}
           </p>
         </div>
       ) : (
@@ -72,6 +142,15 @@ export default async function StudentsPage({
                       {s.batchCount === 1 ? "" : "es"}
                     </p>
                   </div>
+                  {/* Show what the list was filtered on, so the owner does not
+                      have to open each card to see the number. */}
+                  {filter === "defaulters" && pctById.has(s.student_id) ? (
+                    <PctBadge pct={pctById.get(s.student_id)!} threshold={stats!.threshold} />
+                  ) : filter === "followups" && streakById.has(s.student_id) ? (
+                    <span className="shrink-0 rounded-full bg-danger-subtle px-2 py-0.5 font-mono text-sm font-bold tabular-nums text-danger">
+                      {streakById.get(s.student_id)}×
+                    </span>
+                  ) : null}
                   <RowChevron />
                 </Link>
             </Reveal>
@@ -86,7 +165,7 @@ export default async function StudentsPage({
         start={start}
         size={size}
         baseHref="/manage/students"
-        params={{ q: q || undefined }}
+        params={{ q: q || undefined, filter }}
       />
     </div>
   );

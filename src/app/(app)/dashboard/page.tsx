@@ -62,14 +62,14 @@ export default async function DashboardPage() {
       count: stats.followups.length,
       label: `students on a ${stats.followupStreak}+ absence streak`,
       action: "Call",
-      href: "/manage/students",
+      href: "/manage/students?filter=followups",
     },
     {
       tone: "warning",
       count: stats.defaulters.length,
       label: `students below ${stats.threshold}% attendance`,
       action: "Review",
-      href: "/manage/students",
+      href: "/manage/students?filter=defaulters",
     },
     {
       tone: "warning",
@@ -90,7 +90,7 @@ export default async function DashboardPage() {
       count: integrity.length,
       label: "data integrity issues",
       action: "Inspect",
-      href: "/manage/settings",
+      href: "#integrity",
     },
   ];
 
@@ -135,7 +135,10 @@ export default async function DashboardPage() {
 
       {integrity.length > 0 ? (
         <Reveal delay={0.05}>
-          <div className="mt-4 rounded-2xl border border-warning/25 bg-warning-subtle p-4">
+          <div
+            id="integrity"
+            className="mt-4 scroll-mt-20 rounded-2xl border border-warning/25 bg-warning-subtle p-4"
+          >
             <p className="text-sm font-semibold text-warning">
               {integrity.length} data integrity issue
               {integrity.length === 1 ? "" : "s"} — likely a direct-Sheet edit
@@ -208,7 +211,7 @@ export default async function DashboardPage() {
           </Card>
         </Reveal>
 
-        <Reveal delay={0.1}>
+        <Reveal delay={0.1} className="scroll-mt-20" id="defaulters">
           <Card title="Defaulters" subtitle={`Below ${stats.threshold}% attendance`}>
             {stats.defaulters.length === 0 ? (
               <Empty>No defaulters — everyone is above {stats.threshold}%.</Empty>
@@ -235,7 +238,7 @@ export default async function DashboardPage() {
           </Card>
         </Reveal>
 
-        <Reveal delay={0.15}>
+        <Reveal delay={0.15} className="scroll-mt-20" id="followups">
           <Card
             title="Follow-up"
             subtitle={`${stats.followupStreak}+ absences in a row · call the parent`}

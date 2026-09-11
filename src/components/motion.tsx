@@ -11,10 +11,13 @@ export function Reveal({
   delay = 0,
   className,
   as = "div",
+  id,
 }: {
   children: React.ReactNode;
   delay?: number;
   className?: string;
+  /** Anchor target, so a link elsewhere on the page can scroll to this block. */
+  id?: string;
   /** Element to render. Use "li" inside a <ul>: a wrapper <div> between the list
    *  and its items breaks the list semantics, so a screen reader stops
    *  announcing "list, N items" (axe: list / listitem, serious). */
@@ -24,6 +27,7 @@ export function Reveal({
   const M = as === "li" ? motion.li : motion.div;
   return (
     <M
+      id={id}
       className={className}
       initial={reduce ? false : { opacity: 0, y: 14 }}
       whileInView={{ opacity: 1, y: 0 }}
