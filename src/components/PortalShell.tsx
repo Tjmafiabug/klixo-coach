@@ -22,8 +22,55 @@ const isActive = (pathname: string, href: string) =>
 export function PortalShell({ name, children }: { name: string; children: React.ReactNode }) {
   const pathname = usePathname();
   return (
-    <div className="mx-auto flex min-h-dvh max-w-2xl flex-col bg-background">
-      <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-surface/85 px-4 backdrop-blur-md">
+    <div className="min-h-dvh bg-background lg:grid lg:grid-cols-[240px_1fr]">
+      {/* ---- Desktop rail (replaces the bottom bar above lg) ---- */}
+      <aside className="sticky top-0 hidden h-dvh flex-col gap-1 border-r border-border bg-surface-2 px-3 py-5 lg:flex">
+        <Link href="/portal" aria-label="Home" className="mb-4 px-2">
+          <Wordmark size={26} />
+        </Link>
+        {TABS.map((t) => {
+          const active = isActive(pathname, t.href);
+          const Icon = t.icon;
+          return (
+            <Link
+              key={t.href}
+              href={t.href}
+              aria-current={active ? "page" : undefined}
+              className={`flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors ${
+                active
+                  ? "bg-brand-subtle text-brand"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-[1.15rem] w-[1.15rem] shrink-0" />
+              {t.label}
+            </Link>
+          );
+        })}
+        <div className="mt-auto border-t border-border pt-3">
+          <Link
+            href="/portal/profile"
+            className="flex items-center gap-2.5 rounded-xl px-2 py-2 transition-colors hover:bg-muted"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-brand-foreground">
+              {initials(name) || "?"}
+            </span>
+            <span className="min-w-0 truncate text-sm font-semibold text-foreground">{name}</span>
+          </Link>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="mt-1 flex h-10 w-full cursor-pointer items-center gap-3 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-danger-subtle hover:text-danger"
+            >
+              <SignOutIcon className="h-[1.15rem] w-[1.15rem] shrink-0" />
+              Sign out
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col lg:mx-0 lg:max-w-4xl lg:px-8">
+      <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-surface/85 px-4 backdrop-blur-md lg:hidden">
         <Link href="/portal" aria-label="Home" className="shrink-0">
           <Wordmark size={24} />
         </Link>
@@ -50,9 +97,9 @@ export function PortalShell({ name, children }: { name: string; children: React.
         </div>
       </header>
 
-      <main className="min-w-0 flex-1 px-4 pb-28 pt-5">{children}</main>
+      <main className="min-w-0 flex-1 px-4 pb-28 pt-5 lg:px-0 lg:pb-12 lg:pt-8">{children}</main>
 
-      <nav className="sticky bottom-0 z-30 grid grid-cols-5 border-t border-border bg-surface/90 backdrop-blur-md">
+      <nav className="sticky bottom-0 z-30 grid grid-cols-5 border-t border-border bg-surface/90 backdrop-blur-md lg:hidden">
         {TABS.map((t) => {
           const active = isActive(pathname, t.href);
           const Icon = t.icon;
@@ -71,6 +118,7 @@ export function PortalShell({ name, children }: { name: string; children: React.
           );
         })}
       </nav>
+      </div>
     </div>
   );
 }

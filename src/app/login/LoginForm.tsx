@@ -21,7 +21,7 @@ export default function LoginForm({ photo }: { photo?: Photo }) {
       {photo ? (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 z-0 bg-cover bg-center opacity-40 blur-[6px]"
+          className="pointer-events-none absolute inset-0 z-0 bg-cover bg-[position:20%_75%] opacity-[0.55]"
           style={{ backgroundImage: `url(${photo.url})` }}
         />
       ) : null}
@@ -30,7 +30,7 @@ export default function LoginForm({ photo }: { photo?: Photo }) {
         className="pointer-events-none absolute inset-0 z-0"
         style={{
           background: photo
-            ? "radial-gradient(42rem 34rem at 50% 45%, rgba(255,255,255,0.94), rgba(255,255,255,0.72) 60%, rgba(255,255,255,0.6))"
+            ? "rgba(255,255,255,0.62)"
             : "radial-gradient(60rem 40rem at 50% -10%, rgba(59,130,246,0.06), transparent 60%)",
         }}
       />
@@ -42,7 +42,7 @@ export default function LoginForm({ photo }: { photo?: Photo }) {
         className="relative z-10 w-full max-w-sm"
       >
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
-          <Wordmark size={32} />
+          <Wordmark size={46} />
           <p className="text-sm text-muted-foreground">
             Sign in to mark attendance
           </p>
@@ -115,17 +115,6 @@ export default function LoginForm({ photo }: { photo?: Photo }) {
         )}
       </motion.div>
 
-      {/* Pexels' licence asks for visible credit wherever a photo is shown. */}
-      {photo ? (
-        <a
-          href={photo.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute bottom-3 right-4 z-10 text-[0.65rem] text-muted-foreground/70 transition-colors hover:text-muted-foreground"
-        >
-          Photo: {photo.photographer} / Pexels
-        </a>
-      ) : null}
     </main>
   );
 }

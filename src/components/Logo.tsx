@@ -22,9 +22,12 @@ export function LogoMark({ size = 28 }: { size?: number }) {
 
 export function Wordmark({ size = 28 }: { size?: number }) {
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex items-center" style={{ gap: size * 0.29 }}>
       <LogoMark size={size} />
-      <span className="text-[1.05rem] font-bold tracking-tight text-foreground">
+      <span
+        className="font-bold tracking-tight text-foreground"
+        style={{ fontSize: size * 0.66, lineHeight: 1 }}
+      >
         KLiXO{" "}
         <span className="font-semibold text-muted-foreground">Coach</span>
       </span>

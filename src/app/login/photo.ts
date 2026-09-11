@@ -8,7 +8,8 @@ export interface Photo {
 }
 
 /**
- * One classroom photo for the login backdrop.
+ * One classroom photo for the login backdrop — a teacher with students, which
+ * is what the product is about.
  *
  * Cached for a day: the picture is decoration, and putting a third-party fetch
  * on the critical path of the auth screen would mean Pexels being slow makes
@@ -21,7 +22,7 @@ export async function loginPhoto(): Promise<Photo | undefined> {
   if (!key) return undefined;
   try {
     const res = await fetch(
-      "https://api.pexels.com/v1/search?query=students%20studying%20classroom&orientation=landscape&per_page=15",
+      "https://api.pexels.com/v1/search?query=teacher%20helping%20students%20classroom&orientation=landscape&per_page=15",
       { headers: { Authorization: key }, next: { revalidate: 86400 } },
     );
     if (!res.ok) return undefined;

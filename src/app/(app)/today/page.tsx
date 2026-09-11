@@ -60,7 +60,7 @@ export default async function TodayPage({
             : null;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
       <Reveal>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
@@ -149,7 +149,7 @@ export default async function TodayPage({
           </p>
         </div>
       ) : (
-        <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {sessions.map((s, i) => (
             <Reveal key={s.session_id} delay={Math.min(i * 0.04, 0.3)} as="li" className="h-full">
                 <Link
