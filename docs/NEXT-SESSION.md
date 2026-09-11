@@ -4,8 +4,8 @@ The five items from the previous brief are done (`c7904cb`). What remains is
 below — one operational decision and two pieces of finishing work, none of which
 blocks launch.
 
-Read `docs/SCALING.md`, `docs/SCALE-LIMITS.md`, `docs/STUDENT-SCALE.md` and
-`docs/BROWSER-PERF.md` before proposing performance work. Between them they
+Read `docs/SIZING.md` for capacity questions, and `docs/SCALING.md`,
+`docs/SCALE-LIMITS.md`, `docs/STUDENT-SCALE.md` and `docs/BROWSER-PERF.md` before proposing performance work. Between them they
 already rule out most of the obvious suggestions, with measurements and with the
 reasoning for each rejection.
 
