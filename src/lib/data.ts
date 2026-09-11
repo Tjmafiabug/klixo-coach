@@ -7,6 +7,8 @@ import {
   deleteRows,
   readTabUncached,
   readArchiveTab,
+  archiveTabName,
+  rawRows,
   rowOf,
 } from "@/lib/sheets";
 import { cache } from "react";
@@ -3088,11 +3090,93 @@ export async function fullIntegrityScan(): Promise<IntegrityIssue[]> {
     safeReadTab<SalaryAdjustmentRow>("SalaryAdjustments"),
     safeReadTab<SalaryPaymentRow>("SalaryPayments"),
   ]);
-  return integrityIssues({
-    sessions, enrolls, batches, rooms, teachers, students, rules,
+
+  // Archived history is part of the picture. Sessions move out of the live tab
+  // once they age past the cutoff, so a scan that read only live tabs would
+  // report every archived session's attendance as pointing at a session that
+  // does not exist — turning a working archive into a wall of false alarms.
+  const [archSessions, archAttendance, liveAttendance] = await Promise.all([
+    readArchiveTab<Session>("Sessions"),
+    readArchiveTab<AttendanceRow>("Attendance"),
+    readTab<AttendanceRow>("Attendance"),
+  ]);
+
+  const issues = integrityIssues({
+    sessions: [...sessions, ...archSessions],
+    enrolls, batches, rooms, teachers, students, rules,
     charges, payments, ptm, tests, questions, attempts, courses, chapters,
     tasks, adjustments, salaryPayments,
   });
+
+  // Checks that only make sense once an archive exists.
+  const cutoff = archiveCutoff(await config(), await effectiveToday());
+  const sessionIds = new Set([...sessions, ...archSessions].map((s) => s.session_id));
+  const studentIds = new Set(students.map((s) => s.student_id));
+
+  // Attendance -> Sessions across the boundary. Never checked before, because
+  // integrityIssues does not look at attendance at all.
+  const seenDangling = new Set<string>();
+  for (const a of [...liveAttendance, ...archAttendance]) {
+    if (a.session_id && !sessionIds.has(a.session_id) && !seenDangling.has(a.session_id)) {
+      seenDangling.add(a.session_id);
+      issues.push({ kind: "attendance", detail: `${a.session_id} → missing session` });
+    }
+    if (a.student_id && !studentIds.has(a.student_id) && !seenDangling.has(a.student_id)) {
+      seenDangling.add(a.student_id);
+      issues.push({ kind: "attendance", detail: `${a.student_id} → missing student` });
+    }
+  }
+
+  // Rows on the wrong side of the line. Informational: the next archive run
+  // fixes the first case, and a retention change explains the second.
+  const strayLive = liveAttendance.filter((a) => a.date && a.date < cutoff).length;
+  if (strayLive) {
+    issues.push({
+      kind: "archive",
+      detail: `${strayLive} live attendance row(s) older than ${cutoff} — the archive run has not caught up`,
+    });
+  }
+  const strayArchived = archAttendance.filter((a) => a.date && a.date >= cutoff).length;
+  if (strayArchived) {
+    issues.push({
+      kind: "archive",
+      detail: `${strayArchived} archived attendance row(s) newer than ${cutoff} — retention was probably increased`,
+    });
+  }
+
+  // A row in both tabs means a copy landed and its delete did not. Harmless to
+  // readers (they dedupe) and self-healing on the next run, but worth saying.
+  if (archAttendance.length && liveAttendance.length) {
+    const archKeys = new Set(archAttendance.map((a) => `${a.session_id}|${a.student_id}|${a.timestamp}`));
+    const both = liveAttendance.filter((a) =>
+      archKeys.has(`${a.session_id}|${a.student_id}|${a.timestamp}`),
+    ).length;
+    if (both) {
+      issues.push({
+        kind: "archive",
+        detail: `${both} attendance row(s) present in both tabs — an archive run copied but did not delete`,
+      });
+    }
+  }
+
+  // Header parity. shape() keys rows by the header row, so if a column is ever
+  // added to a live tab and not to its archive, every archived row silently
+  // reads that field as "" — a wrong answer rather than an error. This is the
+  // one archive check that is a real fault rather than a timing artifact.
+  for (const tab of ["Attendance", "Sessions"] as const) {
+    const [live, arch] = await Promise.all([rawRows(tab), rawRows(archiveTabName(tab))]);
+    if (arch.length === 0) continue; // no archive yet
+    const a = (live[0] ?? []).map(String).join("|");
+    const b = (arch[0] ?? []).map(String).join("|");
+    if (a !== b) {
+      issues.push({
+        kind: "archive",
+        detail: `${archiveTabName(tab)} header does not match ${tab} — archived rows will read with the wrong columns`,
+      });
+    }
+  }
+
+  return issues;
 }
 
 // ---------------- Manage hub counts ----------------
