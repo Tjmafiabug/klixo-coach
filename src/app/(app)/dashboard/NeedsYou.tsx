@@ -42,32 +42,32 @@ export function NeedsYou({ items }: { items: NeedItem[] }) {
           </span>
         </div>
 
-        {/* 4-up on wide screens: the queue is usually 2-5 items, and a 3-col
-            grid strands the 4th alone on its own row. */}
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* The labels are short sentences, not words. A 4-up grid squeezed them
+            to "stude…" at 1024px, so the columns only go as narrow as a
+            sentence can survive. */}
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {live.map((i) => {
             const t = TONE[i.tone];
             return (
               <li key={i.href + i.label}>
                 <Link
                   href={i.href}
-                  className={`group flex h-full items-center gap-3 rounded-2xl border ${t.ring} ${t.bg} px-4 py-3 transition-all hover:shadow-[var(--shadow-card)] active:scale-[0.99]`}
+                  className={`group flex h-full flex-col gap-1 rounded-2xl border ${t.ring} ${t.bg} px-4 py-3 transition-all hover:shadow-[var(--shadow-card)] active:scale-[0.99]`}
                 >
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${t.dot}`} aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className={`block font-mono text-lg font-bold tabular-nums leading-none ${t.text}`}>
+                  <span className="flex items-center gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${t.dot}`} aria-hidden />
+                    <span className={`font-mono text-lg font-bold tabular-nums leading-none ${t.text}`}>
                       {i.count}
                     </span>
-                    <span className="mt-1 block truncate text-sm font-medium text-foreground">
-                      {i.label}
+                    <span className={`ml-auto shrink-0 text-xs font-semibold ${t.text}`}>
+                      {i.action}
+                      <span className="ml-1 inline-block transition-transform group-hover:translate-x-0.5">
+                        →
+                      </span>
                     </span>
                   </span>
-                  <span className={`shrink-0 text-xs font-semibold ${t.text}`}>
-                    {i.action}
-                    <span className="ml-1 inline-block transition-transform group-hover:translate-x-0.5">
-                      →
-                    </span>
-                  </span>
+                  {/* No truncate: the label is the whole point of the card. */}
+                  <span className="text-sm font-medium text-foreground">{i.label}</span>
                 </Link>
               </li>
             );
