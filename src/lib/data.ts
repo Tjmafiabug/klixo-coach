@@ -438,13 +438,10 @@ export async function createExtraClass(params: {
   roomId: string;
   teacherId: string;
 }): Promise<string> {
-  const sessions = await readTab<Session>("Sessions");
-  let max = 9000; // ad-hoc ids live above the generated range
-  for (const s of sessions) {
-    const n = parseInt(s.session_id.replace(/\D/g, ""), 10);
-    if (!Number.isNaN(n) && n > max) max = n;
-  }
-  const id = `SES${String(max + 1).padStart(4, "0")}`;
+  // Minted, not counted: two staff adding an extra class at once used to agree
+  // on the same id. The old 9000+ range existed only to keep this series clear
+  // of the generated one, which minting makes unnecessary.
+  const id = nextId([], "SES");
   await appendRows("Sessions", [
     [
       id,
@@ -775,11 +772,8 @@ export async function generateSessions(): Promise<{
   const desired = new Set(instances.map((i) => `${i.slot_id}|${i.date}`));
 
   const existing = new Set<string>();
-  let max = 0;
   const orphanRows: number[] = [];
   sessions.forEach((s, i) => {
-    const n = parseInt(s.session_id.replace(/\D/g, ""), 10);
-    if (!Number.isNaN(n) && n < 9000 && n > max) max = n; // keep clear of adhoc 9000+
     if (s.source !== "recurring" || !s.slot_id) return; // adhoc untouched
     const key = `${s.slot_id}|${s.date}`;
     existing.add(key);
@@ -791,11 +785,19 @@ export async function generateSessions(): Promise<{
     }
   });
 
-  // expand instances into row data for missing keys
+  // expand instances into row data for missing keys.
+  //
+  // Ids come from nextId, not a max-suffix counter. The counter here had two
+  // faults beyond the usual race: it ignored ids >= 9000 (to stay clear of the
+  // ad-hoc range), so once the recurring series reached SES8999 the next run
+  // minted SES9000 and the run after that ignored it, recomputed max = 8999 and
+  // minted SES9000 AGAIN for a different (slot, date) — and session_id is the
+  // key attendance rows hang off, so two classes' registers merged. The 9000
+  // split is no longer needed: minted ids never collide with the ad-hoc series.
   const appends: string[][] = [];
   for (const inst of instances) {
     if (existing.has(`${inst.slot_id}|${inst.date}`)) continue;
-    const id = `SES${String(++max).padStart(4, "0")}`;
+    const id = nextId([], "SES");
     appends.push([
       id, inst.date, inst.batch_id, inst.start, inst.end, inst.room_id, inst.teacher_id,
       "scheduled", "recurring", inst.slot_id,
@@ -4193,13 +4195,6 @@ export async function generateMonthlyCharges(period: string): Promise<number> {
       .map((c) => `${c.student_id}|${c.batch_id}|${c.period}`),
   );
 
-  // compute maxN once from all charge ids
-  let maxN = 0;
-  for (const c of existingCharges) {
-    const n = parseInt(c.charge_id.replace(/\D/g, ""), 10);
-    if (!Number.isNaN(n) && n > maxN) maxN = n;
-  }
-
   const rows: string[][] = [];
   for (const e of enrollments) {
     if (e.status === "inactive") continue;
@@ -4212,7 +4207,10 @@ export async function generateMonthlyCharges(period: string): Promise<number> {
     if (existing.has(key)) continue;
     existing.add(key); // guard against duplicate enrollments in the same batch
     rows.push([
-      `FC${String(++maxN).padStart(4, "0")}`,
+      // Minted, not counted. The dedupe above stops duplicate CHARGES, but two
+      // concurrent runs still agreed on the same FC id, and voidCharge finds by
+      // id and voids the first match — so voiding one would void the other.
+      nextId([], "FC"),
       e.student_id,
       e.batch_id,
       period,

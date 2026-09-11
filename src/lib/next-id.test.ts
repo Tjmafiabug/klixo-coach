@@ -124,6 +124,36 @@ describe("the implementation in data.ts matches this mirror", () => {
     expect(callSites.length, "nextId call sites not found — was it renamed?").toBeGreaterThan(5);
   });
 
+  it("generateSessions no longer counts, and the 9000 ceiling is gone", () => {
+    // The worst variant of the counter bug. It computed max only over ids
+    // < 9000 to stay clear of the ad-hoc range, so on reaching SES8999 it minted
+    // SES9000, and the NEXT run ignored SES9000 (fails n < 9000), recomputed
+    // max = 8999 and minted SES9000 again for a different (slot, date).
+    // session_id is the key attendance hangs off, so two registers merged.
+    const fn = SRC.slice(SRC.indexOf("export async function generateSessions"));
+    const body = fn.slice(0, fn.indexOf("\n}\n"));
+    // Match code, not the comment above it that explains the old bug.
+    expect(body, "must not reintroduce the < 9000 filter").not.toMatch(/n < 9000/);
+    expect(body, "must mint session ids").toMatch(/nextId\(\[\], "SES"\)/);
+  });
+
+  it("createExtraClass mints rather than counting from 9000", () => {
+    const fn = SRC.slice(SRC.indexOf("export async function createExtraClass"));
+    const body = fn.slice(0, fn.indexOf("\n}\n"));
+    expect(body, "ad-hoc ids must be minted too").toMatch(/nextId\(\[\], "SES"\)/);
+    expect(body, "the 9000 split is no longer needed").not.toMatch(/max = 9000/);
+  });
+
+  it("generateMonthlyCharges mints charge ids", () => {
+    // Its student|batch|period dedupe stops duplicate charges, but two
+    // concurrent runs still agreed on the same FC id — and voidCharge finds by
+    // id and voids the first match.
+    const fn = SRC.slice(SRC.indexOf("export async function generateMonthlyCharges"));
+    const body = fn.slice(0, fn.indexOf("\n}\n"));
+    expect(body, "charge ids must be minted").toMatch(/nextId\(\[\], "FC"\)/);
+    expect(body, "must not reintroduce the maxN counter").not.toMatch(/\+\+maxN/);
+  });
+
   it("the duplicate-id audit is still in place", () => {
     // New writes cannot race, but the Sheet is owner-editable and legacy rows
     // exist, so detection stays.
