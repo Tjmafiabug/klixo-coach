@@ -10,6 +10,7 @@ import {
 } from "@/lib/data";
 import { Ring, Tile, PortalTitle } from "@/components/portal-ui";
 import { rupees, dayLabel } from "@/lib/format";
+import { Verdict, StreakSpark } from "./Verdict";
 
 export default async function PortalHome() {
   const { studentId, name } = await requireStudent();
@@ -34,6 +35,29 @@ export default async function PortalHome() {
     .filter((s) => s.date >= today);
   const next = upcoming[0];
 
+  // Current run of attended sessions. history is newest-first, so the streak is
+  // the length of the attended prefix — late counts as attended, matching the
+  // centre policy the percentage already uses.
+  let streak = 0;
+  for (const h of profile.history) {
+    if (h.status !== "present" && h.status !== "late") break;
+    streak += 1;
+  }
+  // getStudentProfile caps history at 100 rows, so a run that reaches the end of
+  // it is "at least this long" — say so rather than assert a number the data
+  // cannot support.
+  const streakCapped = streak === profile.history.length && streak === 100;
+
+  // What the number means, so a student doesn't have to compare it themselves.
+  const verdict =
+    profile.total === 0
+      ? "Nothing marked yet."
+      : pct < threshold
+        ? `Below the ${threshold}% minimum — talk to your teacher.`
+        : pct < threshold + 10
+          ? `Just above the ${threshold}% minimum — don't miss many more.`
+          : `Comfortably above the ${threshold}% minimum.`;
+
   const firstName = name.split(" ")[0];
 
   return (
@@ -55,7 +79,13 @@ export default async function PortalHome() {
             <p className="mt-0.5 text-xs text-muted-foreground">
               {profile.total ? `${profile.attended}/${profile.total} sessions` : "No sessions yet"}
             </p>
-            <p className="mt-2 text-xs font-medium text-muted-foreground">Minimum {threshold}%</p>
+            <Verdict text={verdict} />
+            {/* 3 is where a run starts feeling like one worth keeping — but
+                never celebrate while the verdict says they are below the
+                minimum, which would undercut the thing they need to read. */}
+            {streak >= 3 && pct >= threshold ? (
+              <StreakSpark days={streak} capped={streakCapped} />
+            ) : null}
           </div>
         </Tile>
 
@@ -92,7 +122,7 @@ export default async function PortalHome() {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground">Next class</p>
           {next ? (
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{next.batchName}</span> · {dayLabel(next.date)} ·{" "}
               {next.start}–{next.end} · {next.roomName}
             </p>
