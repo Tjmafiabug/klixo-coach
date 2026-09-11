@@ -14,7 +14,7 @@ export function BackLink({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      className="-ml-2 inline-flex h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
       <svg
         width="16"

@@ -68,6 +68,17 @@ const SECTION_HUE: { prefix: string; hue: string }[] = [
   { prefix: "/manage/ptm", hue: "#e11d48" }, // rose
   { prefix: "/portal", hue: "#4f46e5" }, // indigo
 ];
+// Mobile bottom tab bar (research §2.1): teachers work on phones, standing,
+// mid-class. The bottom third is the thumb safe zone, and a tab bar beats a
+// hamburger for returning users. The drawer stays for the long Manage tail.
+// Owners get their 4 most-used destinations; teachers only ever have Today.
+const TABS: { href: string; label: string; icon: (p: IconProps) => React.ReactElement; ownerOnly: boolean }[] = [
+  { href: "/today", label: "Today", icon: TodayIcon, ownerOnly: false },
+  { href: "/dashboard", label: "Dashboard", icon: DashIcon, ownerOnly: true },
+  { href: "/manage/students", label: "Students", icon: UsersIcon, ownerOnly: true },
+  { href: "/manage/fees", label: "Fees", icon: FeesIcon, ownerOnly: true },
+];
+
 const sectionHue = (pathname: string): string =>
   SECTION_HUE.find((s) => pathname === s.prefix || pathname.startsWith(s.prefix + "/"))?.hue ??
   "#4f46e5"; // default indigo (Today, Rooms, Holidays, Settings)
@@ -94,6 +105,10 @@ export function AppShell({
     items: s.items.filter((i) => role === "owner" || !i.ownerOnly),
   })).filter((s) => s.items.length > 0);
   const flat = sections.flatMap((s) => s.items);
+  const tabs = TABS.filter((t) => role === "owner" || !t.ownerOnly);
+  // a teacher has only Today — the drawer would hold nothing else, so drop "More"
+  const hasMore = flat.length > tabs.length;
+  const showTabs = tabs.length + (hasMore ? 1 : 0) > 1;
   // header title/subtitle: matched item, the /manage overview, or the first item
   const active =
     flat.find((i) => isMatch(pathname, i)) ??
@@ -149,7 +164,12 @@ export function AppShell({
   }, [drawer]);
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[264px_1fr]">
+    <div
+      className="min-h-dvh lg:grid lg:grid-cols-[264px_1fr]"
+      // How much a fixed bottom element must clear to sit above the tab bar.
+      // Zero when no bar renders (a teacher), and always zero on lg.
+      style={{ "--tabbar-h": showTabs ? "calc(3.5rem + env(safe-area-inset-bottom))" : "0px" } as React.CSSProperties}
+    >
       {/* ---- Desktop sidebar ---- */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-border bg-surface-2 px-4 py-5 lg:flex">
         <SidebarBody
@@ -202,16 +222,6 @@ export function AppShell({
       <div className="flex min-w-0 flex-col">
         <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur-md">
           <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
-            <button
-              ref={triggerRef}
-              onClick={() => setDrawer(true)}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-border bg-surface text-foreground transition-colors hover:bg-muted active:scale-95 lg:hidden"
-              aria-label="Open navigation"
-              aria-expanded={drawer}
-            >
-              <MenuIcon className="h-5 w-5" />
-            </button>
-
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <span
                 className="h-8 w-1 shrink-0 rounded-full"
@@ -236,8 +246,52 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1">{children}</main>
+        {/* pb-24 clears the mobile tab bar — only when one is rendered. */}
+        <main className={`min-w-0 flex-1 lg:pb-0 ${showTabs ? "pb-24" : ""}`}>
+          {children}
+        </main>
       </div>
+
+      {/* ---- Mobile bottom tab bar (thumb zone) ----
+           Only when there is somewhere to go: a teacher's nav is just /today, and
+           a single tab pointing at the current page is chrome, not navigation. */}
+      {showTabs ? (
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-surface/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
+        aria-label="Primary"
+      >
+        {tabs.map((t) => {
+          const active = pathname === t.href || pathname.startsWith(t.href + "/");
+          const Icon = t.icon;
+          return (
+            <Link
+              key={t.href}
+              href={t.href}
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[0.68rem] font-medium transition-colors ${
+                active ? "text-brand" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-[1.35rem] w-[1.35rem]" />
+              {t.label}
+            </Link>
+          );
+        })}
+        {/* "More" opens the same drawer — the long Manage tail stays one tap away. */}
+        {hasMore ? (
+          <button
+            type="button"
+            ref={triggerRef}
+            onClick={() => setDrawer(true)}
+            aria-expanded={drawer}
+            className="flex min-h-[56px] flex-1 cursor-pointer flex-col items-center justify-center gap-1 py-2 text-[0.68rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <MenuIcon className="h-[1.35rem] w-[1.35rem]" />
+            More
+          </button>
+        ) : null}
+      </nav>
+      ) : null}
     </div>
   );
 }

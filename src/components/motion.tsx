@@ -79,3 +79,26 @@ export function CountUp({
     </>
   );
 }
+
+/* ---- Motion tokens (docs/UX-RESEARCH-2026.md §3.1) ------------------------
+   Springs for interactive UI, easing for decorative/sequential. The defaults
+   (300ms ease-in-out, 20px slide, no overshoot) are the tell — these are the
+   calibrated values. Transform + opacity only; never animate height/top. */
+
+/** Hover, toggle, pill — 150-200ms, bounce under 0.1. */
+export const MICRO = { type: "spring", stiffness: 200, damping: 20 } as const;
+
+/** Modal, sheet, toast entrance — slight overshoot. */
+export const ENTRANCE = { type: "spring", stiffness: 260, damping: 24 } as const;
+
+/** Exits run faster than entrances. */
+export const EXIT = { duration: 0.18, ease: [0.4, 0, 1, 1] } as const;
+
+/** Page / scroll reveal — the decorative curve. */
+export const REVEAL = { duration: 0.45, ease: EASE } as const;
+
+/** Slide amplitude. 8-12px, never the 20px default. */
+export const SLIDE = 10;
+
+/** Stagger between list items. */
+export const STAGGER = 0.04;

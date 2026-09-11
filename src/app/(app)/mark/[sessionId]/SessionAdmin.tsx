@@ -54,7 +54,7 @@ export function SessionAdmin({
         className="mt-3"
       >
         <input type="hidden" name="sessionId" value={sessionId} />
-        <button className="cursor-pointer rounded-lg border border-danger/30 bg-danger-subtle px-4 py-2 text-sm font-semibold text-danger transition-colors hover:bg-danger/10">
+        <button className="inline-flex h-11 cursor-pointer items-center rounded-lg border border-danger/30 bg-danger-subtle px-4 text-sm font-semibold text-danger transition-colors hover:bg-danger/10">
           Cancel session
         </button>
       </form>
