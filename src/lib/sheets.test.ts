@@ -130,6 +130,26 @@ describe("batched reads", () => {
     );
   });
 
+  it("the missing-tab fallback still asks only for KNOWN_TABS", () => {
+    // The fallback runs when a Sheet lacks one of the optional Phase-2/3 tabs:
+    // one bad range fails the whole batch, so it re-asks using the live tab
+    // list. It used to pass that list WHOLESALE, which pulls in every tab the
+    // owner has ever added — a working copy, a pivot, and (soon) archive tabs
+    // deliberately kept off the hot path — into the batchGet that every render
+    // performs. Silently, permanently, on any Sheet missing one optional tab.
+    //
+    // Being absent from KNOWN_TABS is the entire mechanism by which a tab stays
+    // cold. This is what makes that mechanism real rather than advisory.
+    const fn = SRC.slice(SRC.indexOf("const fetchAll"));
+    const body = fn.slice(0, fn.indexOf("\n  };"));
+    expect(body, "the fallback must intersect with KNOWN_TABS").toMatch(
+      /KNOWN_TABS\.filter\(\(t\) => live\.has\(t\)\)/,
+    );
+    expect(body, "must not pass the live tab list wholesale").not.toMatch(
+      /batch\(\[\.\.\.\(await liveTabs\(\)\)\]\)/,
+    );
+  });
+
   it("KNOWN_TABS matches the tabs bootstrap-sheet.mjs provisions", () => {
     // Drift here is silent and permanent: a tab missing from KNOWN_TABS is never
     // fetched on the fast path, and an extra one 400s every batch into the

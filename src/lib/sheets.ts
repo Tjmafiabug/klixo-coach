@@ -199,7 +199,17 @@ const allTabs = cache(async (): Promise<Map<string, string[][]>> => {
       // A tab in KNOWN_TABS isn't provisioned (partial Phase-2/3 rollout), and one
       // bad range fails the whole batch — so pay for metadata and retry with the
       // tabs that really exist. Two requests, still far below one-per-tab.
-      return await batch([...(await liveTabs())]);
+      //
+      // INTERSECT with KNOWN_TABS rather than taking the live list wholesale.
+      // The Sheet is owner-editable and will grow tabs this app knows nothing
+      // about — a working copy, a pivot, and (soon) archive tabs deliberately
+      // kept off the hot path. Reading the live list unfiltered pulled every one
+      // of them into the batch that every single render performs, permanently
+      // and silently, on any Sheet that happened to be missing one optional tab.
+      // An archive tab is the whole point of being excluded from KNOWN_TABS, so
+      // this is the difference between that exclusion working and being a no-op.
+      const live = await liveTabs();
+      return await batch(KNOWN_TABS.filter((t) => live.has(t)));
     }
   };
 

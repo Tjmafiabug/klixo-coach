@@ -561,17 +561,37 @@ export interface RecurringInstance {
 /** Expand timetable rules into the recurring (slot, date) instances they want in
  *  [start, end] — the single source of truth for which recurring sessions should
  *  exist. Used by generation (to persist) and by the calendar (to project
- *  unwritten future weeks). Respects holidays, the rule's effective range, and
- *  the batch's expected_end_date cap. */
+ *  unwritten future weeks). Respects holidays, the rule's effective range, the
+ *  batch's expected_end_date cap, and whether the batch is still active.
+ *
+ *  The active check matters more than it looks. Deactivating a batch is the
+ *  obvious way to say "this class is finished", and it is what the manage screen
+ *  offers — but nothing here used to read it, so a deactivated batch with a live
+ *  timetable rule kept minting sessions every night, forever. Teachers saw
+ *  classes for a batch the owner had closed. expected_end_date would have capped
+ *  it, but it is optional and blank on every batch in production.
+ *
+ *  Both callers (generation and the calendar projection) go through here, so the
+ *  fix belongs here rather than at either call site. */
 function expandRecurring(
   rules: TimetableRule[],
   holidays: Set<string>,
-  batchEnd: Map<string, string>,
+  batches: Batch[],
   start: string,
   end: string,
 ): RecurringInstance[] {
+  const batchEnd = new Map(batches.map((b) => [b.batch_id, b.expected_end_date ?? ""]));
+  // Allow-list, not a deny-list: a rule pointing at a batch row that no longer
+  // exists must also generate nothing. The Sheet is owner-editable, so a
+  // deleted batch is a real case, and a deny-list would treat it as permanently
+  // open — the one state worse than closed.
+  const open = new Set(
+    batches.filter((b) => b.active === "TRUE").map((b) => b.batch_id),
+  );
   const out: RecurringInstance[] = [];
   for (const r of rules) {
+    // A rule whose batch is closed or gone wants nothing, on any date.
+    if (!open.has(r.batch_id)) continue;
     const days = r.day_of_week.split(",").map((x) => x.trim());
     const endDate = batchEnd.get(r.batch_id) ?? "";
     for (let d = start; d <= end; d = addDays(d, 1)) {
@@ -639,8 +659,7 @@ export async function getSessionsInRange(start: string, end: string): Promise<Se
     }));
 
   const holidays = new Set(holidaysTab.map((h) => h.date));
-  const batchEnd = new Map(batches.map((b) => [b.batch_id, b.expected_end_date ?? ""]));
-  const projected: SessionView[] = expandRecurring(rules, holidays, batchEnd, start, end)
+  const projected: SessionView[] = expandRecurring(rules, holidays, batches, start, end)
     .filter((inst) => !persistedKeys.has(`${inst.slot_id}|${inst.date}`))
     .map((inst) => ({
       session_id: `proj-${inst.slot_id}-${inst.date}`,
@@ -765,11 +784,9 @@ export async function generateSessions(): Promise<{
   const holidays = new Set(holidaysTab.map((h) => h.date));
   const hasAttendance = new Set(attendance.map((a) => a.session_id));
   // Batch expected end date caps recurring generation (empty/missing = open-ended).
-  const batchEnd = new Map(batches.map((b) => [b.batch_id, b.expected_end_date ?? ""]));
-
   // what the rules want in the window (shared expansion: holidays, effective
-  // range, batch end-date cap)
-  const instances = expandRecurring(rules, holidays, batchEnd, today, end);
+  // range, batch end-date cap, batch still active)
+  const instances = expandRecurring(rules, holidays, batches, today, end);
   const desired = new Set(instances.map((i) => `${i.slot_id}|${i.date}`));
 
   const existing = new Set<string>();
