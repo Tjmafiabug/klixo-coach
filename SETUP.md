@@ -33,8 +33,20 @@ Whatever you choose, do these two:
 
 Moving later is low-risk but ordered: **GCP project first, Sheets second** — a
 Sheet is data you can re-copy, the service account is the credential everything
-authenticates with. `SHEET_ID` survives an ownership transfer, so no code or env
-changes; just re-confirm the service account still has Editor afterwards.
+authenticates with.
+
+- **The GCP project transfers cleanly.** IAM → Grant access → the new account →
+  **Owner**; sign in as it and confirm the project is visible; only *then*
+  remove the old owner. Never the other way round, or the project is orphaned.
+- **Sheets cannot be transferred across domains.** Google only allows an
+  ownership transfer between accounts in the same domain, so personal
+  @gmail.com → Workspace is blocked. Instead: share the Sheet to the new
+  account, open it as that account, **File → Make a copy** — the copy is owned
+  by the new account. Re-share the copy with the service account as Editor and
+  update `SHEET_ID` (the copy has a new id) in `.env.local` and in Vercel.
+  ⚠️ A copy does not carry revision history and resets the "last edited by"
+  trail. The data comes across intact; the audit trail does not. Worth doing
+  before a centre's records are real rather than after.
 
 ---
 
