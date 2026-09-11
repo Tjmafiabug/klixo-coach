@@ -126,12 +126,32 @@ Non-negotiables:
    the bottom sheet.
 4. **Scroll-linked** — already have `Reveal`; keep it restrained on the admin surface.
 
-### 3.3 Route transitions
-View Transitions API is production-viable in 2026 (Chromium + Safari stable,
-Firefox behind a flag). Next 16 App Router: use the **browser API directly** —
-React's `<ViewTransition>` is still experimental behind `experimental.viewTransition`.
-Highest-value use: shared-element morph from a student row → student detail, and
-batch card → batch detail. Zero JS animation code; a `view-transition-name` per element.
+### 3.3 Route transitions — ATTEMPTED, NOT VIABLE HERE (2026-09-11)
+
+Tried and reverted. Recording why so nobody burns the afternoon twice.
+
+- Next 16.3.4 ships `node_modules/next/dist/docs/01-app/02-guides/view-transitions.md`,
+  which documents React's `<ViewTransition>` as working in the App Router with
+  no configuration. That is not true of this release's default build: the
+  component only exists in the `app-page-experimental.*` runtimes. There is no
+  `experimental.viewTransition` flag; `needs-experimental-react.js` gates the
+  experimental React channel behind `blockingSSR`, `taint`, `transitionIndicator`
+  or `gestureTransition`.
+- With `experimental.gestureTransition: true` the experimental channel does load
+  (dev prints `✓ gestureTransition`), so the component becomes available.
+- **But the morph still cannot pair.** The guide: "If the destination suspends
+  into a fallback first, no pair forms." Every route in `(app)` is covered by
+  `src/app/(app)/loading.tsx`, and every page is `force-dynamic` reading Google
+  Sheets — so the destination *always* renders the skeleton first. Screenshots
+  mid-navigation show the skeleton, never a paired element.
+
+To make this work the destination would have to render in the same commit as the
+navigation: prefetched/cached pages, i.e. dropping `force-dynamic` or removing the
+group-level `loading.tsx` for these routes. That is a data-freshness decision about
+attendance correctness, not an animation one, so it is out of scope for a UI pass.
+
+**Revisit when** the Sheets reads are cached or the mark route renders without
+suspending. Until then the framer-motion work in §3.2 covers the same ground.
 
 ### 3.4 Signature moments (pick 3, not 30)
 - **Mark saved**: the Save bar collapses into a green check that scales in at
