@@ -22,10 +22,10 @@ const SRC = readFileSync(join(process.cwd(), "src/lib/data.ts"), "utf8");
 function nextId(_ids: string[], prefix: string): string {
   const t = Math.floor(Date.now() / 10)
     .toString(36)
-    .padStart(7, "0");
-  const rand = Math.floor(Math.random() * 36 ** 4)
+    .padStart(8, "0");
+  const rand = Math.floor(Math.random() * 36 ** 6)
     .toString(36)
-    .padStart(4, "0");
+    .padStart(6, "0");
   return `${prefix}${t}${rand}`.toUpperCase();
 }
 
@@ -66,6 +66,20 @@ describe("nextId keeps the properties callers rely on", () => {
     const ids = Array.from({ length: 50 }, () => nextId([], "S"));
     const widths = new Set(ids.map((x) => x.length));
     expect(widths.size, "every minted id must be the same width").toBe(1);
+  });
+
+  it("the timestamp really is 8 base-36 chars, and stays 8", () => {
+    // An earlier comment here claimed 7 chars "covers to 2081". It does not:
+    // centiseconds since epoch passed 36^7 in 1995, so padStart(7) was a no-op
+    // and ids were already 8. The width IS fixed, just at 8: 8 base-36 chars
+    // of centiseconds run out on 2863-12-22. This pins the real bound.
+    const now = Math.floor(Date.now() / 10).toString(36);
+    expect(now.length).toBe(8);
+    const year2863 = Math.floor(Date.UTC(2863, 0, 1) / 10).toString(36);
+    expect(year2863.length, "still 8 chars in 2863").toBe(8);
+    // prefix + 8 timestamp + 6 random
+    expect(nextId([], "S")).toHaveLength(1 + 8 + 6);
+    expect(nextId([], "SADJ")).toHaveLength(4 + 8 + 6);
   });
 
   it("sorts in creation order", async () => {

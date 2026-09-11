@@ -114,21 +114,65 @@ const liveTabs = cache(async (): Promise<Set<string>> => {
 });
 
 /**
- * Every tab in one request, once per request.
+ * Cross-request cache for the whole-Sheet read.
  *
- * The core fix for read amplification. A page render touches many tabs — the
- * owner dashboard alone reads 17 — and each separate values.get was a ~2s round
- * trip costing one unit of a 60 reads/min/user quota, so ~3 dashboard loads a
- * minute before throttling. Google counts a batch as a SINGLE request against
- * that quota regardless of how many ranges it carries:
+ * Background: a page render touches many tabs — the owner dashboard alone reads
+ * 17 — and each separate values.get was a ~2s round trip costing one unit of a
+ * 60 reads/min/user quota. Google counts a batch as a SINGLE request regardless
+ * of how many ranges it carries, so `allTabs` fetches everything at once and
+ * lets callers pick: measured, 17 sequential gets 7334ms / 17 units versus one
+ * batchGet of all 24 tabs 2560ms / 1 unit.
  * https://developers.google.com/workspace/sheets/api/limits
  *
- * Measured on this Sheet: 17 sequential gets 7334ms / 17 units, versus one
- * batchGet of all 24 tabs 2560ms / 1 unit. Whole-Sheet payload is ~345KB,
- * well inside Google's 2MB guidance, so fetching everything and letting callers
- * pick beats tracking which tabs each page needs.
+ * React's `cache()` below dedupes within ONE request. That was enough at 9
+ * staff; it is not at 40 staff and 200+ parents, because the binding constraint
+ * is Google's 60 reads/min/user quota and every page view spends a unit of it.
+ * Measured: 40 staff marking (a marking cycle is four separate requests, so
+ * four units) plus 500 parents checking the portal, spread over five minutes,
+ * ran at 69 reads/min and Google rejected 55% of the staff reads and 45% of the
+ * parents'. Teachers could not mark attendance during the busiest period.
+ *
+ * A few seconds of sharing collapses that: the same burst becomes a handful of
+ * batchGets per instance per minute. It also stops most users paying the
+ * ~660 ms Sheets round trip at all, which BROWSER-PERF measured as essentially
+ * the entire server wait.
+ *
+ * Deliberately a module-level Map rather than Next's Data Cache: that has a
+ * documented ~2 MB per-entry limit, and this payload is 889 KB today and
+ * projected past 2 MB at ~150 students — it would silently stop caching exactly
+ * when it started to matter. Module state is per-instance, so N instances make
+ * N reads per window rather than one; that is still an N-fold reduction and it
+ * needs no external store.
+ *
+ * Keyed by spreadsheet id so a future multi-centre deployment cannot serve one
+ * centre's data to another. That key is the whole reason this is safe.
  */
+const CACHE_TTL_MS = 5_000;
+type Entry = { at: number; rows: Promise<Map<string, string[][]>> };
+const sheetCache = new Map<string, Entry>();
+
+/**
+ * Drop the cached copy of the current Sheet.
+ *
+ * Every write helper calls this, so a user always sees their own write on the
+ * redirect that follows it — the case the per-request comment on `config()`
+ * worries about (a stale `demo_today` dating attendance wrongly) cannot happen,
+ * because saving settings invalidates before the next read.
+ *
+ * What it does NOT cover: an edit the owner makes in the Sheet directly. Those
+ * are visible within the TTL rather than instantly. That is the correct
+ * trade for a product whose whole point is an editable Sheet — seconds, not
+ * minutes — but it is a behaviour change worth knowing about.
+ */
+export function invalidateSheetCache(): void {
+  sheetCache.delete(sheetId());
+}
+
 const allTabs = cache(async (): Promise<Map<string, string[][]>> => {
+  const key = sheetId();
+  const hit = sheetCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.rows;
+
   const batch = async (tabs: string[]) => {
     const res = await withRetry(() =>
       client().spreadsheets.values.batchGet({
@@ -141,21 +185,35 @@ const allTabs = cache(async (): Promise<Map<string, string[][]>> => {
     return new Map(tabs.map((t, i) => [t, ranges[i]?.values ?? []]));
   };
 
-  // Optimistic path: assume the standard schema and spend ONE request. A Sheet
-  // provisioned by bootstrap-sheet.mjs has every tab, so this is the normal case.
-  try {
-    return await batch(KNOWN_TABS);
-  } catch (e) {
-    const err = e as { code?: number; response?: { status?: number }; message?: string };
-    const missingRange =
-      (err?.code === 400 || err?.response?.status === 400) &&
-      /Unable to parse range/i.test(err?.message ?? "");
-    if (!missingRange) throw e;
-    // A tab in KNOWN_TABS isn't provisioned (partial Phase-2/3 rollout), and one
-    // bad range fails the whole batch — so pay for metadata and retry with the
-    // tabs that really exist. Two requests, still far below one-per-tab.
-    return await batch([...(await liveTabs())]);
-  }
+  const fetchAll = async () => {
+    // Optimistic path: assume the standard schema and spend ONE request. A Sheet
+    // provisioned by bootstrap-sheet.mjs has every tab, so this is the normal case.
+    try {
+      return await batch(KNOWN_TABS);
+    } catch (e) {
+      const err = e as { code?: number; response?: { status?: number }; message?: string };
+      const missingRange =
+        (err?.code === 400 || err?.response?.status === 400) &&
+        /Unable to parse range/i.test(err?.message ?? "");
+      if (!missingRange) throw e;
+      // A tab in KNOWN_TABS isn't provisioned (partial Phase-2/3 rollout), and one
+      // bad range fails the whole batch — so pay for metadata and retry with the
+      // tabs that really exist. Two requests, still far below one-per-tab.
+      return await batch([...(await liveTabs())]);
+    }
+  };
+
+  // Store the PROMISE, not the resolved value: requests arriving while a fetch
+  // is in flight join it instead of starting their own. Under the measured
+  // burst that is the difference between one read and dozens.
+  const rows = fetchAll();
+  sheetCache.set(key, { at: Date.now(), rows });
+  // Never cache a failure — a quota rejection would otherwise be replayed to
+  // every request for the whole TTL, turning one 429 into seconds of outage.
+  rows.catch(() => {
+    if (sheetCache.get(key)?.rows === rows) sheetCache.delete(key);
+  });
+  return rows;
 });
 
 /** Rows → objects keyed by the header row. */
@@ -216,6 +274,7 @@ export async function appendRows(tab: string, rows: string[][]): Promise<void> {
       requestBody: { values: rows },
     }),
   );
+  invalidateSheetCache();
 }
 
 /** Overwrite a single A1 range with values (RAW). */
@@ -231,6 +290,7 @@ export async function updateValues(
       requestBody: { values },
     }),
   );
+  invalidateSheetCache();
 }
 
 /** Overwrite several A1 ranges in one request (RAW). */
@@ -244,6 +304,7 @@ export async function batchUpdateValues(
       requestBody: { valueInputOption: "RAW", data },
     }),
   );
+  invalidateSheetCache();
 }
 
 /** Delete rows (1-based sheet row numbers) from a tab. Deletes descending so
@@ -270,4 +331,5 @@ export async function deleteRows(
       requestBody: { requests },
     }),
   );
+  invalidateSheetCache();
 }

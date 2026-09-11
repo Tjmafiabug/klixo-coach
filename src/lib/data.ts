@@ -1436,15 +1436,18 @@ export async function getOwnerDashboard(): Promise<{
  * sort before every minted id, which is correct: they are older.
  */
 function nextId(_ids: string[], prefix: string): string {
-  // Centiseconds, not ms: 7 base-36 chars covers to 2081 (ms would need 8 and
-  // overflow to 9 sooner). Two creates in the same centisecond fall back to the
-  // random tail, which is where the real collision resistance lives.
+  // Centiseconds, not ms, so the timestamp needs one fewer character. It is
+  // 8 base-36 chars today and stays 8 until 2863-12-22, so the width is
+  // fixed in practice; padStart is belt-and-braces for a clock set before 1995.
+  // Two creates in the same centisecond fall back to the random tail, which is
+  // where the collision resistance actually lives: at 6 chars the chance that
+  // 60 simultaneous submits contain a pair is ~8e-7.
   const t = Math.floor(Date.now() / 10)
     .toString(36)
-    .padStart(7, "0");
-  const rand = Math.floor(Math.random() * 36 ** 4)
+    .padStart(8, "0");
+  const rand = Math.floor(Math.random() * 36 ** 6)
     .toString(36)
-    .padStart(4, "0");
+    .padStart(6, "0");
   return `${prefix}${t}${rand}`.toUpperCase();
 }
 
