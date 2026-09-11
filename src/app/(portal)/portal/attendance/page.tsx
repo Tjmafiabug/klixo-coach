@@ -2,11 +2,20 @@ import { requireStudent } from "@/lib/portal";
 import { getStudentProfile, getCenterConfig } from "@/lib/data";
 import { PortalTitle, Tile } from "@/components/portal-ui";
 import { StatusPill, PctBadge } from "@/components/ui";
-import { shortDate } from "@/lib/format";
+import { shortDate, paginate } from "@/lib/format";
+import { Pager } from "@/components/page";
 
-export default async function PortalAttendance() {
+export default async function PortalAttendance({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const { studentId } = await requireStudent();
-  const [profile, cfg] = await Promise.all([getStudentProfile(studentId), getCenterConfig()]);
+  const [profile, cfg, sp] = await Promise.all([
+    getStudentProfile(studentId),
+    getCenterConfig(),
+    searchParams,
+  ]);
   if (!profile) return <p className="text-sm text-muted-foreground">Student not found.</p>;
   const threshold = Number(cfg.attendance_threshold) || 75;
 
@@ -19,6 +28,9 @@ export default async function PortalAttendance() {
     byBatch.set(h.batchName, b);
   }
   const batchRows = [...byBatch.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  // A full term is hundreds of rows on a phone. 20 keeps the page short without
+  // hiding the recent days a student actually came here to check.
+  const historyPage = paginate(profile.history, Number(sp.page), 20);
 
   return (
     <div>
@@ -47,7 +59,7 @@ export default async function PortalAttendance() {
 
           <p className="mb-2 px-1 text-sm font-semibold text-foreground">Recent history</p>
           <ul className="space-y-2">
-            {profile.history.map((h, i) => (
+            {historyPage.slice.map((h, i) => (
               <li
                 key={i}
                 className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-3.5 py-3"
@@ -60,6 +72,15 @@ export default async function PortalAttendance() {
               </li>
             ))}
           </ul>
+
+          <Pager
+            page={historyPage.page}
+            pages={historyPage.pages}
+            total={historyPage.total}
+            start={historyPage.start}
+            size={historyPage.size}
+            baseHref="/portal/attendance"
+          />
         </>
       )}
     </div>
